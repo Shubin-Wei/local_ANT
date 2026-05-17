@@ -1,0 +1,49 @@
+# Example configuration for stack_visualization.py
+# Paths are relative to this YAML file's directory.
+# CLI flags override values set here.
+
+# --- Paths ---
+stack-dir: ../TestData/StackData
+outdir: ../TestData/figures
+
+# --- Filter ---
+freqmin: 1
+freqmax: 5
+component: ZZ
+stack-method: linear
+
+# --- Station filter ---
+# Single station or comma-separated list:
+#   station: CF.17982
+#   station: "17982,58808"
+# Or a list:
+#   station:
+#     - CF.17982
+#     - CF.58808
+
+# --- Distance filter ---
+# min-dist: 0.0
+# max-dist: 50.0
+# max-records: 100
+
+# --- Time window ---
+maxlag: 10
+
+# --- Plot style ---
+style: both
+output-format: png
+dpi: 200
+overwrite: false
+
+# --- Plot appearance ---
+# cmap: RdBu_r
+# clip-percentile: 99.0
+# figure-width: 10.5
+wiggle-scale: 0.35
+wiggle-every: 1
+# no-title: false
+
+# --- Other ---
+# allow-missing-distance: false
+# validate-only: false
+# log-level: INFO

@@ -1,0 +1,35 @@
+# Example configuration for local_cc_workflow.py
+# Paths are relative to this YAML file's directory.
+# CLI flags override values set here.
+
+# --- Paths ---
+data-dir: ../TestData/CleanData
+station-csv: ../TestData/station.csv
+ccf-dir: ../TestData/CCFData
+stack-dir: ../TestData/StackData
+
+# --- Processing ---
+freqmin: 0.5
+freqmax: 10
+sampling-rate: 50.0
+maxlag: 500
+inc-hours: 24
+cc-len: 3600
+step: 1800.0
+
+# Normalization
+time-norm: rma
+freq-norm: rma
+rm-resp: "no"
+
+# Stacking
+stack-method: all
+keep-substack: false
+
+# Station filter (use "*" for all)
+station-pattern: "*"
+
+# Components (only ncomp=1 is fully tested)
+ncomp: 1
+rotation: false
+xcorr-only: true

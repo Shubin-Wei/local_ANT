@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash plotray_subplot.gmt \
+    --project-dir /path/to/project \
+    --periods 0.4,1.0,1.6,2.2,2.8,3.4 \
+    --vel-type group \
+    --output-dir /path/to/output_dir \
+    [--background-grid /path/to/dem.grd] \
+    [--margin-fraction 0.01] \
+    [--line-width 0.08p] \
+    [--station-size 0.11c] \
+    [--formats png,pdf]
+
+Notes:
+  - Reads paths directly from surfdata.dat and period mapping from surfdata.json.
+  - Output name is generated automatically as ray_subplot_<vel-type>.
+  - One subplot is drawn for each requested period.
+  - --vel-type supports group, phase, or both.
+EOF
+}
+
+PROJECT_DIR=""
+PERIODS=""
+VEL_TYPE="group"
+OUTPUT_DIR=""
+BACKGROUND_GRID=""
+MARGIN_FRACTION="0.01"
+LINE_WIDTH="0.08p"
+STATION_SIZE="0.11c"
+FORMATS="png,pdf"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project-dir) PROJECT_DIR="$2"; shift 2 ;;
+    --periods) PERIODS="$2"; shift 2 ;;
+    --vel-type) VEL_TYPE="$2"; shift 2 ;;
+    --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
+    --background-grid) BACKGROUND_GRID="$2"; shift 2 ;;
+    --margin-fraction) MARGIN_FRACTION="$2"; shift 2 ;;
+    --line-width) LINE_WIDTH="$2"; shift 2 ;;
+    --station-size) STATION_SIZE="$2"; shift 2 ;;
+    --formats) FORMATS="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+  esac
+done
+
+if [[ -z "$PROJECT_DIR" || -z "$PERIODS" || -z "$OUTPUT_DIR" ]]; then
+  echo "Error: --project-dir, --periods and --output-dir are required." >&2
+  usage
+  exit 1
+fi
+
+if [[ "$VEL_TYPE" != "group" && "$VEL_TYPE" != "phase" && "$VEL_TYPE" != "both" ]]; then
+  echo "Error: --vel-type must be group, phase or both." >&2
+  exit 1
+fi
+
+SURFDATA="${PROJECT_DIR%/}/surfdata.dat"
+METADATA="${PROJECT_DIR%/}/surfdata.json"
+
+if [[ ! -f "$SURFDATA" || ! -f "$METADATA" ]]; then
+  echo "Error: surfdata.dat or surfdata.json not found in $PROJECT_DIR" >&2
+  exit 1
+fi
+
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/plotray_subplot.XXXXXX")"
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+export GMT_USERDIR="$TMP_DIR/gmt_user"
+export GMT_TMPDIR="$TMP_DIR/gmt_tmp"
+mkdir -p "$GMT_USERDIR" "$GMT_TMPDIR"
+
+export SURFDATA METADATA PERIODS VEL_TYPE TMP_DIR MARGIN_FRACTION
+
+python3 - <<'PY'
+import json
+import math
+import os
+from pathlib import Path
+
+surfdata = Path(os.environ["SURFDATA"])
+metadata = Path(os.environ["METADATA"])
+target_periods = [float(item.strip()) for item in os.environ["PERIODS"].split(",") if item.strip()]
+vel_type_name = os.environ["VEL_TYPE"]
+tmp_dir = Path(os.environ["TMP_DIR"])
+margin_fraction = float(os.environ["MARGIN_FRACTION"])
+
+with metadata.open("r", encoding="utf-8") as f:
+    meta = json.load(f)
+
+default_period_map = None
+min_period = float(meta["min_period"])
+step = float(meta["period_step"])
+count = int(meta["period_count"])
+default_period_map = {idx: min_period + (idx - 1) * step for idx in range(1, count + 1)}
+
+dataset_period_maps = {}
+for dataset_name in ("group", "phase"):
+    period_map = None
+    for dataset in meta.get("datasets", []):
+        if dataset.get("vel_type_name") != dataset_name:
+            continue
+        indices = dataset.get("used_period_indices", [])
+        periods = dataset.get("used_periods", [])
+        if len(indices) == len(periods) and indices:
+            period_map = {int(idx): float(period) for idx, period in zip(indices, periods)}
+            break
+    if period_map is None:
+        period_map = dict(default_period_map)
+    dataset_period_maps[dataset_name] = period_map
+
+if vel_type_name == "both":
+    requested_names = ("group", "phase")
+else:
+    requested_names = (vel_type_name,)
+
+available = sorted(
+    {
+        value
+        for dataset_name in requested_names
+        for value in dataset_period_maps[dataset_name].values()
+    }
+)
+requested = [min(available, key=lambda value: abs(value - target)) for target in target_periods]
+unique_periods = []
+for period in requested:
+    if period not in unique_periods:
+        unique_periods.append(period)
+
+selected = {period: [] for period in unique_periods}
+stations = set()
+current = None
+with surfdata.open("r", encoding="utf-8") as f:
+    for raw_line in f:
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            parts = line.split()
+            current = {
+                "src_lat": float(parts[1]),
+                "src_lon": float(parts[2]),
+                "period_index": int(parts[3]),
+                "wave_type": int(parts[4]),
+                "vel_type": int(parts[5]),
+            }
+            continue
+        if current is None:
+            continue
+        current_vel_name = "group" if current["vel_type"] == 1 else "phase"
+        if current_vel_name not in requested_names:
+            continue
+        mapped = dataset_period_maps[current_vel_name].get(current["period_index"])
+        if mapped not in selected:
+            continue
+        parts = line.split()
+        rec_lat = float(parts[0])
+        rec_lon = float(parts[1])
+        selected[mapped].append((current["src_lon"], current["src_lat"], rec_lon, rec_lat))
+        stations.add((current["src_lon"], current["src_lat"]))
+        stations.add((rec_lon, rec_lat))
+
+if not stations:
+    raise ValueError("No stations found for requested periods.")
+
+lons = [item[0] for item in stations]
+lats = [item[1] for item in stations]
+lon_min = min(lons)
+lon_max = max(lons)
+lat_min = min(lats)
+lat_max = max(lats)
+lon_pad = max((lon_max - lon_min) * margin_fraction, 1e-4)
+lat_pad = max((lat_max - lat_min) * margin_fraction, 1e-4)
+
+sta_file = tmp_dir / "stations.dat"
+with sta_file.open("w", encoding="utf-8") as f:
+    for lon, lat in sorted(stations):
+        f.write(f"{lon:.8f} {lat:.8f}\n")
+
+if len(unique_periods) <= 4:
+    cols = min(2, len(unique_periods))
+else:
+    cols = min(3, len(unique_periods))
+rows = int(math.ceil(len(unique_periods) / cols))
+meta_out = tmp_dir / "meta.env"
+with meta_out.open("w", encoding="utf-8") as f:
+    f.write(f"REGION={lon_min - lon_pad:.8f}/{lon_max + lon_pad:.8f}/{lat_min - lat_pad:.8f}/{lat_max + lat_pad:.8f}\n")
+    f.write(f"STA_FILE={sta_file}\n")
+    f.write(f"N_PERIODS={len(unique_periods)}\n")
+    f.write(f"NCOLS={cols}\n")
+    f.write(f"NROWS={rows}\n")
+    for idx, period in enumerate(unique_periods):
+        ray_file = tmp_dir / f"raypaths_{idx:02d}.dat"
+        with ray_file.open("w", encoding="utf-8") as ray:
+            for lon1, lat1, lon2, lat2 in selected[period]:
+                ray.write(">\n")
+                ray.write(f"{lon1:.8f} {lat1:.8f}\n")
+                ray.write(f"{lon2:.8f} {lat2:.8f}\n")
+        f.write(f"PERIOD_{idx}={period:.6f}\n")
+        f.write(f"RAY_FILE_{idx}={ray_file}\n")
+        f.write(f"PATH_COUNT_{idx}={len(selected[period])}\n")
+PY
+
+source "$TMP_DIR/meta.env"
+
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_PREFIX="${OUTPUT_DIR%/}/ray_subplot_${VEL_TYPE}"
+
+gmt begin "$OUTPUT_PREFIX" "$FORMATS"
+  gmt set FORMAT_GEO_MAP ddd.xx \
+          FONT_LABEL 5p,Times-Roman \
+          FONT_ANNOT_PRIMARY 5p,Times-Roman \
+          MAP_FRAME_TYPE fancy \
+          MAP_FRAME_PEN 0.05p,black \
+          MAP_FRAME_WIDTH 1p \
+          MAP_TICK_PEN_PRIMARY 0.05p,black \
+          MAP_TICK_PEN_SECONDARY 0.05p,black \
+          MAP_TICK_LENGTH_PRIMARY 0c/0c \
+          MAP_TICK_LENGTH_SECONDARY 0c/0c \
+          MAP_ANNOT_OFFSET_PRIMARY 0.06c
+
+  gmt subplot begin "${NROWS}x${NCOLS}" -Fs5.2c/4.6c -M0.16c/0.16c -R"$REGION" -JM5.2c
+    for ((idx=0; idx<N_PERIODS; idx++)); do
+      eval "RAY_FILE=\$RAY_FILE_${idx}"
+      eval "PERIOD=\$PERIOD_${idx}"
+      gmt subplot set "$idx"
+      if [[ -n "$BACKGROUND_GRID" && -f "$BACKGROUND_GRID" ]]; then
+        gmt grdcut "$BACKGROUND_GRID" -R"$REGION" -G"$TMP_DIR/bg_${idx}.grd"
+        gmt grdgradient "$TMP_DIR/bg_${idx}.grd" -A315 -Ne0.6 -G"$TMP_DIR/bg_${idx}_i.grd"
+        gmt grdimage "$TMP_DIR/bg_${idx}.grd" -Cgray -I"$TMP_DIR/bg_${idx}_i.grd" -Bxa -Bya -BWseN
+      else
+        gmt basemap -Bxa -Bya -BWseN+gwhite
+      fi
+      gmt plot "$RAY_FILE" -W"$LINE_WIDTH",black
+      gmt plot "$STA_FILE" -St"$STATION_SIZE" -W0.08p,red -Gred
+      gmt inset begin -DjTR+w0.64c/0.32c+o0.06c/0.05c -F+g235+p0.05p
+        printf "0.5 0.5 %ss\n" "$(printf '%.1f' "$PERIOD")" | \
+          gmt text -R0/1/0/1 -JX0.64c/0.32c -F+f8p,Times-Roman+jCM
+      gmt inset end
+    done
+  gmt subplot end
+gmt end
+
+echo "output_prefix: $OUTPUT_PREFIX"
+echo "vel_type: $VEL_TYPE"
+echo "periods: $PERIODS"

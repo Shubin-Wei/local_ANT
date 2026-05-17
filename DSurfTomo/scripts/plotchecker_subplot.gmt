@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash plotchecker_subplot.gmt \
+    --project-dir /path/to/project_test \
+    --input-depth 0.0 \
+    --recover-depths 0.0,0.2,0.4,0.6,0.8 \
+    --output-dir /path/to/output \
+    [--pert-range 0.5] \
+    [--subplot-width 5.2c] \
+    [--subplot-height 4.6c] \
+    [--formats png,pdf]
+
+Notes:
+  - project-dir must contain: DSurfTomo.in, Vs_model.real, DSurfTomo.inSyn.dat, MOD
+  - First subplot: input perturbation (Vs_model.real - MOD) at --input-depth
+  - Remaining subplots: recovered perturbation (DSurfTomo.inSyn.dat - MOD) at each depth
+  - Perturbation = velocity - reference model (MOD)
+  - --pert-range: symmetric range for colorbar, e.g. 0.5 means -0.5 to 0.5 km/s
+EOF
+}
+
+# ---- defaults ----
+PROJECT_DIR=""
+INPUT_DEPTH=""
+RECOVER_DEPTHS=""
+OUTPUT_DIR=""
+PERT_RANGE="auto"
+SUBPLOT_W="5.2c"
+SUBPLOT_H="4.6c"
+FORMATS="png,pdf"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project-dir)     PROJECT_DIR="$2";     shift 2 ;;
+    --input-depth)     INPUT_DEPTH="$2";     shift 2 ;;
+    --recover-depths)  RECOVER_DEPTHS="$2";  shift 2 ;;
+    --output-dir)      OUTPUT_DIR="$2";      shift 2 ;;
+    --pert-range)      PERT_RANGE="$2";      shift 2 ;;
+    --subplot-width)   SUBPLOT_W="$2";       shift 2 ;;
+    --subplot-height)  SUBPLOT_H="$2";       shift 2 ;;
+    --formats)         FORMATS="$2";         shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+  esac
+done
+
+if [[ -z "$PROJECT_DIR" || -z "$INPUT_DEPTH" || -z "$RECOVER_DEPTHS" || -z "$OUTPUT_DIR" ]]; then
+  echo "Error: --project-dir, --input-depth, --recover-depths, --output-dir are required." >&2
+  usage
+  exit 1
+fi
+
+INPUT_FILE="${PROJECT_DIR%/}/DSurfTomo.in"
+VS_REAL="${PROJECT_DIR%/}/Vs_model.real"
+SYN_DAT="${PROJECT_DIR%/}/DSurfTomo.inSyn.dat"
+MOD_FILE="${PROJECT_DIR%/}/MOD"
+
+for f in "$INPUT_FILE" "$VS_REAL" "$SYN_DAT" "$MOD_FILE"; do
+  if [[ ! -f "$f" ]]; then
+    echo "Error: $(basename "$f") not found in $PROJECT_DIR" >&2
+    exit 1
+  fi
+done
+
+# ---- parse grid parameters from DSurfTomo.in ----
+read_param_line() {
+  sed -n "${1}p" "$INPUT_FILE" | awk '{for(i=1;i<=NF;i++){if($i~/^[0-9.eE+-]+$/){printf "%s ", $i}}}'
+}
+
+GRID_LINE=$(read_param_line 5)
+GEO_LINE=$(read_param_line 6)
+DV_LINE=$(read_param_line 7)
+
+NX=$(echo "$GRID_LINE" | awk '{print $1}')
+NY=$(echo "$GRID_LINE" | awk '{print $2}')
+NZ=$(echo "$GRID_LINE" | awk '{print $3}')
+GOXD=$(echo "$GEO_LINE" | awk '{print $1}')
+GOZD=$(echo "$GEO_LINE" | awk '{print $2}')
+DVXD=$(echo "$DV_LINE" | awk '{print $1}')
+DVZD=$(echo "$DV_LINE" | awk '{print $2}')
+
+echo "Grid: nx=$NX ny=$NY nz=$NZ goxd=$GOXD gozd=$GOZD dvxd=$DVXD dvzd=$DVZD"
+
+# ---- compute map region ----
+LAT_MAX=$(echo "$GOXD" | awk '{printf "%.8f", $1}')
+LAT_MIN=$(echo "$GOXD $DVXD $NX" | awk '{printf "%.8f", $1 - $2*($3-3)}')
+LON_MIN=$(echo "$GOZD" | awk '{printf "%.8f", $1}')
+LON_MAX=$(echo "$GOZD $DVZD $NY" | awk '{printf "%.8f", $1 + $2*($3-3)}')
+
+RMAP="-R${LON_MIN}/${LON_MAX}/${LAT_MIN}/${LAT_MAX}"
+IGRID="-I${DVZD}/${DVXD}"
+echo "Region: $RMAP"
+
+# ---- temp directory ----
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/plotchecker.XXXXXX")"
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
+
+export GMT_USERDIR="$TMP_DIR/gmt_user"
+export GMT_TMPDIR="$TMP_DIR/gmt_tmp"
+mkdir -p "$GMT_USERDIR" "$GMT_TMPDIR"
+
+# ---- extract 1D reference model from MOD ----
+# MOD format: line1=depths, then ny lines per depth layer (each with nx values)
+# All values in a layer are identical (1D model).
+MOD_1D="$TMP_DIR/mod_1d.dat"
+awk -v ny="$NY" '
+  NR==1 { for(i=1;i<=NF;i++) d[i]=$i; nd=NF; next }
+  { layer=int((NR-2)/ny)+1;
+    if(!seen[layer]) { seen[layer]=1; printf "%.5f %.6f\n", d[layer], $1 }
+  }
+' "$MOD_FILE" > "$MOD_1D"
+
+echo "Reference 1D model:"
+cat "$MOD_1D"
+
+# ---- parse depths ----
+IFS=',' read -ra REC_DEPTH_ARR <<< "$RECOVER_DEPTHS"
+N_REC=${#REC_DEPTH_ARR[@]}
+# Total panels = 1 (input) + N_REC (recovered)
+N_PANELS=$((1 + N_REC))
+echo "Panels: 1 input + $N_REC recovered = $N_PANELS total"
+
+# ---- compute subplot layout ----
+if [[ $N_PANELS -le 4 ]]; then
+  NCOLS=$(( N_PANELS < 2 ? N_PANELS : 2 ))
+else
+  NCOLS=$(( N_PANELS < 3 ? N_PANELS : 3 ))
+fi
+NROWS=$(( (N_PANELS + NCOLS - 1) / NCOLS ))
+echo "Layout: ${NROWS}x${NCOLS}"
+
+# ---- function: extract perturbation at a given depth ----
+# Args: $1=data_file $2=depth $3=output_file
+extract_perturbation() {
+  local data_file="$1" dep="$2" out_file="$3"
+  # Get reference velocity at this depth
+  local ref_vel
+  ref_vel=$(awk -v d="$dep" '{if(sprintf("%.5f",$1)==sprintf("%.5f",d)){print $2; exit}}' "$MOD_1D")
+  if [[ -z "$ref_vel" ]]; then
+    echo "Warning: no reference velocity for depth=$dep, using 0" >&2
+    ref_vel="0"
+  fi
+  # Extract and compute perturbation: lon lat (vel - ref_vel)
+  awk -v dep="$dep" -v ref="$ref_vel" \
+    '{if(sprintf("%.5f",$3)==sprintf("%.5f",dep)) printf "%s %s %.6f\n", $1, $2, $4-ref}' \
+    "$data_file" > "$out_file"
+}
+
+# ---- prepare all panels ----
+GLOBAL_PMIN=""
+GLOBAL_PMAX=""
+
+# Panel 0: input model perturbation
+echo "Extracting input model perturbation at depth=$INPUT_DEPTH ..."
+PERT_FILE="$TMP_DIR/pert_0.dat"
+GRD_FILE="$TMP_DIR/pert_0.grd"
+extract_perturbation "$VS_REAL" "$INPUT_DEPTH" "$PERT_FILE"
+
+NLINES=$(wc -l < "$PERT_FILE")
+if [[ $NLINES -eq 0 ]]; then
+  echo "Error: no data for input depth=$INPUT_DEPTH" >&2
+  exit 1
+fi
+gmt xyz2grd "$PERT_FILE" $RMAP $IGRID -G"$GRD_FILE"
+
+read -r PMIN PMAX <<< "$(awk 'NR==1{mn=$3;mx=$3} {if($3<mn)mn=$3; if($3>mx)mx=$3} END{printf "%.6f %.6f", mn, mx}' "$PERT_FILE")"
+GLOBAL_PMIN="$PMIN"; GLOBAL_PMAX="$PMAX"
+
+# Panels 1..N: recovered model perturbations
+for ((j=0; j<N_REC; j++)); do
+  DEP="${REC_DEPTH_ARR[$j]}"
+  IDX=$((j + 1))
+  echo "Extracting recovered perturbation at depth=$DEP ..."
+  PERT_FILE="$TMP_DIR/pert_${IDX}.dat"
+  GRD_FILE="$TMP_DIR/pert_${IDX}.grd"
+  extract_perturbation "$SYN_DAT" "$DEP" "$PERT_FILE"
+
+  NLINES=$(wc -l < "$PERT_FILE")
+  if [[ $NLINES -eq 0 ]]; then
+    echo "Warning: no data for recovered depth=$DEP" >&2
+    continue
+  fi
+  gmt xyz2grd "$PERT_FILE" $RMAP $IGRID -G"$GRD_FILE"
+
+  read -r PMIN PMAX <<< "$(awk 'NR==1{mn=$3;mx=$3} {if($3<mn)mn=$3; if($3>mx)mx=$3} END{printf "%.6f %.6f", mn, mx}' "$PERT_FILE")"
+  GLOBAL_PMIN=$(awk -v a="$GLOBAL_PMIN" -v b="$PMIN" 'BEGIN{printf "%.6f", (a<b)?a:b}')
+  GLOBAL_PMAX=$(awk -v a="$GLOBAL_PMAX" -v b="$PMAX" 'BEGIN{printf "%.6f", (a>b)?a:b}')
+done
+
+# ---- compute symmetric colorbar range ----
+if [[ "$PERT_RANGE" == "auto" ]]; then
+  # Use the max absolute value, rounded up
+  ABS_MAX=$(awk -v a="$GLOBAL_PMIN" -v b="$GLOBAL_PMAX" 'BEGIN{
+    va=(a<0)?-a:a; vb=(b<0)?-b:b;
+    mx=(va>vb)?va:vb;
+    printf "%.1f", mx+0.05
+  }')
+  CB_RANGE="-${ABS_MAX}/${ABS_MAX}/0.01"
+else
+  CB_RANGE="-${PERT_RANGE}/${PERT_RANGE}/0.01"
+fi
+echo "Colorbar range: $CB_RANGE"
+
+# ---- panel labels ----
+PANEL_LABELS=()
+PANEL_LABELS+=("Input model")
+for ((j=0; j<N_REC; j++)); do
+  PANEL_LABELS+=("z = ${REC_DEPTH_ARR[$j]} km")
+done
+
+# ---- letter labels (a) (b) (c) ... ----
+LETTERS=(a b c d e f g h i j k l)
+
+# ---- plot ----
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_PREFIX="${OUTPUT_DIR%/}/checkerboard_subplot"
+
+gmt begin "$OUTPUT_PREFIX" "$FORMATS"
+  gmt set FORMAT_GEO_MAP ddd.xx \
+          FONT_LABEL 5p,Times-Roman \
+          FONT_ANNOT_PRIMARY 5p,Times-Roman \
+          FONT_ANNOT_SECONDARY 5p,Times-Roman \
+          FONT_TITLE 6p,Times-Roman \
+          MAP_FRAME_TYPE fancy \
+          MAP_FRAME_PEN 0.05p,black \
+          MAP_FRAME_WIDTH 1p \
+          MAP_TICK_PEN_PRIMARY 0.05p,black \
+          MAP_TICK_PEN_SECONDARY 0.05p,black \
+          MAP_TICK_LENGTH_PRIMARY 0c/0c \
+          MAP_TICK_LENGTH_SECONDARY 0c/0c \
+          MAP_ANNOT_OFFSET_PRIMARY 0.06c
+
+  # create diverging cpt: polar (red-white-blue)
+  gmt makecpt -Cpolar -D -T"$CB_RANGE" -H > "$TMP_DIR/pert.cpt"
+
+  gmt subplot begin "${NROWS}x${NCOLS}" \
+    -Fs"${SUBPLOT_W}/${SUBPLOT_H}" \
+    -M0.16c/0.16c \
+    "$RMAP" \
+    -JM"${SUBPLOT_W}"
+
+    for ((i=0; i<N_PANELS; i++)); do
+      GRD_FILE="$TMP_DIR/pert_${i}.grd"
+
+      if [[ ! -f "$GRD_FILE" ]]; then
+        continue
+      fi
+
+      # determine row/col for frame control
+      ROW=$((i / NCOLS))
+      COL=$((i % NCOLS))
+
+      FRAME="WsNe"
+      if [[ $ROW -eq $((NROWS-1)) ]]; then
+        FRAME="${FRAME//s/S}"
+      fi
+      if [[ $COL -gt 0 ]]; then
+        FRAME="${FRAME//W/w}"
+      fi
+      if [[ $COL -eq $((NCOLS-1)) ]]; then
+        FRAME="${FRAME//e/E}"
+      fi
+
+      gmt subplot set "$i"
+
+      # plot perturbation image
+      gmt grdimage "$GRD_FILE" -C"$TMP_DIR/pert.cpt" -E200 -Bxa -Bya -B"$FRAME"
+
+      # panel label inset (top-left): "(a) Input model" or "(b) z = 0.2 km"
+      LABEL_TEXT="(${LETTERS[$i]}) ${PANEL_LABELS[$i]}"
+      # compute inset width based on label length
+      NCHARS=${#LABEL_TEXT}
+      INSET_W=$(awk -v n="$NCHARS" 'BEGIN{w=n*0.13+0.18; if(w<1.00)w=1.00; printf "%.2fc", w}')
+      INSET_H="0.44c"
+
+      gmt inset begin -DjTL+w${INSET_W}/${INSET_H}+o0.06c/0.05c -F+gwhite@30+p0.05p
+        printf "0.5 0.5 %s\n" "$LABEL_TEXT" | \
+          gmt text -R0/1/0/1 -JX${INSET_W}/${INSET_H} -F+f9p,Times-Roman+jCM
+      gmt inset end
+    done
+
+  gmt subplot end
+
+  # colorbar below the subplots
+  gmt colorbar -C"$TMP_DIR/pert.cpt" -DJBC+w8c/0.3c+o0c/0.6c+h -Ba0.1f0.05 -B+l"Velocity perturbation (km/s)"
+
+gmt end
+
+echo ""
+echo "Output: ${OUTPUT_PREFIX}.{${FORMATS}}"

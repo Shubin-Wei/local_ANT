@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash plotdepth_subplot.gmt \
+    --project-dir /path/to/project \
+    --depths 0.0,0.2,0.4,0.6,0.8,1.0 \
+    --output-dir /path/to/output \
+    [--model-file DSurfTomo.inMeasure.dat] \
+    [--vel-range auto] \
+    [--cpt seis] \
+    [--subplot-width 5.2c] \
+    [--subplot-height 4.6c] \
+    [--formats png,pdf]
+
+Notes:
+  - Reads grid parameters (nx, ny, goxd, gozd, dvxd, dvzd) from DSurfTomo.in.
+  - Model file format: lon lat depth velocity (4 columns).
+  - --vel-range: "auto" to compute per-depth, or fixed like "0.8/3.0/0.05".
+  - One subplot per depth; layout is auto-arranged in a grid.
+EOF
+}
+
+# ---- defaults ----
+PROJECT_DIR=""
+DEPTHS=""
+OUTPUT_DIR=""
+MODEL_FILE="DSurfTomo.inMeasure.dat"
+VEL_RANGE="auto"
+CPT_NAME="seis"
+SUBPLOT_W="5.2c"
+SUBPLOT_H="4.6c"
+FORMATS="png,pdf"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project-dir)  PROJECT_DIR="$2"; shift 2 ;;
+    --depths)       DEPTHS="$2";      shift 2 ;;
+    --output-dir)   OUTPUT_DIR="$2";  shift 2 ;;
+    --model-file)   MODEL_FILE="$2";  shift 2 ;;
+    --vel-range)    VEL_RANGE="$2";   shift 2 ;;
+    --cpt)          CPT_NAME="$2";    shift 2 ;;
+    --subplot-width)  SUBPLOT_W="$2"; shift 2 ;;
+    --subplot-height) SUBPLOT_H="$2"; shift 2 ;;
+    --formats)      FORMATS="$2";     shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+  esac
+done
+
+if [[ -z "$PROJECT_DIR" || -z "$DEPTHS" || -z "$OUTPUT_DIR" ]]; then
+  echo "Error: --project-dir, --depths, and --output-dir are required." >&2
+  usage
+  exit 1
+fi
+
+INPUT_FILE="${PROJECT_DIR%/}/DSurfTomo.in"
+MODEL_PATH="${PROJECT_DIR%/}/${MODEL_FILE}"
+
+if [[ ! -f "$INPUT_FILE" ]]; then
+  echo "Error: DSurfTomo.in not found in $PROJECT_DIR" >&2
+  exit 1
+fi
+if [[ ! -f "$MODEL_PATH" ]]; then
+  echo "Error: $MODEL_FILE not found in $PROJECT_DIR" >&2
+  exit 1
+fi
+
+# ---- parse grid parameters from DSurfTomo.in ----
+# Line 5: nx ny nz
+# Line 6: goxd gozd
+# Line 7: dvxd dvzd
+read_param_line() {
+  sed -n "${1}p" "$INPUT_FILE" | awk '{for(i=1;i<=NF;i++){if($i~/^[0-9.eE+-]+$/){printf "%s ", $i}}}'
+}
+
+GRID_LINE=$(read_param_line 5)
+GEO_LINE=$(read_param_line 6)
+DV_LINE=$(read_param_line 7)
+
+NX=$(echo "$GRID_LINE" | awk '{print $1}')
+NY=$(echo "$GRID_LINE" | awk '{print $2}')
+GOXD=$(echo "$GEO_LINE" | awk '{print $1}')
+GOZD=$(echo "$GEO_LINE" | awk '{print $2}')
+DVXD=$(echo "$DV_LINE" | awk '{print $1}')
+DVZD=$(echo "$DV_LINE" | awk '{print $2}')
+
+echo "Grid: nx=$NX ny=$NY goxd=$GOXD gozd=$GOZD dvxd=$DVXD dvzd=$DVZD"
+
+# ---- compute map region ----
+# goxd is upper-left latitude, gozd is upper-left longitude
+# lat decreases southward, lon increases eastward
+LAT_MAX=$(echo "$GOXD" | awk '{printf "%.8f", $1}')
+LAT_MIN=$(echo "$GOXD $DVXD $NX" | awk '{printf "%.8f", $1 - $2*($3-3)}')
+LON_MIN=$(echo "$GOZD" | awk '{printf "%.8f", $1}')
+LON_MAX=$(echo "$GOZD $DVZD $NY" | awk '{printf "%.8f", $1 + $2*($3-3)}')
+
+RMAP="-R${LON_MIN}/${LON_MAX}/${LAT_MIN}/${LAT_MAX}"
+IGRID="-I${DVZD}/${DVXD}"
+echo "Region: $RMAP"
+echo "Grid interval: $IGRID"
+
+# ---- temp directory ----
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/plotdepth.XXXXXX")"
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
+
+export GMT_USERDIR="$TMP_DIR/gmt_user"
+export GMT_TMPDIR="$TMP_DIR/gmt_tmp"
+mkdir -p "$GMT_USERDIR" "$GMT_TMPDIR"
+
+# ---- parse depths ----
+IFS=',' read -ra DEPTH_ARR <<< "$DEPTHS"
+N_DEPTHS=${#DEPTH_ARR[@]}
+echo "Depths ($N_DEPTHS): ${DEPTH_ARR[*]}"
+
+# ---- compute subplot layout ----
+if [[ $N_DEPTHS -le 4 ]]; then
+  NCOLS=$(( N_DEPTHS < 2 ? N_DEPTHS : 2 ))
+else
+  NCOLS=$(( N_DEPTHS < 3 ? N_DEPTHS : 3 ))
+fi
+NROWS=$(( (N_DEPTHS + NCOLS - 1) / NCOLS ))
+echo "Layout: ${NROWS}x${NCOLS}"
+
+# ---- prepare per-depth data and grids ----
+GLOBAL_VMIN=""
+GLOBAL_VMAX=""
+for ((i=0; i<N_DEPTHS; i++)); do
+  DEP="${DEPTH_ARR[$i]}"
+  SLICE_FILE="$TMP_DIR/slice_${i}.dat"
+  GRD_FILE="$TMP_DIR/slice_${i}.grd"
+
+  # extract lon lat vel for this depth
+  awk -v dep="$DEP" '{if(sprintf("%.5f",$3)==sprintf("%.5f",dep)) print $1,$2,$4}' "$MODEL_PATH" > "$SLICE_FILE"
+
+  NLINES=$(wc -l < "$SLICE_FILE")
+  if [[ $NLINES -eq 0 ]]; then
+    echo "Warning: no data found for depth=$DEP km" >&2
+    continue
+  fi
+
+  # grid it
+  gmt xyz2grd "$SLICE_FILE" $RMAP $IGRID -G"$GRD_FILE"
+
+  # track global velocity range
+  read -r SLVMIN SLVMAX <<< "$(awk 'NR==1{mn=$3;mx=$3} {if($3<mn)mn=$3; if($3>mx)mx=$3} END{printf "%.6f %.6f", mn, mx}' "$SLICE_FILE")"
+  if [[ -z "$GLOBAL_VMIN" ]]; then
+    GLOBAL_VMIN="$SLVMIN"; GLOBAL_VMAX="$SLVMAX"
+  else
+    GLOBAL_VMIN=$(awk -v a="$GLOBAL_VMIN" -v b="$SLVMIN" 'BEGIN{printf "%.6f", (a<b)?a:b}')
+    GLOBAL_VMAX=$(awk -v a="$GLOBAL_VMAX" -v b="$SLVMAX" 'BEGIN{printf "%.6f", (a>b)?a:b}')
+  fi
+done
+
+# compute colorbar range
+if [[ "$VEL_RANGE" == "auto" ]]; then
+  CB_VMIN=$(awk -v v="$GLOBAL_VMIN" 'BEGIN{printf "%.1f", v-0.05}')
+  CB_VMAX=$(awk -v v="$GLOBAL_VMAX" 'BEGIN{printf "%.1f", v+0.05}')
+  CB_VSTEP=$(awk -v a="$CB_VMIN" -v b="$CB_VMAX" 'BEGIN{s=(b-a)/20; if(s<=0)s=0.05; printf "%.2f",s}')
+  CB_RANGE="${CB_VMIN}/${CB_VMAX}/${CB_VSTEP}"
+else
+  CB_RANGE="$VEL_RANGE"
+fi
+echo "Colorbar range: $CB_RANGE"
+
+# ---- plot ----
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_PREFIX="${OUTPUT_DIR%/}/depth_subplot"
+INSET_BOX_STYLE="+g235+p0.05p"
+INSET_FONT="4.6p,Times-Roman"
+INSET_W="0.52c"
+INSET_H="0.22c"
+INSET_XOFF="0.06c"
+INSET_YOFF="0.05c"
+
+gmt begin "$OUTPUT_PREFIX" "$FORMATS"
+  gmt set FORMAT_GEO_MAP ddd.xx \
+          FONT_LABEL 5p,Times-Roman \
+          FONT_ANNOT_PRIMARY 5p,Times-Roman \
+          MAP_FRAME_TYPE fancy \
+          MAP_FRAME_PEN 0.05p,black \
+          MAP_FRAME_WIDTH 1p \
+          MAP_TICK_PEN_PRIMARY 0.05p,black \
+          MAP_TICK_PEN_SECONDARY 0.05p,black \
+          MAP_TICK_LENGTH_PRIMARY 0c/0c \
+          MAP_TICK_LENGTH_SECONDARY 0c/0c \
+          MAP_ANNOT_OFFSET_PRIMARY 0.06c
+
+  # create a single shared cpt inside the session
+  gmt makecpt -C"$CPT_NAME" -D -T"$CB_RANGE" -H > "$TMP_DIR/shared.cpt"
+
+  gmt subplot begin "${NROWS}x${NCOLS}" \
+    -Fs"${SUBPLOT_W}/${SUBPLOT_H}" \
+    -M0.16c/0.16c \
+    "$RMAP" \
+    -JM"${SUBPLOT_W}"
+
+    for ((i=0; i<N_DEPTHS; i++)); do
+      DEP="${DEPTH_ARR[$i]}"
+      GRD_FILE="$TMP_DIR/slice_${i}.grd"
+
+      if [[ ! -f "$GRD_FILE" ]]; then
+        continue
+      fi
+
+      # determine row/col position for frame control
+      ROW=$((i / NCOLS))
+      COL=$((i % NCOLS))
+
+      # Match the ray subplot frame style while keeping annotations only on outer edges.
+      FRAME="WsNe"
+      # bottom row gets south annotations
+      if [[ $ROW -eq $((NROWS-1)) ]]; then
+        FRAME="${FRAME//s/S}"
+      fi
+      # top row gets north annotations (already N)
+      # left column gets west annotations (already W)
+      if [[ $COL -gt 0 ]]; then
+        FRAME="${FRAME//W/w}"
+      fi
+      # right column gets east annotations
+      if [[ $COL -eq $((NCOLS-1)) ]]; then
+        FRAME="${FRAME//e/E}"
+      fi
+
+      gmt subplot set "$i"
+
+      # plot velocity image
+      gmt grdimage "$GRD_FILE" -C"$TMP_DIR/shared.cpt" -E200 -Bxa -Bya -B"$FRAME"
+
+      # depth label inset (top-right corner)
+      gmt inset begin -DjTR+w${INSET_W}/${INSET_H}+o${INSET_XOFF}/${INSET_YOFF} -F"$INSET_BOX_STYLE"
+        printf "0.5 0.5 %s km\n" "$DEP" | \
+          gmt text -R0/1/0/1 -JX${INSET_W}/${INSET_H} -F+f"$INSET_FONT"+jCM
+      gmt inset end
+    done
+
+  gmt subplot end
+
+  # colorbar below the subplots
+  gmt colorbar -C"$TMP_DIR/shared.cpt" -DJBC+w8c/0.3c+o0c/0.6c+h -Ba0.2f0.1 -B+l"S velocity (km/s)"
+
+gmt end
+
+echo ""
+echo "Output: ${OUTPUT_PREFIX}.{${FORMATS}}"
+echo "Depths plotted: ${DEPTH_ARR[*]}"

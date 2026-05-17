@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash plotcross_subplot.gmt \
+    --project-dir /path/to/project \
+    --profiles "lon1/lat1/lon2/lat2,lon1/lat1/lon2/lat2,..." \
+    --output-dir /path/to/output \
+    [--model-file DSurfTomo.inMeasure.dat] \
+    [--vel-range auto] \
+    [--cpt seis] \
+    [--di-int 0.1] \
+    [--profile-width 6c] \
+    [--profile-height 2c] \
+    [--formats png,pdf]
+
+Notes:
+  - Reads grid parameters from DSurfTomo.in.
+  - Each profile is "start_lon/start_lat/end_lon/end_lat".
+  - --di-int: sampling interval along profile (km).
+  - Profiles are stacked vertically as subplots (one column).
+  - Shared seis colorbar at the bottom.
+
+Example:
+  bash plotcross_subplot.gmt \
+    --project-dir ./dfw_linear \
+    --profiles "118.54/42.28/118.54/42.37,118.480/42.295/118.610/42.360" \
+    --output-dir ./output_cross
+EOF
+}
+
+# ---- defaults ----
+PROJECT_DIR=""
+PROFILES=""
+OUTPUT_DIR=""
+MODEL_FILE="DSurfTomo.inMeasure.dat"
+VEL_RANGE="auto"
+CPT_NAME="seis"
+DI_INT="0.1"
+PROF_W="6c"
+PROF_H="2c"
+FORMATS="png,pdf"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project-dir)    PROJECT_DIR="$2";  shift 2 ;;
+    --profiles)       PROFILES="$2";     shift 2 ;;
+    --output-dir)     OUTPUT_DIR="$2";   shift 2 ;;
+    --model-file)     MODEL_FILE="$2";   shift 2 ;;
+    --vel-range)      VEL_RANGE="$2";    shift 2 ;;
+    --cpt)            CPT_NAME="$2";     shift 2 ;;
+    --di-int)         DI_INT="$2";       shift 2 ;;
+    --profile-width)  PROF_W="$2";       shift 2 ;;
+    --profile-height) PROF_H="$2";       shift 2 ;;
+    --formats)        FORMATS="$2";      shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+  esac
+done
+
+if [[ -z "$PROJECT_DIR" || -z "$PROFILES" || -z "$OUTPUT_DIR" ]]; then
+  echo "Error: --project-dir, --profiles and --output-dir are required." >&2
+  usage
+  exit 1
+fi
+
+INPUT_FILE="${PROJECT_DIR%/}/DSurfTomo.in"
+MODEL_PATH="${PROJECT_DIR%/}/${MODEL_FILE}"
+
+for f in "$INPUT_FILE" "$MODEL_PATH"; do
+  if [[ ! -f "$f" ]]; then
+    echo "Error: $(basename "$f") not found in $PROJECT_DIR" >&2
+    exit 1
+  fi
+done
+
+# ---- parse grid parameters from DSurfTomo.in ----
+read_param_line() {
+  sed -n "${1}p" "$INPUT_FILE" | awk '{for(i=1;i<=NF;i++){if($i~/^[0-9.eE+-]+$/){printf "%s ", $i}}}'
+}
+
+GRID_LINE=$(read_param_line 5)
+GEO_LINE=$(read_param_line 6)
+DV_LINE=$(read_param_line 7)
+
+NX=$(echo "$GRID_LINE" | awk '{print $1}')
+NY=$(echo "$GRID_LINE" | awk '{print $2}')
+GOXD=$(echo "$GEO_LINE" | awk '{print $1}')
+GOZD=$(echo "$GEO_LINE" | awk '{print $2}')
+DVXD=$(echo "$DV_LINE" | awk '{print $1}')
+DVZD=$(echo "$DV_LINE" | awk '{print $2}')
+
+echo "Grid: nx=$NX ny=$NY goxd=$GOXD gozd=$GOZD dvxd=$DVXD dvzd=$DVZD"
+
+# ---- compute map region (for surface gridding) ----
+LAT_MAX=$(awk -v v="$GOXD" 'BEGIN{printf "%.8f",v}')
+LAT_MIN=$(awk -v v="$GOXD" -v d="$DVXD" -v n="$NX" 'BEGIN{printf "%.8f",v-d*(n-3)}')
+LON_MIN=$(awk -v v="$GOZD" 'BEGIN{printf "%.8f",v}')
+LON_MAX=$(awk -v v="$GOZD" -v d="$DVZD" -v n="$NY" 'BEGIN{printf "%.8f",v+d*(n-3)}')
+
+MAP_REGION="-R${LON_MIN}/${LON_MAX}/${LAT_MIN}/${LAT_MAX}"
+GRID_INT="-I${DVZD}/${DVXD}"
+echo "Map region: $MAP_REGION"
+
+# ---- temp directory ----
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/plotcross.XXXXXX")"
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
+
+export GMT_USERDIR="$TMP_DIR/gmt_user"
+export GMT_TMPDIR="$TMP_DIR/gmt_tmp"
+mkdir -p "$GMT_USERDIR" "$GMT_TMPDIR"
+
+# ---- parse profiles ----
+IFS=',' read -ra PROF_ARR <<< "$PROFILES"
+N_PROF=${#PROF_ARR[@]}
+echo "Profiles: $N_PROF"
+
+# ---- extract unique depth layers ----
+DEPTHS_FILE="$TMP_DIR/depths.txt"
+awk '{print $3}' "$MODEL_PATH" | sort -nu > "$DEPTHS_FILE"
+echo "Depth layers: $(tr '\n' ' ' < "$DEPTHS_FILE")"
+
+# ---- build 2D cross-section for each profile ----
+GLOBAL_VMIN=""
+GLOBAL_VMAX=""
+GLOBAL_DMAX=""
+
+for ((p=0; p<N_PROF; p++)); do
+  PROF="${PROF_ARR[$p]}"
+  # parse lon1/lat1/lon2/lat2
+  P_LON1=$(echo "$PROF" | awk -F'/' '{print $1}')
+  P_LAT1=$(echo "$PROF" | awk -F'/' '{print $2}')
+  P_LON2=$(echo "$PROF" | awk -F'/' '{print $3}')
+  P_LAT2=$(echo "$PROF" | awk -F'/' '{print $4}')
+  echo "Profile $((p+1)): ($P_LON1, $P_LAT1) -> ($P_LON2, $P_LAT2)"
+
+  PROFILE_DAT="$TMP_DIR/profile_${p}.xzv"
+  > "$PROFILE_DAT"
+
+  # for each depth layer: grid -> extract along track
+  while read -r LAYER; do
+    LAYER_GRD="$TMP_DIR/layer_${p}.grd"
+    TRACK_FILE="$TMP_DIR/track_${p}.dat"
+
+    # extract this depth layer and grid it
+    awk -v dep="$LAYER" '{if(sprintf("%.5f",$3)==sprintf("%.5f",dep)) print $1,$2,$4}' "$MODEL_PATH" | \
+      gmt surface -G"$LAYER_GRD" $MAP_REGION $GRID_INT -T0 2>/dev/null
+
+    # generate track points along the profile
+    gmt project -C"${P_LON1}/${P_LAT1}" -E"${P_LON2}/${P_LAT2}" -G"$DI_INT" -Q > "$TRACK_FILE"
+
+    # sample grid along track: output = distance, depth, velocity
+    gmt grdtrack "$TRACK_FILE" -G"$LAYER_GRD" | \
+      awk -v d="$LAYER" '{print $3, d, $4}' >> "$PROFILE_DAT"
+
+    rm -f "$LAYER_GRD" "$TRACK_FILE"
+  done < "$DEPTHS_FILE"
+
+  # determine profile region (distance vs depth)
+  read -r DMIN DMAX ZMIN ZMAX VMIN VMAX <<< "$(awk '
+    NR==1{dmin=$1;dmax=$1;zmin=$2;zmax=$2;vmin=$3;vmax=$3; next}
+    {if($1<dmin)dmin=$1; if($1>dmax)dmax=$1
+     if($2<zmin)zmin=$2; if($2>zmax)zmax=$2
+     if($3<vmin)vmin=$3; if($3>vmax)vmax=$3}
+    END{printf "%.6f %.6f %.6f %.6f %.6f %.6f", dmin, dmax, zmin, zmax, vmin, vmax}
+  ' "$PROFILE_DAT")"
+
+  echo "  Distance: $DMIN ~ $DMAX km, Depth: $ZMIN ~ $ZMAX km, Vel: $VMIN ~ $VMAX km/s"
+
+  # region with normal order for gridding (zmin < zmax)
+  PROF_REGION_GRID="-R${DMIN}/${DMAX}/${ZMIN}/${ZMAX}"
+  # region for plotting (depth axis will be inverted via -JX.../-)
+  PROF_REGION="-R${DMIN}/${DMAX}/${ZMIN}/${ZMAX}"
+  PROF_GRID_INT="${DI_INT}/${DVXD}"
+
+  # grid the 2D profile
+  PROF_GRD="$TMP_DIR/cross_${p}.grd"
+  gmt surface "$PROFILE_DAT" -G"$PROF_GRD" $PROF_REGION_GRID -I"$PROF_GRID_INT" -T0 2>/dev/null
+
+  # save region info
+  echo "$PROF_REGION" > "$TMP_DIR/cross_${p}.region"
+  echo "$P_LON1 $P_LAT1 $P_LON2 $P_LAT2" > "$TMP_DIR/cross_${p}.endpoints"
+
+  # track global velocity range
+  if [[ -z "$GLOBAL_VMIN" ]]; then
+    GLOBAL_VMIN="$VMIN"; GLOBAL_VMAX="$VMAX"; GLOBAL_DMAX="$DMAX"
+  else
+    GLOBAL_VMIN=$(awk -v a="$GLOBAL_VMIN" -v b="$VMIN" 'BEGIN{printf "%.6f",(a<b)?a:b}')
+    GLOBAL_VMAX=$(awk -v a="$GLOBAL_VMAX" -v b="$VMAX" 'BEGIN{printf "%.6f",(a>b)?a:b}')
+    GLOBAL_DMAX=$(awk -v a="$GLOBAL_DMAX" -v b="$DMAX" 'BEGIN{printf "%.6f",(a>b)?a:b}')
+  fi
+done
+
+# ---- compute colorbar range ----
+if [[ "$VEL_RANGE" == "auto" ]]; then
+  CB_VMIN=$(awk -v v="$GLOBAL_VMIN" 'BEGIN{printf "%.1f", v-0.05}')
+  CB_VMAX=$(awk -v v="$GLOBAL_VMAX" 'BEGIN{printf "%.1f", v+0.05}')
+  CB_VSTEP=$(awk -v a="$CB_VMIN" -v b="$CB_VMAX" 'BEGIN{s=(b-a)/20; if(s<=0)s=0.05; printf "%.2f",s}')
+  CB_RANGE="${CB_VMIN}/${CB_VMAX}/${CB_VSTEP}"
+else
+  CB_RANGE="$VEL_RANGE"
+fi
+echo "Colorbar range: $CB_RANGE"
+
+# ---- letter labels ----
+LETTERS=(a b c d e f g h i j k l)
+
+# ---- plot ----
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_PREFIX="${OUTPUT_DIR%/}/cross_subplot"
+
+gmt begin "$OUTPUT_PREFIX" "$FORMATS"
+  gmt set FORMAT_GEO_MAP ddd.xx \
+          FONT_LABEL 7p,Times-Roman \
+          FONT_ANNOT_PRIMARY 6p,Times-Roman \
+          MAP_FRAME_TYPE plain \
+          MAP_FRAME_PEN 0.5p,black \
+          MAP_TICK_PEN_PRIMARY 0.3p,black \
+          MAP_TICK_LENGTH_PRIMARY 2p/1p \
+          MAP_ANNOT_OFFSET_PRIMARY 2p
+
+  # shared cpt
+  gmt makecpt -C"$CPT_NAME" -D -T"$CB_RANGE" -H > "$TMP_DIR/shared.cpt"
+
+  # vertical stack: N_PROF rows x 1 column
+  gmt subplot begin "${N_PROF}x1" \
+    -Fs"${PROF_W}/${PROF_H}" \
+    -M0.50c/0.40c
+
+    for ((p=0; p<N_PROF; p++)); do
+      PROF_GRD="$TMP_DIR/cross_${p}.grd"
+      PROF_REGION=$(cat "$TMP_DIR/cross_${p}.region")
+      read -r EP_LON1 EP_LAT1 EP_LON2 EP_LAT2 < "$TMP_DIR/cross_${p}.endpoints"
+
+      gmt subplot set "$p"
+
+      # plot the cross-section image (depth axis inverted via -JX.../- )
+      # Draw an explicit distance axis for every profile so stacked panels
+      # remain readable when exported as standalone figures.
+      gmt grdimage "$PROF_GRD" -C"$TMP_DIR/shared.cpt" -E200 \
+        $PROF_REGION -JX"${PROF_W}"/-"${PROF_H}" \
+        -Bxaf+l"Distance (km)" -Byaf+l"Depth (km)" -BWSen
+
+      # endpoint labels: A-A', B-B', etc.
+      LETTER_START=$(printf "\\x$(printf '%02x' $((65 + p)))")
+      LETTER_END="${LETTER_START}'"
+      read -r DMIN_P DMAX_P ZMIN_P ZMAX_P <<< "$(echo "$PROF_REGION" | sed 's/-R//' | tr '/' ' ')"
+
+      # left endpoint label
+      printf "%s %s %s\n" "$DMIN_P" "$ZMIN_P" "$LETTER_START" | \
+        gmt text $PROF_REGION -JX"${PROF_W}"/-"${PROF_H}" -F+f7p,Times-Bold+jTL -Dj0.08c/0.04c
+      # right endpoint label
+      printf "%s %s %s\n" "$DMAX_P" "$ZMIN_P" "$LETTER_END" | \
+        gmt text $PROF_REGION -JX"${PROF_W}"/-"${PROF_H}" -F+f7p,Times-Bold+jTR -Dj0.08c/0.04c
+
+    done
+
+  gmt subplot end
+
+  # colorbar
+  gmt colorbar -C"$TMP_DIR/shared.cpt" -DJBC+w6c/0.25c+o0c/1.0c+h \
+    -Ba0.2f0.1 -B+l"S velocity (km/s)"
+
+gmt end
+
+echo ""
+echo "Output: ${OUTPUT_PREFIX}.{${FORMATS}}"
