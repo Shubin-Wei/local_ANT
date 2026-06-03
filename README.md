@@ -9,8 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10-blue" alt="Python">
-  <img src="https://img.shields.io/badge/MATLAB-required-orange" alt="MATLAB">
+  <img src="https://img.shields.io/badge/python-3.10%20%7C%203.6-blue" alt="Python">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
@@ -28,7 +27,7 @@
 
 本项目实现了从原始 miniSEED 地震数据到三维横波速度模型的 **完整背景噪声面波层析成像流程**。
 
-整个流程集成了 4 个第三方软件包（NoisePy、EGFAnalysisTimeFreq、DisperPicker、DSurfTomo），并提供了一组辅助脚本将它们串联起来，形成端到端的自动化工作流。
+整个流程集成了 3 个第三方软件包（NoisePy、EGFAnalysisPy、DSurfTomo），并提供了一组辅助脚本将它们串联起来，形成端到端的自动化工作流。其中 **EGFAnalysisPy** 是 EGFAnalysisTimeFreq 的纯 Python 重写，并内置了基于深度学习的频散曲线提取工具 DisperPicker（含预训练模型），在一步内完成频散分析与曲线拾取，无需 MATLAB。
 
 ### 流程概览
 
@@ -39,10 +38,8 @@
   ▼  Step 2 — 准备台站文件（station.csv）
   ▼  Step 3 — 互相关计算与叠加（local_cc_workflow.py → NoisePy）
   ▼  Step 4 — 导出 EGF 输入数据（export_egfanalysis_input.py）
-  ▼  Step 5 — 频散分析（EGFAnalysisTimeFreq, MATLAB）
-  ▼  Step 6 — 格式转换（prepare_disperpicker_input.py）
-  ▼  Step 7 — 频散曲线提取（DisperPicker）
-  ▼  Step 8 — 面波层析反演（DSurfTomo）
+  ▼  Step 5 — 频散分析 + 曲线提取（EGFAnalysisPy/run.py）
+  ▼  Step 6 — 面波层析反演（DSurfTomo）
   │
   ▼
 三维横波速度模型
@@ -74,16 +71,16 @@ local_ANT/
 │   ├── clean_mseed_for_noisepy.py
 │   ├── local_cc_workflow.py
 │   ├── stack_visualization.py
-│   ├── export_egfanalysis_input.py
-│   └── prepare_disperpicker_input.py
+│   └── export_egfanalysis_input.py
 ├── configs/                 # 配置文件示例
 ├── docs/                    # 文档
 │   ├── workflow.md          # 完整流程（中文）
 │   ├── workflow_en.md       # 完整流程（English）
 │   ├── INSTALL.md           # 安装指南（中文）
 │   └── INSTALL_en.md        # 安装指南（English）
-├── EGFAnalysisTimeFreq/     # MATLAB 频散分析
-├── DisperPicker/            # CNN 频散曲线提取
+├── EGFAnalysisPy/           # 频散分析 + CNN 曲线提取（内置 DisperPicker）
+│   ├── run.py               # 一步完成频散分析与拾取
+│   └── DisperPicker/        # 内置 DisperPicker 及预训练模型（saver/）
 ├── DSurfTomo/               # 面波层析反演
 │   └── scripts/             # 反演数据准备与绘图
 └── LICENSE
@@ -102,7 +99,7 @@ local_ANT/
 
 > **NoisePy** — Jiang, C., & Denolle, M. A. (2020). NoisePy: A New High-Performance Python Tool for Ambient-Noise Seismology. *Seismological Research Letters*, 91(3), 1853–1866. [DOI](https://doi.org/10.1785/0220190364)
 
-> **EGFAnalysisTimeFreq** — Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. [DOI](https://doi.org/10.1111/j.1365-246X.2006.03028.x)
+> **EGFAnalysisPy** (基于 EGFAnalysisTimeFreq 的 Python 重写) — Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. [DOI](https://doi.org/10.1111/j.1365-246X.2006.03028.x)
 
 > **DisperPicker** — Yang, S., Zhang, H., Gu, N., et al. (2022). Automatically Extracting Surface Wave Group and Phase Velocity Dispersion Curves from Dispersion Spectrograms Using a Convolutional Neural Network. *Seismological Research Letters*. [DOI](https://doi.org/10.1785/0220210280)
 
@@ -122,7 +119,7 @@ local_ANT/
 
 This project implements a **complete ambient noise surface wave tomography pipeline** — from raw miniSEED seismic data to a 3D shear-wave velocity model.
 
-The workflow integrates 4 third-party packages (NoisePy, EGFAnalysisTimeFreq, DisperPicker, DSurfTomo) and provides a set of helper scripts that glue them together into an end-to-end automated workflow.
+The workflow integrates 3 third-party packages (NoisePy, EGFAnalysisPy, DSurfTomo) and provides a set of helper scripts that glue them together into an end-to-end automated workflow. **EGFAnalysisPy** is a pure-Python rewrite of EGFAnalysisTimeFreq with the deep-learning picker DisperPicker (and its pretrained model) bundled in, performing dispersion analysis and curve extraction in a single step — no MATLAB required.
 
 ### Pipeline
 
@@ -133,10 +130,8 @@ Raw miniSEED data
   ▼  Step 2 — Prepare station file (station.csv)
   ▼  Step 3 — Cross-correlation & stacking (local_cc_workflow.py → NoisePy)
   ▼  Step 4 — Export EGF input (export_egfanalysis_input.py)
-  ▼  Step 5 — Dispersion analysis (EGFAnalysisTimeFreq, MATLAB)
-  ▼  Step 6 — Format conversion (prepare_disperpicker_input.py)
-  ▼  Step 7 — Dispersion curve extraction (DisperPicker)
-  ▼  Step 8 — Surface wave tomography inversion (DSurfTomo)
+  ▼  Step 5 — Dispersion analysis + curve extraction (EGFAnalysisPy/run.py)
+  ▼  Step 6 — Surface wave tomography inversion (DSurfTomo)
   │
   ▼
 3D shear-wave velocity model
@@ -168,16 +163,16 @@ local_ANT/
 │   ├── clean_mseed_for_noisepy.py
 │   ├── local_cc_workflow.py
 │   ├── stack_visualization.py
-│   ├── export_egfanalysis_input.py
-│   └── prepare_disperpicker_input.py
+│   └── export_egfanalysis_input.py
 ├── configs/                 # Example configuration files
 ├── docs/                    # Documentation
 │   ├── workflow.md          # Full workflow (Chinese)
 │   ├── workflow_en.md       # Full workflow (English)
 │   ├── INSTALL.md           # Installation guide (Chinese)
 │   └── INSTALL_en.md        # Installation guide (English)
-├── EGFAnalysisTimeFreq/     # MATLAB dispersion analysis
-├── DisperPicker/            # CNN-based dispersion curve picker
+├── EGFAnalysisPy/           # Dispersion analysis + CNN picker (DisperPicker bundled)
+│   ├── run.py               # One-step dispersion analysis & picking
+│   └── DisperPicker/        # Bundled DisperPicker with pretrained model (saver/)
 ├── DSurfTomo/               # Surface wave tomography inversion
 │   └── scripts/             # Inversion data preparation & plotting
 └── LICENSE
@@ -196,7 +191,7 @@ This project integrates the following open-source packages:
 
 > **NoisePy** — Jiang, C., & Denolle, M. A. (2020). NoisePy: A New High-Performance Python Tool for Ambient-Noise Seismology. *Seismological Research Letters*, 91(3), 1853–1866. [DOI](https://doi.org/10.1785/0220190364)
 
-> **EGFAnalysisTimeFreq** — Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. [DOI](https://doi.org/10.1111/j.1365-246X.2006.03028.x)
+> **EGFAnalysisPy** (基于 EGFAnalysisTimeFreq 的 Python 重写) — Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. [DOI](https://doi.org/10.1111/j.1365-246X.2006.03028.x)
 
 > **DisperPicker** — Yang, S., Zhang, H., Gu, N., et al. (2022). Automatically Extracting Surface Wave Group and Phase Velocity Dispersion Curves from Dispersion Spectrograms Using a Convolutional Neural Network. *Seismological Research Letters*. [DOI](https://doi.org/10.1785/0220210280)
 
@@ -206,4 +201,4 @@ This project integrates the following open-source packages:
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE). Third-party components (DSurfTomo, DisperPicker, EGFAnalysisTimeFreq) retain their original licenses.
+This project is licensed under the [MIT License](LICENSE). Third-party components (DSurfTomo, EGFAnalysisPy, and the DisperPicker bundled within it) retain their original licenses.

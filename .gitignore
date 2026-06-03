@@ -32,21 +32,13 @@ DSurfTomo/bin/
 DSurfTomo/src/*.o
 DSurfTomo/src/*.mod
 
-# DisperPicker runtime outputs
-DisperPicker/result/pick_result/
-DisperPicker/result/plot1/
-DisperPicker/result/plot2/
-DisperPicker/result/test_result/
-DisperPicker/result/raw/
-DisperPicker/result/process/new/
-DisperPicker/summary/logs/
-
-# MATLAB artifacts
-*.asv
-*.m~
-EGFAnalysisTimeFreq/topomap.mat
-EGFAnalysisTimeFreq/Feidong_disp/CFs/
-EGFAnalysisTimeFreq/Feidong_disp/disp/
+# EGFAnalysisPy runtime outputs (Step 5)
+EGFAnalysisPy/DisperPicker/result/qc_result/
+EGFAnalysisPy/DisperPicker/result/qc_plot/
+EGFAnalysisPy/DisperPicker/result/test_result/
+EGFAnalysisPy/DisperPicker/result/validation_result/
+EGFAnalysisPy/DisperPicker/result/*.png
+EGFAnalysisPy/EGFAnalysisTimeFreq.log
 
 # Claude Code
 .claude/

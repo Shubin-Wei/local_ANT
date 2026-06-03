@@ -27,39 +27,12 @@ from dsurftomo_utils import (
 
 
 def infer_curve_type(input_dir, input_type):
-    if input_type == "disperpicker":
-        has_phase = os.path.isdir(os.path.join(input_dir, "phase_velocity")) or (
-            os.path.basename(os.path.normpath(input_dir)) == "phase_velocity"
-        )
-        has_group = os.path.isdir(os.path.join(input_dir, "group_velocity")) or (
-            os.path.basename(os.path.normpath(input_dir)) == "group_velocity"
-        )
-    else:
-        subdir = os.path.basename(os.path.normpath(input_dir))
-        if subdir == "phase_velocity":
-            names = os.listdir(input_dir)
-            has_phase = any(name.startswith("CDisp.T.") and name.endswith(".dat") for name in names)
-            has_group = False
-        elif subdir == "group_velocity":
-            names = os.listdir(input_dir)
-            has_phase = False
-            has_group = any(name.startswith("GDisp.") and name.endswith(".dat") for name in names)
-        else:
-            names = os.listdir(input_dir)
-            has_phase = any(name.startswith("CDisp.T.") and name.endswith(".dat") for name in names)
-            has_group = any(name.startswith("GDisp.") and name.endswith(".dat") for name in names)
-            phase_dir = os.path.join(input_dir, "phase_velocity")
-            group_dir = os.path.join(input_dir, "group_velocity")
-            if os.path.isdir(phase_dir):
-                has_phase = has_phase or any(
-                    name.startswith("CDisp.T.") and name.endswith(".dat")
-                    for name in os.listdir(phase_dir)
-                )
-            if os.path.isdir(group_dir):
-                has_group = has_group or any(
-                    name.startswith("GDisp.") and name.endswith(".dat")
-                    for name in os.listdir(group_dir)
-                )
+    if input_type != "egfpy":
+        raise ValueError("Unsupported input type: %s" % input_type)
+    search_dir = ex.egfpy_search_dir(input_dir)
+    names = os.listdir(search_dir)
+    has_phase = any(name.startswith("CDisp.") and name.endswith(".txt") for name in names)
+    has_group = any(name.startswith("GDisp.") and name.endswith(".txt") for name in names)
 
     if has_phase and has_group:
         return "both"
@@ -178,11 +151,9 @@ def main():
     print_kv("Detected input source", input_type)
     print_kv("Detected curve type", curve_type)
 
+    # EGFAnalysisPy curves carry station coordinates in their headers, so no
+    # separate station file is needed; station points are derived from surfdata.
     station_file = None
-    if input_type == "disperpicker":
-        station_file = prompt("station coordinate file for DisperPicker station pairs")
-        if station_file and not os.path.exists(station_file):
-            raise ValueError("File not found: %s" % station_file)
 
     project_dir = prompt("output project directory", "DSurfTomo_project")
     os.makedirs(project_dir, exist_ok=True)

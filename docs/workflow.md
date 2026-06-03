@@ -1,6 +1,6 @@
 # 本地 miniSEED 数据背景噪声面波层析成像完整流程
 
-本项目实现了从原始 miniSEED 地震数据到三维横波速度模型的完整背景噪声面波层析成像流程。整个流程分为 8 个步骤，依次使用 5 个软件包和若干辅助脚本完成。
+本项目实现了从原始 miniSEED 地震数据到三维横波速度模型的完整背景噪声面波层析成像流程。整个流程分为 6 个步骤，依次使用 3 个软件包和若干辅助脚本完成。
 
 ## 流程概览
 
@@ -17,18 +17,12 @@
   │    └─ [可选] stack_visualization.py 可视化叠加结果
   │
   ▼ [Step 4] export_egfanalysis_input.py
-EGFAnalysisTimeFreq 输入格式（.dat 波形 + stations.txt + EGFfiles.txt）
+EGFAnalysisPy 输入格式（.dat 波形 + stations.txt + EGFfiles.txt）
   │
-  ▼ [Step 5] EGFAnalysisTimeFreq（MATLAB）
-频散谱图（C.*.dat / G.*.dat）
+  ▼ [Step 5] EGFAnalysisPy（run.py）
+频散分析 + DisperPicker 自动拾取 + 质量控制 → 频散曲线（qc_result/CDisp.*.txt、GDisp.*.txt）
   │
-  ▼ [Step 6] prepare_disperpicker_input.py
-DisperPicker 输入格式（重命名 + 配置更新）
-  │
-  ▼ [Step 7] DisperPicker（pick_v.py）
-自动提取的频散曲线
-  │
-  ▼ [Step 8] DSurfTomo 反演
+  ▼ [Step 6] DSurfTomo 反演
     ├── extractnew.py          → surfdata.dat
     ├── GenerateIniMOD.py      → MOD 初始模型
     ├── GenerateDSurfTomoInputFile.py → DSurfTomo.in
@@ -44,11 +38,11 @@ DisperPicker 输入格式（重命名 + 配置更新）
   Jiang, C., & Denolle, M. A. (2020). NoisePy: A New High-Performance Python Tool for Ambient-Noise Seismology. *Seismological Research Letters*, 91(3), 1853–1866. https://doi.org/10.1785/0220190364
   GitHub: https://github.com/noisepy/NoisePy
 
-- **EGFAnalysisTimeFreq** — 面波频散分析（MATLAB）
+- **EGFAnalysisPy** — 面波频散分析（EGFAnalysisTimeFreq 的纯 Python 重写，内置 DisperPicker）
   Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. https://doi.org/10.1111/j.1365-246X.2006.03028.x
   作者：姚华建（中国科学技术大学）
 
-- **DisperPicker** — 基于深度学习的频散曲线自动提取
+- **DisperPicker** — 基于深度学习的频散曲线自动提取（已内置于 EGFAnalysisPy）
   Yang, S., Zhang, H., Gu, N., Gao, J., Xu, J., Jin, J., Li, J., & Yao, H. (2022). Automatically Extracting Surface Wave Group and Phase Velocity Dispersion Curves from Dispersion Spectrograms Using a Convolutional Neural Network. *Seismological Research Letters*. https://doi.org/10.1785/0220210280
   GitHub: https://github.com/ShaoboYang-USTC/DisperPicker
 
@@ -66,16 +60,18 @@ pip install noisepy-seis
 pip install obspy numpy pandas pyyaml datetimerange h5py scipy matplotlib
 ```
 
-### MATLAB
+### EGFAnalysisPy 环境
 
-EGFAnalysisTimeFreq 需要 MATLAB 运行环境。
-
-### DisperPicker 环境
+EGFAnalysisPy 内置 DisperPicker，依赖 TensorFlow 1.13，需要单独的 Python 3.6 环境：
 
 ```bash
-cd DisperPicker
+conda create -n egfanalysispy -y python=3.6 pip
+conda activate egfanalysispy
+cd EGFAnalysisPy
 pip install -r requirements.txt
 ```
+
+预训练模型已包含在 `EGFAnalysisPy/DisperPicker/saver/` 中，无需额外下载。
 
 ### DSurfTomo 编译
 
@@ -128,6 +124,7 @@ python scripts/clean_mseed_for_noisepy.py \
 | `--time-zone` | 文件名时间戳的时区：`beijing`（默认）或 `utc` |
 | `--target-channel` | 目标通道/分量，如 `Z`、`BNZ`、`BHZ` |
 | `--tolerance-seconds` | 判定"满一天"的容差（秒），默认 60 |
+| `--date-range START END` | 仅处理日期严格在 START 和 END 之间的文件（两端不含），格式 YYMMDD，如 `--date-range 260316 260429` |
 | `--dry-run` | 仅打印操作不实际写入 |
 
 **输出：**
@@ -242,9 +239,9 @@ python scripts/stack_visualization.py --config configs/my_stack_viz_config.yaml
 
 ---
 
-## Step 4：导出 EGFAnalysisTimeFreq 所需数据
+## Step 4：导出 EGFAnalysisPy 所需数据
 
-**目的：** 将 NoisePy 叠加结果（HDF5 格式）转换为 EGFAnalysisTimeFreq 需要的文本格式。
+**目的：** 将 NoisePy 叠加结果（HDF5 格式）转换为 EGFAnalysisPy 需要的文本格式（CF `.dat` 波形）。
 
 **脚本：** `scripts/export_egfanalysis_input.py`
 
@@ -286,143 +283,73 @@ EGFAnalysisInputData/
 
 ---
 
-## Step 5：使用 MATLAB 生成频散谱图
+## Step 5：EGFAnalysisPy 频散分析与曲线提取
 
-**目的：** 使用 EGFAnalysisTimeFreq 对经验格林函数进行时频分析，生成频散谱图。
+**目的：** 对经验格林函数 / 互相关函数做时频分析生成频散能量图，并用内置的 DisperPicker（CNN）自动拾取群速度、相速度频散曲线，经质量控制后输出。**整个过程在一个 Python 进程内完成，无需 MATLAB。**
 
-**工具：** `EGFAnalysisTimeFreq/EGFAnalysisTimeFreq.m`（MATLAB GUI 程序）
+**工具：** `EGFAnalysisPy/run.py`
 
-### 操作步骤
+`run.py` 的内部流程：频散能量图计算 → DisperPicker 拾取 → 用拾取的群速度加窗做时变滤波、重算相速度能量图 → 再次拾取 → 质量控制 → 输出频散曲线。输入正是 Step 4 导出的 CF `.dat` 波形（格式与原 EGFAnalysisTimeFreq 完全一致）。
 
-1. 打开 MATLAB，运行 `EGFAnalysisTimeFreq.m`
-2. 在 GUI 中设置参数（参考 `EGFAnalysisTimeFreq/Feidong_disp/fd_config.png`）
-3. **重要参数（需要记住，后续步骤会用到）：**
-   - **周期范围**：如 0.2 – 5.0 s
-   - **速度范围**：如 0.5 – 4.0 km/s
-   - **速度步长**：固定为 0.005 km/s（DisperPicker 要求）
-   - **周期步长**：建议 0.1 s
-4. 输入数据目录：选择 Step 4 的输出目录（如 `TestData/EGFAnalysisInputData/Allstack_robust/ZZ/`）
-5. 选择 **Automatic** 模式，点击 **Start Processing**
-6. 程序自动处理所有台站对，输出频散谱图
-
-**输出：**
-```
-EGFAnalysisOutputData/RobustDisperImage/
-├── C.CF17982_CF58808.dat    # 相速度频散谱图
-├── C.CF17982_CN20496.dat
-├── G.CF17982_CF58808.dat    # 群速度频散谱图
-├── G.CF17982_CN20496.dat
-└── ...
-```
-
-每个 `.dat` 文件是一个矩阵（如 701×49），行方向为速度，列方向为周期。
-
-> **注意：** 详细使用说明请参考 `EGFAnalysisTimeFreq/EGFAnalysisTimeFreq_Manual.pdf`
-
----
-
-## Step 6：准备 DisperPicker 输入
-
-**目的：** 将 EGFAnalysisTimeFreq 的频散谱图转换为 DisperPicker 所需的格式，并更新 DisperPicker 的配置。
-
-**脚本：** `scripts/prepare_disperpicker_input.py`
+### 5a. 配置
 
 ```bash
-python scripts/prepare_disperpicker_input.py \
-    --input-dir  TestData/EGFAnalysisOutputData/RobustDisperImage \
-    --picker-dir DisperPicker \
-    --start-period 0.2 \
-    --end-period 5.0 \
-    --min-velocity 0.5 \
-    --max-velocity 4.0 \
-    --station-file DisperPicker/config/station.txt \
-    --clean
+cd EGFAnalysisPy
+cp config_test.py config.py        # 以示例参数为起点，或直接编辑 config.py
 ```
 
-**参数说明：**
-| 参数 | 说明 |
-|------|------|
-| `--input-dir` | EGFAnalysisTimeFreq 输出的频散谱图目录 |
-| `--picker-dir` | DisperPicker 根目录 |
-| `--start-period` | 起始周期 (s)，需与 Step 5 一致 |
-| `--end-period` | 结束周期 (s)，需与 Step 5 一致 |
-| `--min-velocity` | 最小速度 (km/s)，需与 Step 5 一致 |
-| `--max-velocity` | 最大速度 (km/s)，需与 Step 5 一致 |
-| `--station-file` | 台站坐标文件（可选） |
-| `--clean` | 清除 DisperPicker 中已有的数据 |
-
-**该脚本会自动：**
-1. 复制 `C.*.dat` → `DisperPicker/data/TestData/phase_image/STA1.STA2.dat`
-2. 复制 `G.*.dat` → `DisperPicker/data/TestData/group_image/STA1.STA2.dat`
-3. 自动检测矩阵尺寸
-4. 更新 `DisperPicker/config/config.py` 中的 `range_T`、`range_V`、`root`
-
----
-
-## Step 7：DisperPicker 自动提取频散曲线
-
-**目的：** 使用预训练的 CNN 模型自动从频散谱图中提取群速度和相速度频散曲线。
-
-### 7a. 检查配置
-
-确认 `DisperPicker/config/config.py` 已被 Step 6 正确更新：
+编辑 `config.py` 中的关键参数：
 
 ```python
-self.root = '/your/path/to/DisperPicker'
-self.range_T = [0.2, 5.0, 49]    # [起始周期, 结束周期, 周期点数]
-self.range_V = [0.5, 4.0, 701]   # [起始速度, 结束速度, 速度点数]
+self.waveform_path = self.root + '/FeidongCFs'        # ← 改为 Step 4 的 .dat 波形目录
+self.result_path   = self.root + '/DisperPicker/result'  # 结果输出目录
+self.isEGF  = False        # CF 用 False，EGF 用 True
+self.StartT = 0.2          # 起始周期 (s)
+self.EndT   = 5.0          # 结束周期 (s)
+self.DeltaT = 0.1          # 周期步长 (s)
+self.StartV = 0.5          # 起始速度 (km/s)
+self.EndV   = 4.0          # 结束速度 (km/s)
+self.DeltaV = 0.005        # 速度步长（固定 0.005 km/s）
 ```
 
-确认 `DisperPicker/config/station.txt` 包含正确的台站坐标：
+> 后续 Step 6（DSurfTomo）会用到这里的周期范围与步长，请记下。`DeltaV` 必须为 0.005 km/s（DisperPicker 要求）。
 
-```
-STA1   经度        纬度         高程
-STA2   经度        纬度         高程
-```
-
-### 7b. 运行提取
-
-```bash
-cd DisperPicker
-python pick_v.py
-```
-
-### 7c. 质量控制（QC）
+### 5b. 运行
 
 ```bash
-cd DisperPicker/result/process
-python process_C.py    # 相速度 QC
-python process_G.py    # 群速度 QC
-python plot_res.py     # 绘制每条频散曲线对比图
+conda activate egfanalysispy
+python run.py
 ```
 
-**输出：**
+程序遍历 `waveform_path` 下所有 `.dat` 文件，逐对处理。预训练模型已随包提供（`EGFAnalysisPy/DisperPicker/saver/`），无需额外下载。
+
+### 5c. 输出
+
 ```
-DisperPicker/result/
-├── pick_result/           # 原始提取结果
-├── process/
-│   └── new/               # QC 后的频散曲线
-│       ├── phase_velocity/
-│       │   ├── STA1.STA2.txt
-│       │   └── ...
-│       ├── group_velocity/
-│       │   ├── STA1.STA2.txt
-│       │   └── ...
-│       ├── DPN_C.jpg      # 所有相速度频散曲线汇总图
-│       └── DPN_G.jpg      # 所有群速度频散曲线汇总图
+EGFAnalysisPy/DisperPicker/result/
+├── qc_result/
+│   ├── CDisp.FD01_FD16.txt    # 相速度频散曲线
+│   ├── GDisp.FD01_FD16.txt    # 群速度频散曲线
+│   └── ...
+├── qc_plot/                   # 每条曲线的能量图 + 拾取结果对比图
+├── all_C.png / mean_C.png     # 全部 / 平均相速度统计图
+└── all_G.png / mean_G.png     # 全部 / 平均群速度统计图
 ```
 
-每条频散曲线文件（如 `STA1.STA2.txt`）的格式：
+每条频散曲线文件（前两行为台站坐标，数据列为 `周期 速度 信噪比 概率`）：
 ```
-周期(s)  速度(km/s)
-0.3      2.15
-0.4      2.28
+117.43333100    31.81069500       # 台站 A 经度  纬度
+117.48089000    31.66345700       # 台站 B 经度  纬度
+0.20   1.250   6.100   0.950      # 周期(s)  速度(km/s)  信噪比  DisperPicker 概率
+0.30   1.310   5.800   0.880
 ...
 ```
 
+> 该输出可直接作为 Step 6 `extractnew.py` 的 `egfpy` 输入，台站坐标已内嵌在文件头，无需额外的 station 文件。
+
 ---
 
-## Step 8：DSurfTomo 面波层析成像反演
+## Step 6：DSurfTomo 面波层析成像反演
 
 **目的：** 将频散曲线数据反演为三维横波速度模型。
 
@@ -438,7 +365,7 @@ python PrepareDSurfTomoProject.py
 ```
 
 该脚本会交互式引导你完成以下步骤：
-1. 选择输入类型（DisperPicker 结果或 EGFAnalysisTimeFreq 手动拾取）
+1. 输入 Step 5 的频散曲线目录（`EGFAnalysisPy/DisperPicker/result/qc_result`），自动识别为 `egfpy` 输入
 2. 设置频散曲线的周期和速度参数
 3. 生成 `surfdata.dat`（频散数据格式转换）
 4. 生成 `MOD`（初始速度模型）
@@ -447,33 +374,25 @@ python PrepareDSurfTomoProject.py
 
 ### 方式二：分步执行
 
-#### 8a. 转换频散数据 → surfdata.dat
+#### 6a. 转换频散数据 → surfdata.dat
 
-**脚本：** `extractnew.py`
-
-```bash
-python extractnew.py \
-    --input-dir /path/to/DisperPicker/result/process/new \
-    --input-type disperpicker \
-    --station-file /path/to/station.txt \
-    --output-dir /path/to/project \
-    --min-period 0.2 --max-period 5.0 --period-step 0.1 \
-    --curve-type both
-```
-
-也支持 EGFAnalysisTimeFreq 手动拾取结果：
+**脚本：** `extractnew.py`（交互式，按提示输入）
 
 ```bash
-python extractnew.py \
-    --input-dir /path/to/manual_picks \
-    --input-type manual \
-    --output-dir /path/to/project \
-    --min-period 0.2 --max-period 5.0 --period-step 0.1
+python extractnew.py
+# input directory:  /path/to/EGFAnalysisPy/DisperPicker/result/qc_result
+# （自动识别 Detected input source: egfpy）
+# curve type (phase/group/both): both
+# strict period step (s): 0.1
+# wave type (1=Love, 2=Rayleigh): 2
+# output surfdata path: surfdata.dat
 ```
+
+`extractnew.py` 读取 `qc_result/` 下的 `CDisp.*.txt`、`GDisp.*.txt`，台站坐标取自文件头，无需额外的 station 文件。周期步长须与 Step 5 的 `DeltaT` 一致。
 
 **输出：** `surfdata.dat` + `surfdata.json`（元数据）
 
-#### 8b. 生成初始模型 → MOD
+#### 6b. 生成初始模型 → MOD
 
 **脚本：** `GenerateIniMOD.py`
 
@@ -488,7 +407,7 @@ python GenerateIniMOD.py
 
 **输出：** `MOD`（初始模型文件）
 
-#### 8c. 生成配置文件 → DSurfTomo.in
+#### 6c. 生成配置文件 → DSurfTomo.in
 
 **脚本：** `GenerateDSurfTomoInputFile.py`
 
@@ -503,7 +422,7 @@ python GenerateDSurfTomoInputFile.py
 
 **输出：** `DSurfTomo.in`
 
-#### 8d. 可选：生成棋盘测试模型
+#### 6d. 可选：生成棋盘测试模型
 
 **脚本：** `GenerateTrueMOD.py`
 
@@ -513,7 +432,7 @@ python GenerateTrueMOD.py
 
 **输出：** `MOD.true`
 
-#### 8e. 运行 DSurfTomo 反演
+#### 6e. 运行 DSurfTomo 反演
 
 ```bash
 /path/to/DSurfTomo/bin/DSurfTomo
@@ -526,7 +445,7 @@ python GenerateTrueMOD.py
 - `residual.dat` — 残差
 - `raypath_*.dat` — 射线路径
 
-### 8f. 结果可视化（GMT 脚本）
+### 6f. 结果可视化（GMT 脚本）
 
 ```bash
 # 深度切片图
@@ -543,7 +462,7 @@ bash plotray_subplot.gmt --project-dir /path/to/project
 bash plotchecker_subplot.gmt --project-dir /path/to/project
 ```
 
-### 8g. 频散数据统计（可选）
+### 6g. 频散数据统计（可选）
 
 ```bash
 python plot_dispersion_period_counts.py --surfdata /path/to/surfdata.dat
@@ -559,16 +478,14 @@ local_ANT/
 │   ├── clean_mseed_for_noisepy.py      # Step 1: 数据清洗
 │   ├── local_cc_workflow.py            # Step 3: NoisePy 互相关工作流
 │   ├── stack_visualization.py          # Step 3c: 叠加结果可视化
-│   ├── export_egfanalysis_input.py     # Step 4: 导出 EGF 输入
-│   └── prepare_disperpicker_input.py   # Step 6: 准备 DisperPicker 输入
+│   └── export_egfanalysis_input.py     # Step 4: 导出 EGF 输入
 ├── configs/                            # 配置文件示例
 │   ├── local_cc_workflow.example.yaml
 │   └── stack_visualization.example.yaml
-├── EGFAnalysisTimeFreq/                # MATLAB 频散分析程序
-├── DisperPicker/                       # 深度学习频散曲线提取
-│   ├── config/                         # 配置文件
-│   ├── data/TestData/                  # 输入数据
-│   └── result/                         # 输出结果
+├── EGFAnalysisPy/                      # Step 5: 频散分析 + CNN 曲线提取
+│   ├── run.py                          # 一步完成频散分析与拾取
+│   ├── config.py / config_test.py      # 参数配置
+│   └── DisperPicker/                   # 内置 DisperPicker 及预训练模型（saver/）
 ├── DSurfTomo/                          # 面波层析成像反演
 │   ├── bin/                            # 可执行文件
 │   ├── scripts/                        # 数据准备和绘图脚本
@@ -578,8 +495,7 @@ local_ANT/
     ├── CleanData/                      # 清洗后数据
     ├── CCFData/                        # 互相关结果
     ├── StackData/                      # 叠加结果
-    ├── EGFAnalysisInputData/           # EGF 输入
-    ├── EGFAnalysisOutputData/          # 频散谱图
+    ├── EGFAnalysisInputData/           # EGF 输入（CF .dat 波形）
     ├── figures/                        # 可视化图片
     └── station.csv                     # 台站信息
 ```
@@ -587,7 +503,7 @@ local_ANT/
 ## 常见问题
 
 ### 周期和速度参数需要一致吗？
-是的。Step 5（EGFAnalysisTimeFreq）设置的周期范围、速度范围必须在 Step 6（prepare_disperpicker_input.py）中使用相同的值。DisperPicker 要求速度步长固定为 0.005 km/s。
+是的。Step 5（EGFAnalysisPy `config.py`）设置的周期范围、步长必须与 Step 6（`extractnew.py` 的 period step）保持一致。DisperPicker 要求速度步长固定为 0.005 km/s（`DeltaV`）。
 
 ### 如何选择叠加方法？
 - `linear`：线性叠加，最常用
@@ -597,15 +513,8 @@ local_ANT/
 
 建议先用 `all` 全部计算，然后通过 `stack_visualization.py` 对比选择最优结果。
 
-### DisperPicker 的 station.txt 格式是什么？
-```
-台站名  经度         纬度          高程
-FD01   117.4333135  31.81069491  12.939
-```
-
-### extractnew.py 支持哪些输入类型？
-- `disperpicker`：DisperPicker QC 后的结果（`phase_velocity/` 和 `group_velocity/` 目录下的 `.txt` 文件）
-- `manual`：EGFAnalysisTimeFreq 手动拾取的 `CDisp.T.*.dat` 和 `GDisp.*.dat` 文件
+### extractnew.py 的输入是什么？
+仅支持 `egfpy` 输入类型：EGFAnalysisPy（`run.py`）的 `qc_result/` 输出 `CDisp.*.txt`（相速度）和 `GDisp.*.txt`（群速度）。文件头两行为台站坐标（经度 纬度），数据列为 `周期 速度 信噪比 概率`；第 4 列是 DisperPicker 概率，不作为保留标志。输入目录可指向 `qc_result` 目录或其父目录，台站坐标已内嵌在文件头，无需额外的 station 文件。
 
 ---
 

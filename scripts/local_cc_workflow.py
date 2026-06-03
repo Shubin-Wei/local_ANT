@@ -832,6 +832,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check inputs and parameters without running the pipeline.",
     )
     parser.add_argument(
+        "--overwrite", action="store_true",
+        help="Remove existing CCF/stack output directories before running.",
+    )
+    parser.add_argument(
         "--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO",
         help="Logging verbosity (default: INFO).",
     )
@@ -1004,6 +1008,15 @@ def main():
         for err in errors:
             LOG.error("Config error: %s", err)
         raise SystemExit(1)
+
+    if args.overwrite:
+        import shutil
+        if args.stage in ("cc", "all") and paths.ccf_dir.exists():
+            LOG.info("Overwrite: removing %s", paths.ccf_dir)
+            shutil.rmtree(paths.ccf_dir)
+        if args.stage in ("stack", "all") and paths.stack_dir.exists():
+            LOG.info("Overwrite: removing %s", paths.stack_dir)
+            shutil.rmtree(paths.stack_dir)
 
     if args.stage in ("cc", "all"):
         run_cc_stage(paths, options)

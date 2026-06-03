@@ -1,35 +1,50 @@
-# Example configuration for local_cc_workflow.py
+# Configuration for local_cc_workflow.py
 # Paths are relative to this YAML file's directory.
 # CLI flags override values set here.
 
 # --- Paths ---
-data-dir: ../TestData/CleanData
-station-csv: ../TestData/station.csv
-ccf-dir: ../TestData/CCFData
-stack-dir: ../TestData/StackData
+data-dir: /data/Shenxz/Weishb/HJ/SurfaceData
+station-csv: /data/Shenxz/Weishb/HJ/SurfaceData/station.csv
+ccf-dir: /data/Shenxz/Weishb/HJ/SurfaceCCFData
+stack-dir: /data/Shenxz/Weishb/HJ/SurfaceStackData
+
+# --- Stage control ---
+# stage: all                  # cc, stack, or all
+# overwrite: true            # remove existing output dirs before running
 
 # --- Processing ---
-freqmin: 0.5
+freqmin: 0.3
 freqmax: 10
-sampling-rate: 50.0
+sampling-rate: 25.0
 maxlag: 500
 inc-hours: 24
-cc-len: 3600
-step: 1800.0
+cc-len: 1800
+step: 900.0
+max-over-std: 10
+smoothspect-n: 20
+smooth-n: 10
 
-# Normalization
+# --- Normalization ---
 time-norm: rma
 freq-norm: rma
 rm-resp: "no"
 
-# Stacking
-stack-method: all
+# --- Substack ---
+substack: true
+substack-windows: 1
 keep-substack: false
 
-# Station filter (use "*" for all)
+# --- Stacking ---
+stack-method: all
+
+# --- Station filter ---
 station-pattern: "*"
 
-# Components (only ncomp=1 is fully tested)
+# --- Components ---
 ncomp: 1
 rotation: false
 xcorr-only: true
+acorr-only: false
+
+# --- Logging ---
+# log-level: INFO

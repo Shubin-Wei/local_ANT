@@ -1,6 +1,6 @@
 # Complete Workflow: Ambient Noise Surface Wave Tomography from Local miniSEED Data
 
-This project implements a complete ambient noise surface wave tomography pipeline — from raw miniSEED seismic data to a 3D shear-wave velocity model. The workflow consists of 8 steps, using 5 software packages and several helper scripts.
+This project implements a complete ambient noise surface wave tomography pipeline — from raw miniSEED seismic data to a 3D shear-wave velocity model. The workflow consists of 6 steps, using 3 software packages and several helper scripts. **EGFAnalysisPy** is a pure-Python rewrite of EGFAnalysisTimeFreq with the deep-learning picker DisperPicker (and its pretrained model) bundled in, performing dispersion analysis and curve extraction in a single step — no MATLAB required.
 
 ## Workflow Overview
 
@@ -17,18 +17,12 @@ Cross-correlation functions (CCF) + stacked results
   │    └─ [Optional] stack_visualization.py for QC
   │
   ▼ [Step 4] export_egfanalysis_input.py
-EGFAnalysisTimeFreq input format (.dat waveforms + stations.txt + EGFfiles.txt)
+EGFAnalysisPy input format (.dat waveforms + stations.txt + EGFfiles.txt)
   │
-  ▼ [Step 5] EGFAnalysisTimeFreq (MATLAB)
-Dispersion spectrograms (C.*.dat / G.*.dat)
+  ▼ [Step 5] EGFAnalysisPy (run.py)
+Dispersion analysis + DisperPicker auto-picking + QC → dispersion curves (qc_result/CDisp.*.txt, GDisp.*.txt)
   │
-  ▼ [Step 6] prepare_disperpicker_input.py
-DisperPicker input format (renamed files + updated config)
-  │
-  ▼ [Step 7] DisperPicker (pick_v.py)
-Automatically picked dispersion curves
-  │
-  ▼ [Step 8] DSurfTomo inversion
+  ▼ [Step 6] DSurfTomo inversion
     ├── extractnew.py               → surfdata.dat
     ├── GenerateIniMOD.py           → MOD (initial model)
     ├── GenerateDSurfTomoInputFile.py → DSurfTomo.in
@@ -44,11 +38,11 @@ This project integrates the following open-source software packages. All credit 
   Jiang, C., & Denolle, M. A. (2020). NoisePy: A New High-Performance Python Tool for Ambient-Noise Seismology. *Seismological Research Letters*, 91(3), 1853–1866. https://doi.org/10.1785/0220190364
   GitHub: https://github.com/noisepy/NoisePy
 
-- **EGFAnalysisTimeFreq** — Surface wave dispersion analysis (MATLAB)
+- **EGFAnalysisPy** — Surface wave dispersion analysis (pure-Python rewrite of EGFAnalysisTimeFreq, DisperPicker bundled)
   Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. https://doi.org/10.1111/j.1365-246X.2006.03028.x
   Author: Huajian Yao (University of Science and Technology of China)
 
-- **DisperPicker** — CNN-based automatic dispersion curve extraction
+- **DisperPicker** — CNN-based automatic dispersion curve extraction (bundled within EGFAnalysisPy)
   Yang, S., Zhang, H., Gu, N., Gao, J., Xu, J., Jin, J., Li, J., & Yao, H. (2022). Automatically Extracting Surface Wave Group and Phase Velocity Dispersion Curves from Dispersion Spectrograms Using a Convolutional Neural Network. *Seismological Research Letters*. https://doi.org/10.1785/0220210280
   GitHub: https://github.com/ShaoboYang-USTC/DisperPicker
 
@@ -66,16 +60,18 @@ pip install noisepy-seis
 pip install obspy numpy pandas pyyaml datetimerange h5py scipy matplotlib
 ```
 
-### MATLAB
+### EGFAnalysisPy Environment
 
-EGFAnalysisTimeFreq requires a MATLAB installation.
-
-### DisperPicker Environment
+EGFAnalysisPy bundles DisperPicker and depends on TensorFlow 1.13, so it needs a separate Python 3.6 environment:
 
 ```bash
-cd DisperPicker
+conda create -n egfanalysispy -y python=3.6 pip
+conda activate egfanalysispy
+cd EGFAnalysisPy
 pip install -r requirements.txt
 ```
+
+The pretrained model is already included in `EGFAnalysisPy/DisperPicker/saver/` — no extra download needed.
 
 ### Compile DSurfTomo
 
@@ -128,6 +124,7 @@ python scripts/clean_mseed_for_noisepy.py \
 | `--time-zone` | Timezone for filename timestamps: `beijing` (default) or `utc` |
 | `--target-channel` | Target channel/component, e.g. `Z`, `BNZ`, `BHZ` |
 | `--tolerance-seconds` | Tolerance (in seconds) for full-day completeness check (default: 60) |
+| `--date-range START END` | Only process files whose date is strictly between START and END (both excluded), format YYMMDD, e.g. `--date-range 260316 260429` |
 | `--dry-run` | Print actions without writing any files |
 
 **Output:**
@@ -242,9 +239,9 @@ python scripts/stack_visualization.py --config configs/my_stack_viz_config.yaml
 
 ---
 
-## Step 4: Export Data for EGFAnalysisTimeFreq
+## Step 4: Export Data for EGFAnalysisPy
 
-**Goal:** Convert NoisePy stacking results (HDF5 format) to the text format required by EGFAnalysisTimeFreq.
+**Goal:** Convert NoisePy stacking results (HDF5 format) to the text format required by EGFAnalysisPy (CF `.dat` waveforms).
 
 **Script:** `scripts/export_egfanalysis_input.py`
 
@@ -286,143 +283,73 @@ Each `.dat` waveform file format:
 
 ---
 
-## Step 5: Generate Dispersion Spectrograms with MATLAB
+## Step 5: Dispersion Analysis & Curve Extraction with EGFAnalysisPy
 
-**Goal:** Perform time-frequency analysis on empirical Green's functions using EGFAnalysisTimeFreq to generate dispersion spectrograms.
+**Goal:** Compute dispersion energy images from the empirical Green's / cross-correlation functions and automatically pick group and phase velocity dispersion curves with the bundled DisperPicker (CNN), followed by quality control. **This all happens in a single Python process — no MATLAB required.**
 
-**Tool:** `EGFAnalysisTimeFreq/EGFAnalysisTimeFreq.m` (MATLAB GUI)
+**Tool:** `EGFAnalysisPy/run.py`
 
-### Procedure
+Internally, `run.py` does: dispersion energy image computation → DisperPicker picking → time-variable filtering (windowed with the picked group velocity) and phase-velocity recomputation → re-picking → quality control → dispersion curve output. The input is the CF `.dat` waveforms exported in Step 4 (identical format to the original EGFAnalysisTimeFreq input).
 
-1. Open MATLAB and run `EGFAnalysisTimeFreq.m`
-2. Set parameters in the GUI (reference: `EGFAnalysisTimeFreq/Feidong_disp/fd_config.png`)
-3. **Important parameters (you will need these in later steps):**
-   - **Period range:** e.g. 0.2 – 5.0 s
-   - **Velocity range:** e.g. 0.5 – 4.0 km/s
-   - **Velocity step:** must be 0.005 km/s (required by DisperPicker)
-   - **Period step:** recommended 0.1 s
-4. Set input data directory: select the output from Step 4 (e.g. `TestData/EGFAnalysisInputData/Allstack_robust/ZZ/`)
-5. Select **Automatic** mode, click **Start Processing**
-6. The program processes all station pairs automatically and outputs dispersion spectrograms
-
-**Output:**
-```
-EGFAnalysisOutputData/RobustDisperImage/
-├── C.CF17982_CF58808.dat    # Phase velocity spectrogram
-├── C.CF17982_CN20496.dat
-├── G.CF17982_CF58808.dat    # Group velocity spectrogram
-├── G.CF17982_CN20496.dat
-└── ...
-```
-
-Each `.dat` file is a matrix (e.g. 701×49): rows = velocity, columns = period.
-
-> **Note:** For detailed instructions, refer to `EGFAnalysisTimeFreq/EGFAnalysisTimeFreq_Manual.pdf`
-
----
-
-## Step 6: Prepare DisperPicker Input
-
-**Goal:** Convert EGFAnalysisTimeFreq dispersion spectrograms to DisperPicker's expected format and update its configuration.
-
-**Script:** `scripts/prepare_disperpicker_input.py`
+### 5a. Configure
 
 ```bash
-python scripts/prepare_disperpicker_input.py \
-    --input-dir  TestData/EGFAnalysisOutputData/RobustDisperImage \
-    --picker-dir DisperPicker \
-    --start-period 0.2 \
-    --end-period 5.0 \
-    --min-velocity 0.5 \
-    --max-velocity 4.0 \
-    --station-file DisperPicker/config/station.txt \
-    --clean
+cd EGFAnalysisPy
+cp config_test.py config.py        # start from the example, or edit config.py directly
 ```
 
-**Parameters:**
-| Parameter | Description |
-|-----------|-------------|
-| `--input-dir` | Directory of dispersion spectrograms from EGFAnalysisTimeFreq |
-| `--picker-dir` | DisperPicker root directory |
-| `--start-period` | Start period (s), must match Step 5 |
-| `--end-period` | End period (s), must match Step 5 |
-| `--min-velocity` | Minimum velocity (km/s), must match Step 5 |
-| `--max-velocity` | Maximum velocity (km/s), must match Step 5 |
-| `--station-file` | Station coordinate file (optional) |
-| `--clean` | Remove existing data in DisperPicker before copying |
-
-**This script automatically:**
-1. Copies `C.*.dat` → `DisperPicker/data/TestData/phase_image/STA1.STA2.dat`
-2. Copies `G.*.dat` → `DisperPicker/data/TestData/group_image/STA1.STA2.dat`
-3. Detects matrix dimensions
-4. Updates `DisperPicker/config/config.py` — sets `range_T`, `range_V`, and `root`
-
----
-
-## Step 7: Automatic Dispersion Curve Extraction with DisperPicker
-
-**Goal:** Use a pre-trained CNN model to automatically extract group and phase velocity dispersion curves from spectrograms.
-
-### 7a. Verify Configuration
-
-Confirm that `DisperPicker/config/config.py` was correctly updated by Step 6:
+Edit the key parameters in `config.py`:
 
 ```python
-self.root = '/your/path/to/DisperPicker'
-self.range_T = [0.2, 5.0, 49]    # [start_period, end_period, n_periods]
-self.range_V = [0.5, 4.0, 701]   # [start_velocity, end_velocity, n_velocities]
+self.waveform_path = self.root + '/FeidongCFs'        # ← point to the Step 4 .dat directory
+self.result_path   = self.root + '/DisperPicker/result'  # result output directory
+self.isEGF  = False        # False for CF, True for EGF
+self.StartT = 0.2          # start period (s)
+self.EndT   = 5.0          # end period (s)
+self.DeltaT = 0.1          # period step (s)
+self.StartV = 0.5          # start velocity (km/s)
+self.EndV   = 4.0          # end velocity (km/s)
+self.DeltaV = 0.005        # velocity step (fixed at 0.005 km/s)
 ```
 
-Confirm that `DisperPicker/config/station.txt` has correct station coordinates:
+> Step 6 (DSurfTomo) reuses the period range and step set here, so note them down. `DeltaV` must be 0.005 km/s (required by DisperPicker).
 
-```
-station_name  longitude     latitude       elevation
-FD01          117.4333135   31.81069491    12.939
-```
-
-### 7b. Run Extraction
-
-```bash
-cd DisperPicker
-python pick_v.py
-```
-
-### 7c. Quality Control (QC)
+### 5b. Run
 
 ```bash
-cd DisperPicker/result/process
-python process_C.py    # Phase velocity QC
-python process_G.py    # Group velocity QC
-python plot_res.py     # Plot each curve overlaid on its spectrogram
+conda activate egfanalysispy
+python run.py
 ```
 
-**Output:**
+The program iterates over every `.dat` file under `waveform_path`, processing each pair. The pretrained model ships with the package (`EGFAnalysisPy/DisperPicker/saver/`) — no extra download needed.
+
+### 5c. Output
+
 ```
-DisperPicker/result/
-├── pick_result/           # Raw picking results
-├── process/
-│   └── new/               # QC'd dispersion curves
-│       ├── phase_velocity/
-│       │   ├── STA1.STA2.txt
-│       │   └── ...
-│       ├── group_velocity/
-│       │   ├── STA1.STA2.txt
-│       │   └── ...
-│       ├── DPN_C.jpg      # All phase velocity curves summary
-│       └── DPN_G.jpg      # All group velocity curves summary
+EGFAnalysisPy/DisperPicker/result/
+├── qc_result/
+│   ├── CDisp.FD01_FD16.txt    # phase velocity dispersion curve
+│   ├── GDisp.FD01_FD16.txt    # group velocity dispersion curve
+│   └── ...
+├── qc_plot/                   # per-pair energy image + picked curve figures
+├── all_C.png / mean_C.png     # all / mean phase velocity summary
+└── all_G.png / mean_G.png     # all / mean group velocity summary
 ```
 
-Each dispersion curve file (e.g. `STA1.STA2.txt`) format:
+Each dispersion curve file (first two rows are station coordinates; data columns are `period velocity snr probability`):
 ```
-period(s)  velocity(km/s)
-0.3        2.15
-0.4        2.28
+117.43333100    31.81069500       # station A  longitude  latitude
+117.48089000    31.66345700       # station B  longitude  latitude
+0.20   1.250   6.100   0.950      # period(s)  velocity(km/s)  snr  DisperPicker probability
+0.30   1.310   5.800   0.880
 ...
 ```
 
+> This output feeds directly into the Step 6 `extractnew.py` `egfpy` input; station coordinates are embedded in the file header, so no separate station file is needed.
+
 ---
 
-## Step 8: DSurfTomo Surface Wave Tomography Inversion
+## Step 6: DSurfTomo Surface Wave Tomography Inversion
 
 **Goal:** Invert dispersion curve data for a 3D shear-wave velocity model.
 
@@ -438,7 +365,7 @@ python PrepareDSurfTomoProject.py
 ```
 
 The script interactively guides you through:
-1. Selecting input type (DisperPicker results or EGFAnalysisTimeFreq manual picks)
+1. Entering the Step 5 dispersion curve directory (`EGFAnalysisPy/DisperPicker/result/qc_result`), auto-detected as `egfpy` input
 2. Setting period and velocity parameters
 3. Generating `surfdata.dat` (dispersion data format conversion)
 4. Generating `MOD` (initial velocity model)
@@ -447,33 +374,25 @@ The script interactively guides you through:
 
 ### Option B: Step-by-Step Execution
 
-#### 8a. Convert Dispersion Curves → surfdata.dat
+#### 6a. Convert Dispersion Curves → surfdata.dat
 
-**Script:** `extractnew.py`
-
-```bash
-python extractnew.py \
-    --input-dir /path/to/DisperPicker/result/process/new \
-    --input-type disperpicker \
-    --station-file /path/to/station.txt \
-    --output-dir /path/to/project \
-    --min-period 0.2 --max-period 5.0 --period-step 0.1 \
-    --curve-type both
-```
-
-Also supports EGFAnalysisTimeFreq manual picks:
+**Script:** `extractnew.py` (interactive — answer the prompts)
 
 ```bash
-python extractnew.py \
-    --input-dir /path/to/manual_picks \
-    --input-type manual \
-    --output-dir /path/to/project \
-    --min-period 0.2 --max-period 5.0 --period-step 0.1
+python extractnew.py
+# input directory:  /path/to/EGFAnalysisPy/DisperPicker/result/qc_result
+# (auto-detected: Detected input source: egfpy)
+# curve type (phase/group/both): both
+# strict period step (s): 0.1
+# wave type (1=Love, 2=Rayleigh): 2
+# output surfdata path: surfdata.dat
 ```
+
+`extractnew.py` reads `CDisp.*.txt` and `GDisp.*.txt` under `qc_result/`; station coordinates are taken from the file headers, so no separate station file is needed. The period step must match the `DeltaT` used in Step 5.
 
 **Output:** `surfdata.dat` + `surfdata.json` (metadata)
 
-#### 8b. Generate Initial Model → MOD
+#### 6b. Generate Initial Model → MOD
 
 **Script:** `GenerateIniMOD.py`
 
@@ -488,7 +407,7 @@ Interactive prompts for:
 
 **Output:** `MOD` (initial model file)
 
-#### 8c. Generate Configuration → DSurfTomo.in
+#### 6c. Generate Configuration → DSurfTomo.in
 
 **Script:** `GenerateDSurfTomoInputFile.py`
 
@@ -503,7 +422,7 @@ Interactive prompts for:
 
 **Output:** `DSurfTomo.in`
 
-#### 8d. Optional: Generate Checkerboard Test Model
+#### 6d. Optional: Generate Checkerboard Test Model
 
 **Script:** `GenerateTrueMOD.py`
 
@@ -513,7 +432,7 @@ python GenerateTrueMOD.py
 
 **Output:** `MOD.true`
 
-#### 8e. Run DSurfTomo Inversion
+#### 6e. Run DSurfTomo Inversion
 
 ```bash
 /path/to/DSurfTomo/bin/DSurfTomo
@@ -526,7 +445,7 @@ The program reads `DSurfTomo.in`, `surfdata.dat`, and `MOD` from the current dir
 - `residual.dat` — residuals
 - `raypath_*.dat` — ray paths
 
-### 8f. Visualize Results (GMT Scripts)
+### 6f. Visualize Results (GMT Scripts)
 
 ```bash
 # Depth slice maps
@@ -543,7 +462,7 @@ bash plotray_subplot.gmt --project-dir /path/to/project
 bash plotchecker_subplot.gmt --project-dir /path/to/project
 ```
 
-### 8g. Dispersion Data Statistics (Optional)
+### 6g. Dispersion Data Statistics (Optional)
 
 ```bash
 python plot_dispersion_period_counts.py --surfdata /path/to/surfdata.dat
@@ -559,16 +478,14 @@ local_ANT/
 │   ├── clean_mseed_for_noisepy.py      # Step 1: Data cleaning
 │   ├── local_cc_workflow.py            # Step 3: NoisePy cross-correlation workflow
 │   ├── stack_visualization.py          # Step 3c: Stack visualization
-│   ├── export_egfanalysis_input.py     # Step 4: Export EGF input
-│   └── prepare_disperpicker_input.py   # Step 6: Prepare DisperPicker input
+│   └── export_egfanalysis_input.py     # Step 4: Export EGF input
 ├── configs/                            # Example configuration files
 │   ├── local_cc_workflow.example.yaml
 │   └── stack_visualization.example.yaml
-├── EGFAnalysisTimeFreq/                # MATLAB dispersion analysis program
-├── DisperPicker/                       # Deep learning dispersion curve picker
-│   ├── config/                         # Configuration files
-│   ├── data/TestData/                  # Input data
-│   └── result/                         # Output results
+├── EGFAnalysisPy/                      # Step 5: Dispersion analysis + CNN picker
+│   ├── run.py                          # One-step dispersion analysis & picking
+│   ├── config.py / config_test.py      # Parameter configuration
+│   └── DisperPicker/                   # Bundled DisperPicker with pretrained model (saver/)
 ├── DSurfTomo/                          # Surface wave tomography inversion
 │   ├── bin/                            # Executables
 │   ├── scripts/                        # Data preparation and plotting scripts
@@ -578,8 +495,7 @@ local_ANT/
     ├── CleanData/                      # Cleaned data
     ├── CCFData/                        # Cross-correlation results
     ├── StackData/                      # Stacking results
-    ├── EGFAnalysisInputData/           # EGF input
-    ├── EGFAnalysisOutputData/          # Dispersion spectrograms
+    ├── EGFAnalysisInputData/           # EGF input (CF .dat waveforms)
     ├── figures/                        # Visualizations
     └── station.csv                     # Station information
 ```
@@ -587,7 +503,7 @@ local_ANT/
 ## FAQ
 
 ### Must the period and velocity parameters be consistent across steps?
-Yes. The period range and velocity range set in Step 5 (EGFAnalysisTimeFreq) must be passed with the same values in Step 6 (prepare_disperpicker_input.py). DisperPicker requires a fixed velocity step of 0.005 km/s.
+Yes. The period range and step set in Step 5 (EGFAnalysisPy `config.py`) must match the period step used in Step 6 (`extractnew.py`). DisperPicker requires a fixed velocity step of 0.005 km/s (`DeltaV`).
 
 ### How do I choose a stacking method?
 - `linear`: Linear stacking — most commonly used
@@ -597,15 +513,8 @@ Yes. The period range and velocity range set in Step 5 (EGFAnalysisTimeFreq) mus
 
 We recommend computing `all` first, then comparing results with `stack_visualization.py` to select the best.
 
-### What is the station.txt format for DisperPicker?
-```
-station_name  longitude     latitude       elevation
-FD01          117.4333135   31.81069491    12.939
-```
-
-### What input types does extractnew.py support?
-- `disperpicker`: QC'd results from DisperPicker (`.txt` files under `phase_velocity/` and `group_velocity/`)
-- `manual`: Manual picks from EGFAnalysisTimeFreq (`CDisp.T.*.dat` and `GDisp.*.dat` files)
+### What input does extractnew.py take?
+Only the `egfpy` input type: the `qc_result/` output of EGFAnalysisPy (`run.py`) — `CDisp.*.txt` (phase) and `GDisp.*.txt` (group). The first two rows hold the station coordinates (lon lat); data columns are `period velocity snr probability`, where the 4th column is the DisperPicker probability and is not used as a keep flag. The input directory may point to the `qc_result` directory or its parent. Station coordinates are embedded in the file headers, so no separate station file is needed.
 
 ---
 

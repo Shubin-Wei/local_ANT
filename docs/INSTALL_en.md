@@ -7,10 +7,9 @@ This guide walks you through installing all software required by this project, f
 - [System Requirements](#system-requirements)
 - [1. Install Conda (if not already installed)](#1-install-conda-if-not-already-installed)
 - [2. Install NoisePy and Python Dependencies](#2-install-noisepy-and-python-dependencies)
-- [3. Install DisperPicker](#3-install-disperpicker)
+- [3. Install EGFAnalysisPy](#3-install-egfanalysispy)
 - [4. Compile DSurfTomo](#4-compile-dsurftomo)
-- [5. Install MATLAB (for EGFAnalysisTimeFreq)](#5-install-matlab-for-egfanalysistimefreq)
-- [6. Install GMT (Optional, for Plotting)](#6-install-gmt-optional-for-plotting)
+- [5. Install GMT (Optional, for Plotting)](#5-install-gmt-optional-for-plotting)
 - [Verify Installation](#verify-installation)
 - [Troubleshooting](#troubleshooting)
 
@@ -23,7 +22,6 @@ This guide walks you through installing all software required by this project, f
 | OS | Linux (Ubuntu 18.04+ recommended) or macOS |
 | Python | 3.8 – 3.10 (3.10 recommended) |
 | Fortran compiler | gfortran (required to compile DSurfTomo) |
-| MATLAB | R2018a or later (required for EGFAnalysisTimeFreq) |
 | Disk space | ≥ 5 GB (including Conda environments and packages) |
 | RAM | ≥ 4 GB |
 
@@ -144,33 +142,27 @@ python -m ipykernel install --user --name noisepy
 
 ---
 
-## 3. Install DisperPicker
+## 3. Install EGFAnalysisPy
 
-DisperPicker uses deep learning (TensorFlow) to automatically extract dispersion curves from spectrograms. It requires a **separate** Python environment because it depends on TensorFlow 1.x, which is incompatible with the packages used by NoisePy.
+EGFAnalysisPy is a pure-Python rewrite of EGFAnalysisTimeFreq for surface wave dispersion analysis, with the deep-learning picker **DisperPicker bundled in** to extract dispersion curves in one step. It requires a **separate** Python environment because it depends on TensorFlow 1.x, which is incompatible with the packages used by NoisePy.
 
-> **What is DisperPicker?**
-> A CNN-based tool for automatic dispersion curve extraction.
-> Citation: Yang, S., et al. (2022). *Seismological Research Letters*.
-> GitHub: https://github.com/ShaoboYang-USTC/DisperPicker
+> **What is EGFAnalysisPy / DisperPicker?**
+> EGFAnalysisPy computes dispersion energy images from EGFs / cross-correlation functions (Yao et al., 2006) and uses the bundled DisperPicker (CNN, Yang et al., 2022, *SRL*) to automatically extract dispersion curves.
+> DisperPicker GitHub: https://github.com/ShaoboYang-USTC/DisperPicker
 
 ### 3a. Create a separate environment
 
 ```bash
-# DisperPicker requires TensorFlow 1.13, which needs Python 3.6
-conda create -n disperpicker -y python=3.6 pip
-conda activate disperpicker
+# EGFAnalysisPy requires TensorFlow 1.13, which needs Python 3.6
+conda create -n egfanalysispy -y python=3.6 pip
+conda activate egfanalysispy
 ```
 
 ### 3b. Install dependencies
 
 ```bash
-cd DisperPicker
-
-# Option 1: Use the requirements file (recommended)
+cd EGFAnalysisPy
 pip install -r requirements.txt
-
-# Option 2: Install manually
-pip install tensorflow==1.13.1 matplotlib==3.3.4 numpy==1.19.0
 ```
 
 > **Note:** TensorFlow 1.13.1 does not support Python 3.7 or later. If installation fails, verify your Python version is 3.6.
@@ -178,8 +170,8 @@ pip install tensorflow==1.13.1 matplotlib==3.3.4 numpy==1.19.0
 ### 3c. Verify installation
 
 ```bash
-conda activate disperpicker
-cd DisperPicker
+conda activate egfanalysispy
+cd EGFAnalysisPy
 python -c "import tensorflow as tf; print('TensorFlow version:', tf.__version__)"
 ```
 
@@ -187,10 +179,10 @@ Expected output: `TensorFlow version: 1.13.1`
 
 ### 3d. Pre-trained model
 
-The pre-trained CNN model is already included in the repository under `saver/` — no extra download needed:
+The pre-trained CNN model is already included under `EGFAnalysisPy/DisperPicker/saver/` — no extra download needed:
 
 ```
-DisperPicker/saver/
+EGFAnalysisPy/DisperPicker/saver/
 ├── -10000.data-00000-of-00001
 ├── -10000.index
 └── -10000.meta
@@ -273,41 +265,11 @@ source ~/.bashrc
 
 ---
 
-## 5. Install MATLAB (for EGFAnalysisTimeFreq)
-
-EGFAnalysisTimeFreq is a MATLAB GUI program for surface wave dispersion analysis.
-
-> **What is EGFAnalysisTimeFreq?**
-> Software for surface wave EGF/CF phase velocity dispersion analysis.
-> Author: Huajian Yao (University of Science and Technology of China)
-> Citation: Yao, H., et al. (2006). *Geophysical Journal International*, 166(2), 732–744.
-
-### 5a. Install MATLAB
-
-- Download and install from the [MathWorks website](https://www.mathworks.com/)
-- A valid MATLAB license is required (universities typically provide campus-wide licenses)
-- Minimum version: R2018a
-
-### 5b. Verify
-
-Open MATLAB and run:
-
-```matlab
-cd('/path/to/local_ANT/EGFAnalysisTimeFreq')
-EGFAnalysisTimeFreq
-```
-
-If the GUI window opens correctly, the installation is successful.
-
-> **Tip:** For detailed usage instructions, refer to `EGFAnalysisTimeFreq/EGFAnalysisTimeFreq_Manual.pdf`
-
----
-
-## 6. Install GMT (Optional, for Plotting)
+## 5. Install GMT (Optional, for Plotting)
 
 GMT (Generic Mapping Tools) is used by the DSurfTomo plotting scripts for depth slices, cross-sections, ray paths, and checkerboard test results. Skip this if you don't need these plots.
 
-### 6a. Install GMT 6
+### 5a. Install GMT 6
 
 ```bash
 # Ubuntu/Debian
@@ -321,7 +283,7 @@ sudo yum install GMT
 brew install gmt
 ```
 
-### 6b. Verify
+### 5b. Verify
 
 ```bash
 gmt --version
@@ -351,11 +313,13 @@ import datetimerange; print('datetimerange OK')
 "
 
 echo ""
-echo "=== 2. DisperPicker environment ==="
-conda activate disperpicker
+echo "=== 2. EGFAnalysisPy environment ==="
+conda activate egfanalysispy
 python -c "
 import tensorflow as tf; print('TensorFlow', tf.__version__, 'OK')
 import numpy; print('NumPy OK')
+import scipy; print('SciPy OK')
+import pandas; print('Pandas OK')
 import matplotlib; print('Matplotlib OK')
 "
 
@@ -389,15 +353,15 @@ Use a mirror (Chinese users):
 pip install noisepy-seis -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-### Q: DisperPicker — TensorFlow 1.13.1 installation fails
+### Q: EGFAnalysisPy — TensorFlow 1.13.1 installation fails
 TensorFlow 1.13.1 only supports Python 3.6. Check your version:
 ```bash
 python --version  # Should show 3.6.x
 ```
-If it's wrong, recreate the environment: `conda create -n disperpicker -y python=3.6 pip`
+If it's wrong, recreate the environment: `conda create -n egfanalysispy -y python=3.6 pip`
 
 ### Q: TensorFlow prints GPU-related errors
-DisperPicker runs on CPU by default — no GPU required. You can safely ignore CUDA/GPU warnings, or suppress them:
+EGFAnalysisPy (with the bundled DisperPicker) runs on CPU by default — no GPU required. You can safely ignore CUDA/GPU warnings, or suppress them:
 ```bash
 export CUDA_VISIBLE_DEVICES=""
 ```
@@ -411,10 +375,10 @@ brew install gcc                # macOS
 ```
 
 ### Q: Can I merge the two Conda environments into one?
-No. NoisePy requires Python 3.10 and recent NumPy versions, while DisperPicker requires Python 3.6 and TensorFlow 1.13. They cannot coexist in the same environment. Simply switch between them:
+No. NoisePy requires Python 3.10 and recent NumPy versions, while EGFAnalysisPy requires Python 3.6 and TensorFlow 1.13. They cannot coexist in the same environment. Simply switch between them:
 ```bash
 conda activate noisepy        # For NoisePy-related scripts
-conda activate disperpicker   # For DisperPicker
+conda activate egfanalysispy          # For EGFAnalysisPy (dispersion analysis + picking)
 ```
 
 ### Q: Running DSurfTomo scripts gives `ModuleNotFoundError: No module named 'numpy'`
@@ -435,8 +399,6 @@ python PrepareDSurfTomoProject.py
 | Step 2: Prepare station file | No Python needed |
 | Step 3: Cross-correlation | `conda activate noisepy` |
 | Step 4: Export EGF data | `conda activate noisepy` |
-| Step 5: MATLAB dispersion | MATLAB |
-| Step 6: Prepare DisperPicker input | `conda activate noisepy` |
-| Step 7: DisperPicker extraction | `conda activate disperpicker` |
-| Step 8: DSurfTomo inversion | `conda activate noisepy` (Python scripts) + `DSurfTomo/bin/DSurfTomo` (executable) |
+| Step 5: EGFAnalysisPy dispersion + picking | `conda activate egfanalysispy` |
+| Step 6: DSurfTomo inversion | `conda activate noisepy` (Python scripts) + `DSurfTomo/bin/DSurfTomo` (executable) |
 | GMT plotting | System terminal (no Python environment needed) |

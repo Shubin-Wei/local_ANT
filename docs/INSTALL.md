@@ -7,10 +7,9 @@
 - [系统要求](#系统要求)
 - [1. 安装 Conda（如果尚未安装）](#1-安装-conda如果尚未安装)
 - [2. 安装 NoisePy 及 Python 依赖](#2-安装-noisepy-及-python-依赖)
-- [3. 安装 DisperPicker](#3-安装-disperpicker)
+- [3. 安装 EGFAnalysisPy](#3-安装-egfanalysispy)
 - [4. 编译 DSurfTomo](#4-编译-dsurftomo)
-- [5. 安装 MATLAB（EGFAnalysisTimeFreq）](#5-安装-maboregfanalysistimefreq)
-- [6. 安装 GMT（可选，用于绘图）](#6-安装-gmt可选用于绘图)
+- [5. 安装 GMT（可选，用于绘图）](#5-安装-gmt可选用于绘图)
 - [验证安装](#验证安装)
 - [常见问题](#常见问题)
 
@@ -23,7 +22,6 @@
 | 操作系统 | Linux（推荐 Ubuntu 18.04+）或 macOS |
 | Python | 3.8 – 3.10（推荐 3.10） |
 | Fortran 编译器 | gfortran（DSurfTomo 编译需要） |
-| MATLAB | R2018a 或更新版本（EGFAnalysisTimeFreq 需要） |
 | 磁盘空间 | ≥ 5 GB（含 Conda 环境和软件包） |
 | 内存 | ≥ 4 GB |
 
@@ -146,33 +144,27 @@ python -m ipykernel install --user --name noisepy
 
 ---
 
-## 3. 安装 DisperPicker
+## 3. 安装 EGFAnalysisPy
 
-DisperPicker 使用深度学习（TensorFlow）自动从频散谱图中提取频散曲线。它需要单独的 Python 环境，因为它依赖 TensorFlow 1.x，与 NoisePy 使用的包版本不兼容。
+EGFAnalysisPy 是 EGFAnalysisTimeFreq 的纯 Python 重写，用于面波频散分析，并**内置了基于深度学习的频散曲线提取工具 DisperPicker**，一步完成频散分析与曲线拾取。它需要单独的 Python 环境，因为它依赖 TensorFlow 1.x，与 NoisePy 使用的包版本不兼容。
 
-> **什么是 DisperPicker？**
-> DisperPicker 是一个基于 CNN（卷积神经网络）的频散曲线自动提取工具。
-> 引用：Yang, S., et al. (2022). *Seismological Research Letters*.
-> GitHub: https://github.com/ShaoboYang-USTC/DisperPicker
+> **什么是 EGFAnalysisPy / DisperPicker？**
+> EGFAnalysisPy 从经验格林函数 / 互相关函数计算频散能量图（Yao et al., 2006），并用内置的 DisperPicker（CNN，Yang et al., 2022, *SRL*）自动提取频散曲线。
+> DisperPicker GitHub: https://github.com/ShaoboYang-USTC/DisperPicker
 
 ### 3a. 创建独立环境
 
 ```bash
-# DisperPicker 依赖 TensorFlow 1.13，需要 Python 3.6
-conda create -n disperpicker -y python=3.6 pip
-conda activate disperpicker
+# EGFAnalysisPy 依赖 TensorFlow 1.13，需要 Python 3.6
+conda create -n egfanalysispy -y python=3.6 pip
+conda activate egfanalysispy
 ```
 
 ### 3b. 安装依赖
 
 ```bash
-cd DisperPicker
-
-# 方式一：使用 requirements.txt（推荐）
+cd EGFAnalysisPy
 pip install -r requirements.txt
-
-# 方式二：手动安装
-pip install tensorflow==1.13.1 matplotlib==3.3.4 numpy==1.19.0
 ```
 
 > **注意：** TensorFlow 1.13.1 不支持 Python 3.7+。如果你遇到安装失败，请确认 Python 版本为 3.6。
@@ -180,8 +172,8 @@ pip install tensorflow==1.13.1 matplotlib==3.3.4 numpy==1.19.0
 ### 3c. 验证安装
 
 ```bash
-conda activate disperpicker
-cd DisperPicker
+conda activate egfanalysispy
+cd EGFAnalysisPy
 python -c "import tensorflow as tf; print('TensorFlow version:', tf.__version__)"
 ```
 
@@ -189,10 +181,10 @@ python -c "import tensorflow as tf; print('TensorFlow version:', tf.__version__)
 
 ### 3d. 预训练模型
 
-DisperPicker 的预训练模型已经包含在仓库的 `saver/` 目录中，无需额外下载：
+DisperPicker 的预训练模型已经包含在 `EGFAnalysisPy/DisperPicker/saver/` 目录中，无需额外下载：
 
 ```
-DisperPicker/saver/
+EGFAnalysisPy/DisperPicker/saver/
 ├── -10000.data-00000-of-00001
 ├── -10000.index
 └── -10000.meta
@@ -274,41 +266,11 @@ source ~/.bashrc
 
 ---
 
-## 5. 安装 MATLAB（EGFAnalysisTimeFreq）
-
-EGFAnalysisTimeFreq 是一个 MATLAB GUI 程序，用于从互相关函数中分析面波频散。
-
-> **什么是 EGFAnalysisTimeFreq？**
-> 面波 EGF/CF 相速度频散分析软件。
-> 作者：姚华建（中国科学技术大学）
-> 引用：Yao, H., et al. (2006). *Geophysical Journal International*, 166(2), 732–744.
-
-### 5a. 安装 MATLAB
-
-- 从 [MathWorks 官网](https://www.mathworks.com/) 下载并安装 MATLAB
-- 需要有效的 MATLAB 许可证（学校通常提供校园版许可证）
-- 最低版本要求：R2018a
-
-### 5b. 验证
-
-打开 MATLAB，在命令窗口中运行：
-
-```matlab
-cd('/path/to/local_ANT/EGFAnalysisTimeFreq')
-EGFAnalysisTimeFreq
-```
-
-如果 GUI 窗口正常弹出，说明安装成功。
-
-> **提示：** 详细的 MATLAB 程序使用方法请参考 `EGFAnalysisTimeFreq/EGFAnalysisTimeFreq_Manual.pdf`
-
----
-
-## 6. 安装 GMT（可选，用于绘图）
+## 5. 安装 GMT（可选，用于绘图）
 
 GMT (Generic Mapping Tools) 用于 DSurfTomo 的结果绘图（深度切片、剖面、射线路径、棋盘测试）。如果你不需要绘图，可以跳过此步。
 
-### 6a. 安装 GMT 6
+### 5a. 安装 GMT 6
 
 ```bash
 # Ubuntu/Debian
@@ -322,7 +284,7 @@ sudo yum install GMT
 brew install gmt
 ```
 
-### 6b. 验证安装
+### 5b. 验证安装
 
 ```bash
 gmt --version
@@ -352,11 +314,13 @@ import datetimerange; print('datetimerange OK')
 "
 
 echo ""
-echo "=== 2. DisperPicker 环境 ==="
-conda activate disperpicker
+echo "=== 2. EGFAnalysisPy 环境 ==="
+conda activate egfanalysispy
 python -c "
 import tensorflow as tf; print('TensorFlow', tf.__version__, 'OK')
 import numpy; print('NumPy OK')
+import scipy; print('SciPy OK')
+import pandas; print('Pandas OK')
 import matplotlib; print('Matplotlib OK')
 "
 
@@ -390,15 +354,15 @@ gmt --version 2>/dev/null || echo "GMT not installed (optional)"
 pip install noisepy-seis -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-### Q: DisperPicker 安装 TensorFlow 1.13.1 失败
+### Q: EGFAnalysisPy 安装 TensorFlow 1.13.1 失败
 TensorFlow 1.13.1 仅支持 Python 3.6。请确认：
 ```bash
 python --version  # 应该显示 3.6.x
 ```
-如果版本不对，重新创建环境：`conda create -n disperpicker -y python=3.6 pip`
+如果版本不对，重新创建环境：`conda create -n egfanalysispy -y python=3.6 pip`
 
 ### Q: TensorFlow 报 GPU 相关错误
-DisperPicker 默认使用 CPU 运行，不需要 GPU。如果看到 CUDA/GPU 相关的警告信息，可以忽略，或设置环境变量：
+EGFAnalysisPy（内置 DisperPicker）默认使用 CPU 运行，不需要 GPU。如果看到 CUDA/GPU 相关的警告信息，可以忽略，或设置环境变量：
 ```bash
 export CUDA_VISIBLE_DEVICES=""
 ```
@@ -412,10 +376,10 @@ brew install gcc               # macOS
 ```
 
 ### Q: 两个 Conda 环境可以合并吗？
-不建议。NoisePy 需要 Python 3.10 和较新的 NumPy，而 DisperPicker 需要 Python 3.6 和 TensorFlow 1.13。两者无法在同一环境中共存。使用时切换环境即可：
+不建议。NoisePy 需要 Python 3.10 和较新的 NumPy，而 EGFAnalysisPy 需要 Python 3.6 和 TensorFlow 1.13。两者无法在同一环境中共存。使用时切换环境即可：
 ```bash
 conda activate noisepy        # 运行 NoisePy 相关脚本
-conda activate disperpicker   # 运行 DisperPicker
+conda activate egfanalysispy          # 运行 EGFAnalysisPy（频散分析 + 拾取）
 ```
 
 ### Q: 运行 DSurfTomo 脚本时报 `ModuleNotFoundError: No module named 'numpy'`
@@ -436,8 +400,6 @@ python PrepareDSurfTomoProject.py
 | Step 2: 准备台站文件 | 无需 Python |
 | Step 3: 互相关计算 | `conda activate noisepy` |
 | Step 4: 导出 EGF 数据 | `conda activate noisepy` |
-| Step 5: MATLAB 频散分析 | MATLAB |
-| Step 6: 准备 DisperPicker 输入 | `conda activate noisepy` |
-| Step 7: DisperPicker 提取 | `conda activate disperpicker` |
-| Step 8: DSurfTomo 反演 | `conda activate noisepy`（Python 脚本）+ `DSurfTomo/bin/DSurfTomo`（可执行文件） |
+| Step 5: EGFAnalysisPy 频散分析 + 拾取 | `conda activate egfanalysispy` |
+| Step 6: DSurfTomo 反演 | `conda activate noisepy`（Python 脚本）+ `DSurfTomo/bin/DSurfTomo`（可执行文件） |
 | GMT 绘图 | 系统终端（无需 Python 环境） |

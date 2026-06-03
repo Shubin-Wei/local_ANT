@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import h5py
 import numpy as np
+from tqdm import tqdm
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -92,7 +93,7 @@ def discover_stack_names(stack_dir: Path, component: str) -> List[str]:
     if not stack_dir.exists():
         raise FileNotFoundError(f"Stack directory not found: {stack_dir}")
     names: Set[str] = set()
-    for h5_path in iter_stack_files(stack_dir):
+    for h5_path in tqdm(iter_stack_files(stack_dir), desc="Scanning stacks", unit="file"):
         with h5py.File(h5_path, "r") as h5:
             aux = h5.get("AuxiliaryData")
             if aux is None:
@@ -259,7 +260,8 @@ def export_dataset_stack(
 
     exported: List[Dict[str, str]] = []
 
-    for h5_path in stack_files:
+    desc = f"Exporting {stack_name}/{component}"
+    for h5_path in tqdm(stack_files, desc=desc, unit="file"):
         src = h5_path.parent.parent.name
         rec = h5_path.parent.name
         if src == rec:

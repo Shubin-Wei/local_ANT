@@ -1,16 +1,16 @@
-# Example configuration for stack_visualization.py
+# Configuration for stack_visualization.py
 # Paths are relative to this YAML file's directory.
 # CLI flags override values set here.
 
 # --- Paths ---
-stack-dir: ../TestData/StackData
-outdir: ../TestData/figures
+stack-dir: /data/Shenxz/Weishb/HJ/SurfaceStackData
+outdir: /data/Shenxz/Weishb/HJ/figures
 
 # --- Filter ---
 freqmin: 1
 freqmax: 5
 component: ZZ
-stack-method: linear
+stack-method: all
 
 # --- Station filter ---
 # Single station or comma-separated list:
@@ -33,14 +33,18 @@ maxlag: 10
 style: both
 output-format: png
 dpi: 200
-overwrite: false
+overwrite: true
 
 # --- Plot appearance ---
 # cmap: RdBu_r
 # clip-percentile: 99.0
 # figure-width: 10.5
-wiggle-scale: 0.35
-wiggle-every: 1
+# min-figure-height: 5.4
+# max-figure-height: 9.0
+# max-distance-ticks: 8
+# max-time-ticks: 5
+wiggle-scale: 50
+wiggle-every: 100
 # no-title: false
 
 # --- Other ---

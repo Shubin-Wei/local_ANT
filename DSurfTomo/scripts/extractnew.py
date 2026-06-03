@@ -2,16 +2,14 @@
 
 """Reformat picked dispersion curves for DSurfTomo.
 
-Supported inputs
-1. DisperPicker post-processed results:
-   - phase: <input_dir>/phase_velocity/STA1.STA2.txt
-   - group: <input_dir>/group_velocity/STA1.STA2.txt
-   Requires a station file because the curve files only contain T-V pairs.
-
-2. Manual picks from EGFAnalysisTimeFreq:
-   - phase: CDisp.T.STA1_STA2.dat
-   - group: GDisp.STA1_STA2.dat
-   These files contain station coordinates in the first two rows.
+Input: EGFAnalysisPy (run.py) qc_result output
+  - phase: CDisp.STA1_STA2.txt
+  - group: GDisp.STA1_STA2.txt
+  Looked up in <input_dir> directly or in <input_dir>/qc_result.
+  The first two rows carry the station coordinates (lon lat). Data rows are
+  "period velocity snr probability"; the 4th column is the DisperPicker
+  probability (a float in [0, 1]), not a 1/0 keep flag, so it is not used for
+  filtering.
 
 Output
   - surfdata.dat in DSurfTomo format
@@ -30,7 +28,6 @@ import json
 
 import numpy as np
 from dsurftomo_utils import (
-    load_station_file,
     metadata_path_for,
     prompt,
     prompt_choice,
@@ -49,25 +46,15 @@ STRICT_PERIOD_TOL = 1e-6
 def collect_inputs():
     args = Args()
     print("DSurfTomo extractnew.py")
-    print("Convert picked dispersion curves to surfdata.dat")
+    print("Convert EGFAnalysisPy dispersion curves to surfdata.dat")
     print("")
-    args.input_dir = prompt("input directory")
-    selected_input_type = prompt_choice(
-        "input source (auto/DisperPicker/manual)",
-        ["auto", "disperpicker", "manual"],
-        default="auto",
-    )
-    if selected_input_type == "auto":
-        args.input_type = infer_input_type(args.input_dir)
-        print("Detected input source: %s" % args.input_type)
-    else:
-        args.input_type = selected_input_type
+    args.input_dir = prompt("input directory (EGFAnalysisPy qc_result or its parent)")
+    args.input_type = infer_input_type(args.input_dir)
+    print("Detected input source: %s" % args.input_type)
     args.curve_type = prompt_choice(
         "curve type (phase/group/both)", ["phase", "group", "both"], default="both"
     )
     args.station_file = None
-    if args.input_type == "disperpicker":
-        args.station_file = prompt("station coordinate file for DisperPicker station pairs", default="")
     args.period_step = prompt_float("strict period step (s, exact grid only)")
     args.min_period = None
     args.max_period = None
@@ -77,86 +64,47 @@ def collect_inputs():
     return args
 
 
+def egfpy_search_dir(input_dir):
+    """EGFAnalysisPy curves live either in <input_dir> or <input_dir>/qc_result."""
+    qc_dir = os.path.join(input_dir, "qc_result")
+    if os.path.isdir(qc_dir):
+        return qc_dir
+    return input_dir
+
+
+def dir_has_egfpy(search_dir):
+    if not os.path.isdir(search_dir):
+        return False
+    for name in os.listdir(search_dir):
+        if name.endswith(".txt") and (name.startswith("CDisp.") or name.startswith("GDisp.")):
+            return True
+    return False
+
+
 def list_input_files(input_dir, curve_type):
-    input_type = infer_input_type(input_dir)
-    return list_input_files_by_type(input_dir, input_type, curve_type)
+    return list_input_files_by_type(input_dir, infer_input_type(input_dir), curve_type)
 
 
 def infer_input_type(input_dir):
-    phase_dir = os.path.join(input_dir, "phase_velocity")
-    group_dir = os.path.join(input_dir, "group_velocity")
-    has_subdirs = os.path.isdir(phase_dir) or os.path.isdir(group_dir)
-
-    top_level_names = os.listdir(input_dir)
-    has_manual_top = any(
-        name.startswith("CDisp.T.") or name.startswith("GDisp.") for name in top_level_names
+    # EGFAnalysisPy qc_result: CDisp.*.txt / GDisp.*.txt with a coordinate header.
+    if dir_has_egfpy(egfpy_search_dir(input_dir)):
+        return "egfpy"
+    raise ValueError(
+        "Cannot find EGFAnalysisPy dispersion files (CDisp.*.txt / GDisp.*.txt) "
+        "in %s or %s/qc_result." % (input_dir, input_dir)
     )
-
-    def subdir_has_manual_dat(search_dir):
-        if not os.path.isdir(search_dir):
-            return False
-        for name in os.listdir(search_dir):
-            if not name.endswith(".dat"):
-                continue
-            if name.startswith("CDisp.T.") or name.startswith("GDisp."):
-                return True
-        return False
-
-    has_manual_subdir = subdir_has_manual_dat(phase_dir) or subdir_has_manual_dat(group_dir)
-    has_manual = has_manual_top or has_manual_subdir
-
-    if has_manual:
-        return "manual"
-    if has_subdirs:
-        return "disperpicker"
-    raise ValueError("Cannot infer input source from directory contents.")
 
 
 def list_input_files_by_type(input_dir, input_type, curve_type):
-    if input_type == "manual":
-        prefix = "CDisp.T." if curve_type == "phase" else "GDisp."
-        subdir = "phase_velocity" if curve_type == "phase" else "group_velocity"
-        if os.path.basename(os.path.normpath(input_dir)) == subdir:
-            search_dir = input_dir
-        elif os.path.isdir(os.path.join(input_dir, subdir)):
-            search_dir = os.path.join(input_dir, subdir)
-        else:
-            search_dir = input_dir
-        return sorted(
-            os.path.join(search_dir, name)
-            for name in os.listdir(search_dir)
-            if name.startswith(prefix) and name.endswith(".dat")
-        )
-    subdir = "phase_velocity" if curve_type == "phase" else "group_velocity"
-    if os.path.basename(os.path.normpath(input_dir)) == subdir:
-        search_dir = input_dir
-    else:
-        search_dir = os.path.join(input_dir, subdir)
-    if not os.path.isdir(search_dir):
-        raise ValueError("Missing directory: %s" % search_dir)
+    if input_type != "egfpy":
+        raise ValueError("Unsupported input type: %s" % input_type)
+    search_dir = egfpy_search_dir(input_dir)
+    prefix = "CDisp." if curve_type == "phase" else "GDisp."
     return sorted(
         os.path.join(search_dir, name)
         for name in os.listdir(search_dir)
-        if name.endswith(".txt")
+        if name.startswith(prefix) and name.endswith(".txt")
     )
-
-
-def pair_from_ml_filename(path):
-    name = os.path.splitext(os.path.basename(path))[0]
-    parts = name.split(".")
-    if len(parts) != 2:
-        raise ValueError("Unexpected ml file name: %s" % path)
-    return parts[0], parts[1]
-
-
-def pair_from_manual_filename(path, curve_type):
-    name = os.path.basename(path)
-    prefix = "CDisp.T." if curve_type == "phase" else "GDisp."
-    pair = os.path.splitext(name[len(prefix) :])[0]
-    parts = pair.split("_")
-    if len(parts) != 2:
-        raise ValueError("Unexpected manual file name: %s" % path)
-    return parts[0], parts[1]
 
 
 def period_to_index(period, min_period, period_step, nf):
@@ -177,72 +125,27 @@ def detect_period_bounds_by_type(input_dir, input_type, curve_type):
     input_files = list_input_files_by_type(input_dir, input_type, curve_type)
     periods = []
     for path in input_files:
-        if input_type == "manual":
-            with open(path, "r") as fobj:
-                lines = [line.strip() for line in fobj if line.strip()]
-            for line in lines[2:]:
-                parts = line.split()
-                if len(parts) < 2:
-                    continue
-                period = float(parts[0])
-                velocity = float(parts[1])
-                if len(parts) >= 4:
-                    try:
-                        flag = int(round(float(parts[3])))
-                    except ValueError:
-                        flag = 1
-                else:
-                    flag = 1
-                if flag == 1 and velocity > 0:
-                    periods.append(period)
-        else:
-            data = np.loadtxt(path)
-            if data.ndim == 1:
-                data = data.reshape(1, -1)
-            for row in data:
-                period = float(row[0])
-                velocity = float(row[1])
-                if velocity > 0:
-                    periods.append(period)
+        with open(path, "r") as fobj:
+            lines = [line.strip() for line in fobj if line.strip()]
+        for line in lines[2:]:
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            period = float(parts[0])
+            velocity = float(parts[1])
+            if velocity > 0:
+                periods.append(period)
     if not periods:
         raise ValueError("No valid periods found in %s (%s)" % (input_dir, curve_type))
     return round(min(periods), 10), round(max(periods), 10)
 
 
-def read_ml_curve(path, stations, min_period, max_period, period_step, nf):
-    sta1, sta2 = pair_from_ml_filename(path)
-    if sta1 not in stations or sta2 not in stations:
-        raise KeyError("Station not found in station file: %s or %s" % (sta1, sta2))
-
-    data = np.loadtxt(path)
-    if data.ndim == 1:
-        data = data.reshape(1, -1)
-    if data.shape[1] < 2:
-        raise ValueError("Expected at least 2 columns in %s" % path)
-
-    values = OrderedDict()
-    for row in data:
-        period = float(row[0])
-        velocity = float(row[1])
-        if velocity <= 0 or period < min_period or period > max_period:
-            continue
-        period_index = period_to_index(period, min_period, period_step, nf)
-        if period_index is None:
-            continue
-        snapped_period = round(min_period + (period_index - 1) * period_step, 10)
-        values[snapped_period] = velocity
-
-    lat1, lon1 = stations[sta1]
-    lat2, lon2 = stations[sta2]
-    return values, (lat1, lon1), (lat2, lon2)
-
-
-def read_manual_curve(path, min_period, max_period, period_step, nf):
+def read_egfpy_curve(path, min_period, max_period, period_step, nf):
     with open(path, "r") as fobj:
         lines = [line.strip() for line in fobj if line.strip()]
 
     if len(lines) < 3:
-        raise ValueError("Unexpected manual dispersion file format: %s" % path)
+        raise ValueError("Unexpected EGFAnalysisPy dispersion file format: %s" % path)
 
     sta1_parts = lines[0].split()
     sta2_parts = lines[1].split()
@@ -259,14 +162,7 @@ def read_manual_curve(path, min_period, max_period, period_step, nf):
             continue
         period = float(parts[0])
         velocity = float(parts[1])
-        if len(parts) >= 4:
-            try:
-                flag = int(round(float(parts[3])))
-            except ValueError:
-                flag = 1
-        else:
-            flag = 1
-        if flag != 1 or velocity <= 0 or period < min_period or period > max_period:
+        if velocity <= 0 or period < min_period or period > max_period:
             continue
         period_index = period_to_index(period, min_period, period_step, nf)
         if period_index is None:
@@ -309,33 +205,15 @@ def build_records(args):
     if not input_files:
         raise ValueError("No input files found.")
 
-    stations = None
-    if input_type == "disperpicker":
-        if not args.station_file:
-            args.station_file = prompt("station coordinate file for DisperPicker station pairs")
-        if not args.station_file:
-            raise ValueError("station coordinate file is required for DisperPicker input.")
-        stations = load_station_file(args.station_file)
-
     records = []
     for path in input_files:
-        if input_type == "disperpicker":
-            values, sta1, sta2 = read_ml_curve(
-                path,
-                stations,
-                args.min_period,
-                args.max_period,
-                args.period_step,
-                nf,
-            )
-        else:
-            values, sta1, sta2 = read_manual_curve(
-                path,
-                args.min_period,
-                args.max_period,
-                args.period_step,
-                nf,
-            )
+        values, sta1, sta2 = read_egfpy_curve(
+            path,
+            args.min_period,
+            args.max_period,
+            args.period_step,
+            nf,
+        )
         if not values:
             continue
         records.append(
@@ -424,7 +302,7 @@ def build_metadata(args, runs, recommended_nsrc):
     metadata = OrderedDict()
     metadata["input_dir"] = args.input_dir
     metadata["input_type"] = runs[0]["input_type"] if runs else args.input_type
-    metadata["station_file"] = args.station_file
+    metadata["station_file"] = None
     metadata["wave_type"] = args.wave_type
     metadata["wave_type_name"] = "Rayleigh" if args.wave_type == 2 else "Love"
     metadata["curve_type"] = args.curve_type

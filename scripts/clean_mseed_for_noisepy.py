@@ -1,19 +1,28 @@
 #!/usr/bin/env python
 """Clean raw mseed data and prepare NoisePy input.
 
-Scans raw miniSEED files, finds the target channel (default: Z component),
-merges its segments, checks completeness against a full day, and writes
+Scans station folders under input-root, groups files by Beijing date,
+merges target channel traces, checks completeness, and writes
 qualifying data in NoisePy naming format.
+
+Usage:
+    python clean_mseed_for_noisepy.py --input-root RawData --output-root CleanData
+    python clean_mseed_for_noisepy.py --input-root RawData --output-root CleanData --date-range 260316 260429
+    python clean_mseed_for_noisepy.py --input-root RawData --output-root CleanData --verbose --dry-run
 """
 
 import argparse
 import os
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+import warnings
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+
+warnings.filterwarnings("ignore", message="readMSEEDBuffer", category=UserWarning)
+warnings.filterwarnings("ignore", module="obspy.io.mseed")
 
 try:
     from obspy import Stream, UTCDateTime, read
@@ -22,73 +31,42 @@ except ImportError:
 
 FILENAME_PAT = re.compile(r"^\d{12}$")
 EXPECTED_SECONDS = 86400
+MAX_TRACES_PER_FILE = 30
+TIME_DIFF_THRESHOLD = 86400
+
+VERBOSE = False
+
+
+def log(msg):
+    if VERBOSE:
+        print(f"    {msg}")
 
 
 def parse_args():
     p = argparse.ArgumentParser(
         description="Clean mseed data and convert to NoisePy format."
     )
-    p.add_argument(
-        "--input-root",
-        default="local_ANT/TestData/RawData",
-        help="Root directory of raw mseed files.",
-    )
-    p.add_argument(
-        "--output-root",
-        default="local_ANT/TestData/CleanData",
-        help="Output directory for cleaned files.",
-    )
-    p.add_argument(
-        "--time-zone",
-        choices=["beijing", "utc"],
-        default="beijing",
-        help="How to interpret filename timestamps (default: beijing).",
-    )
-    p.add_argument(
-        "--tolerance-seconds",
-        type=float,
-        default=60.0,
-        help="Tolerance in seconds for full-day check (default: 60).",
-    )
-    p.add_argument(
-        "--target-channel",
-        default=None,
-        help="Channel or component for completeness check and output, e.g. Z, BNZ, BHZ. "
-        "If not set, defaults to the Z-component channel.",
-    )
-    p.add_argument(
-        "--merge-fill",
-        choices=["interpolate", "zero", "none"],
-        default="interpolate",
-        help="Gap fill strategy when merging traces (default: interpolate).",
-    )
-    p.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print actions without writing output.",
-    )
-    p.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing output files.",
-    )
+    p.add_argument("--input-root", default="local_ANT/TestData/RawData",
+                    help="Root directory of raw mseed files (contains station folders).")
+    p.add_argument("--output-root", default="local_ANT/TestData/CleanData",
+                    help="Output directory for cleaned files.")
+    p.add_argument("--min-completeness", type=float, default=0.8,
+                    help="Min completeness ratio, 0~1 (default: 0.8)")
+    p.add_argument("--target-channel", default=None,
+                    help="Channel or component, e.g. Z, BNZ (default: Z)")
+    p.add_argument("--date-range", nargs=2, metavar=("START", "END"),
+                    help="Only process Beijing dates strictly between START and END "
+                    "(both excluded). Format: YYMMDD, e.g. --date-range 260316 260429")
+    p.add_argument("--overwrite", action="store_true",
+                    help="Overwrite existing output files.")
+    p.add_argument("--dry-run", action="store_true",
+                    help="Print actions without writing output.")
+    p.add_argument("--verbose", "-v", action="store_true",
+                    help="Print detailed per-file messages.")
     return p.parse_args()
 
 
-def parse_utc_from_name(name: str, tz: str) -> datetime:
-    dt = datetime.strptime(name, "%y%m%d%H%M%S")
-    if tz == "beijing":
-        dt = dt - timedelta(hours=8)
-    return dt.replace(tzinfo=timezone.utc)
-
-
 def find_target_traces(st: Stream, target_spec) -> list:
-    """Return all traces matching the target channel spec.
-
-    target_spec can be a component letter (Z/N/E) or a full channel code (BNZ/BHZ).
-    If not specified, defaults to Z-component traces.
-    Returns a list of traces (may be multiple segments of the same channel).
-    """
     if target_spec:
         spec = target_spec.upper()
         return [
@@ -99,30 +77,19 @@ def find_target_traces(st: Stream, target_spec) -> list:
     return [tr for tr in st if tr.stats.channel.upper().endswith("Z")]
 
 
-def is_full_day(trace, tolerance: float) -> tuple:
-    """Check if a merged trace covers a full day.
-
-    Returns (is_complete, duration_npts, reason).
-    """
+def check_completeness(trace, min_completeness: float) -> tuple:
     sr = trace.stats.sampling_rate
     if sr <= 0:
         return False, 0.0, f"invalid sampling rate {sr}"
-
     if hasattr(trace.data, "mask"):
         valid_samples = int(np.sum(~trace.data.mask))
     else:
         valid_samples = trace.stats.npts
-
-    duration_npts = valid_samples / sr
-    diff = abs(duration_npts - EXPECTED_SECONDS)
-
-    if diff > tolerance:
-        return (
-            False,
-            duration_npts,
-            f"duration {duration_npts:.1f}s, diff {diff:.1f}s > tolerance {tolerance:.1f}s",
-        )
-    return True, duration_npts, ""
+    duration = valid_samples / sr
+    ratio = duration / EXPECTED_SECONDS
+    if ratio < min_completeness:
+        return False, duration, f"completeness {ratio:.1%} < {min_completeness:.0%} ({duration:.0f}s / {EXPECTED_SECONDS}s)"
+    return True, duration, ""
 
 
 def build_output_name(trace, year: int, doy: int) -> str:
@@ -135,172 +102,209 @@ def build_output_name(trace, year: int, doy: int) -> str:
     return f"{net}{sta}_{cha}{loc}_{year:04d}{doy:03d}.ms"
 
 
+def collect_files_by_beijing_date(folder, date_start, date_end, stats):
+    date_files = {}
+    for fname in sorted(os.listdir(folder)):
+        fpath = folder / fname
+        if not fpath.is_file() or fname == "PAR.INI":
+            continue
+        stats["total_files"] += 1
+        stem = fpath.stem
+
+        if not FILENAME_PAT.match(stem):
+            stats["skipped_bad_name"] += 1
+            continue
+
+        beijing_date_str = stem[:6]
+        try:
+            beijing_date = datetime.strptime(beijing_date_str, "%y%m%d").date()
+        except Exception:
+            stats["skipped_bad_name"] += 1
+            continue
+
+        if date_start is not None:
+            if beijing_date <= date_start or beijing_date >= date_end:
+                stats["skipped_date_range"] += 1
+                continue
+
+        date_files.setdefault(beijing_date, []).append(fpath)
+    return date_files
+
+
+def read_and_filter_file(fpath, stats):
+    try:
+        st = read(str(fpath))
+    except Exception as e:
+        log(f"read failed: {fpath.name} — {e}")
+        stats["read_failed"] += 1
+        return None
+
+    if len(st) == 0:
+        log(f"empty: {fpath.name}")
+        stats["skipped_empty"] += 1
+        return None
+
+    if len(st) > MAX_TRACES_PER_FILE:
+        log(f"corrupt ({len(st)} traces): {fpath.name}")
+        stats["skipped_too_many_traces"] += 1
+        return None
+
+    stem = fpath.stem
+    beijing_dt = datetime.strptime(stem, "%y%m%d%H%M%S")
+    fname_utc = UTCDateTime(beijing_dt.year, beijing_dt.month, beijing_dt.day,
+                            beijing_dt.hour, beijing_dt.minute, beijing_dt.second) - 8 * 3600
+
+    filtered = Stream()
+    n_garbage = 0
+    for tr in st:
+        time_diff = abs(tr.stats.starttime - fname_utc)
+        if time_diff > TIME_DIFF_THRESHOLD:
+            n_garbage += 1
+            continue
+        filtered.append(tr)
+
+    if n_garbage > 0:
+        log(f"dropped {n_garbage} garbage trace(s): {fpath.name}")
+
+    if len(filtered) == 0:
+        stats["skipped_empty"] += 1
+        return None
+
+    return filtered
+
+
+def process_day(day_files, station_label, args, stats):
+    all_traces = Stream()
+    for fpath in day_files:
+        st = read_and_filter_file(fpath, stats)
+        if st is not None:
+            all_traces += st
+
+    if len(all_traces) == 0:
+        return None
+
+    target_traces = find_target_traces(all_traces, args.target_channel)
+    if not target_traces:
+        log(f"{station_label} — no target channel '{args.target_channel or 'Z'}'")
+        stats["skipped_no_channel"] += 1
+        return None
+
+    channel_st = Stream(target_traces)
+
+    srs = set(tr.stats.sampling_rate for tr in channel_st)
+    if len(srs) > 1:
+        log(f"{station_label} — inconsistent sampling rates: {srs}")
+        stats["skipped_merge_failed"] += 1
+        return None
+
+    try:
+        channel_st.merge(method=1, fill_value=None)
+    except Exception as e:
+        log(f"{station_label} — merge failed: {e}")
+        stats["skipped_merge_failed"] += 1
+        return None
+
+    if len(channel_st) != 1:
+        log(f"{station_label} — merge produced {len(channel_st)} traces")
+        stats["skipped_merge_failed"] += 1
+        return None
+
+    merged_tr = channel_st[0]
+    tr_start = merged_tr.stats.starttime
+    year = tr_start.year
+    doy = tr_start.julday
+
+    complete, duration, reason = check_completeness(merged_tr, args.min_completeness)
+    if not complete:
+        log(f"{station_label} — {reason}")
+        stats["skipped_incomplete"] += 1
+        return None
+
+    if hasattr(merged_tr.data, "mask"):
+        merged_tr.data = np.ma.filled(merged_tr.data, 0)
+
+    out_name = build_output_name(merged_tr, year, doy)
+    out_path = args._output_root / out_name
+
+    if out_path.exists() and not args.overwrite:
+        log(f"{out_name} — already exists")
+        return None
+
+    if args.dry_run:
+        print(f"  [DRY] {out_name}  ({duration:.0f}s)")
+    else:
+        Stream([merged_tr]).write(str(out_path), format="MSEED")
+        print(f"  [OK]  {out_name}  ({duration:.0f}s)")
+    stats["written"] += 1
+    return merged_tr
+
+
 def main():
     args = parse_args()
+
+    global VERBOSE
+    VERBOSE = args.verbose
+
     input_root = Path(args.input_root)
     output_root = Path(args.output_root)
+    args._output_root = output_root
 
     if not input_root.is_dir():
         sys.exit(f"Input directory does not exist: {input_root}")
 
+    date_start = date_end = None
+    if args.date_range:
+        date_start = datetime.strptime(args.date_range[0], "%y%m%d").date()
+        date_end = datetime.strptime(args.date_range[1], "%y%m%d").date()
+
+    print(f"Input:  {input_root}")
+    print(f"Output: {output_root}")
+    print(f"Min completeness: {args.min_completeness:.0%}")
+    if date_start:
+        print(f"Date range (Beijing): ({date_start}, {date_end}) — both excluded")
+    print()
+
     if not args.dry_run:
         output_root.mkdir(parents=True, exist_ok=True)
 
-    merge_fill_value = None
-    if args.merge_fill == "interpolate":
-        merge_fill_value = "interpolate"
-    elif args.merge_fill == "zero":
-        merge_fill_value = 0
-
     stats = {
         "total_files": 0,
-        "read_failed_files": 0,
-        "skipped_bad_name_files": 0,
-        "skipped_empty_files": 0,
-        "skipped_no_target_channel": 0,
-        "skipped_incomplete_channels": 0,
-        "skipped_merge_failed_channels": 0,
-        "written_channels": 0,
-        "output_root": str(output_root),
+        "read_failed": 0,
+        "skipped_bad_name": 0,
+        "skipped_date_range": 0,
+        "skipped_empty": 0,
+        "skipped_too_many_traces": 0,
+        "skipped_no_channel": 0,
+        "skipped_incomplete": 0,
+        "skipped_merge_failed": 0,
+        "written": 0,
     }
 
-    for root, _, files in os.walk(input_root):
-        root_path = Path(root)
-        for fname in sorted(files):
-            fpath = root_path / fname
-            if not fpath.is_file():
-                continue
-            stats["total_files"] += 1
-            stem = fpath.stem
+    station_folders = sorted(
+        d for d in input_root.iterdir()
+        if d.is_dir()
+    )
 
-            if not FILENAME_PAT.match(stem):
-                print(f"[SKIP] {fpath} — filename not YYMMDDHHMMSS")
-                stats["skipped_bad_name_files"] += 1
-                continue
+    for folder in station_folders:
+        date_files = collect_files_by_beijing_date(folder, date_start, date_end, stats)
+        if not date_files:
+            continue
 
-            try:
-                t_utc = parse_utc_from_name(stem, args.time_zone)
-            except Exception:
-                print(f"[SKIP] {fpath} — cannot parse timestamp from filename")
-                stats["skipped_bad_name_files"] += 1
-                continue
+        n_days = len(date_files)
+        n_files = sum(len(v) for v in date_files.values())
+        print(f"{folder.name}  ({n_days} days, {n_files} files)")
 
-            try:
-                st = read(str(fpath))
-            except Exception as e:
-                print(f"[SKIP] {fpath} — read failed: {e}")
-                stats["read_failed_files"] += 1
-                continue
+        for day in sorted(date_files):
+            label = f"{folder.name}/{day}"
+            process_day(date_files[day], label, args, stats)
 
-            if len(st) == 0:
-                print(f"[SKIP] {fpath} — no traces in file")
-                stats["skipped_empty_files"] += 1
-                continue
-
-            # Warn if filename time and trace starttime differ significantly
-            try:
-                trace_start = min(tr.stats.starttime for tr in st)
-                fname_utc = UTCDateTime(t_utc)
-                time_diff = abs(trace_start - fname_utc)
-                if time_diff > 3600:
-                    print(
-                        f"[WARN] {fpath} — filename time and trace starttime "
-                        f"differ by {time_diff:.0f}s"
-                    )
-            except Exception:
-                pass
-
-            # Find target channel traces (may be multiple segments)
-            target_traces = find_target_traces(st, args.target_channel)
-            if not target_traces:
-                print(
-                    f"[SKIP] {fpath} — target channel "
-                    f"'{args.target_channel or 'Z'}' not found"
-                )
-                stats["skipped_no_target_channel"] += 1
-                continue
-
-            # Group target traces by full ID (handle multiple location codes)
-            groups = {}
-            for tr in target_traces:
-                key = (
-                    tr.stats.network,
-                    tr.stats.station,
-                    tr.stats.location,
-                    tr.stats.channel,
-                )
-                groups.setdefault(key, []).append(tr)
-
-            for key in sorted(groups):
-                traces = groups[key]
-                channel_st = Stream(traces)
-
-                # Check sampling rate consistency
-                srs = set(tr.stats.sampling_rate for tr in channel_st)
-                if len(srs) > 1:
-                    print(
-                        f"[SKIP] {fpath} — inconsistent sampling rates: {srs}"
-                    )
-                    stats["skipped_merge_failed_channels"] += 1
-                    continue
-
-                # Merge segments
-                try:
-                    if args.merge_fill == "none":
-                        channel_st.merge(method=1, fill_value=None)
-                    else:
-                        channel_st.merge(method=1, fill_value=merge_fill_value)
-                except Exception as e:
-                    print(f"[SKIP] {fpath} — merge failed: {e}")
-                    stats["skipped_merge_failed_channels"] += 1
-                    continue
-
-                if len(channel_st) != 1:
-                    print(
-                        f"[SKIP] {fpath} — "
-                        f"merge produced {len(channel_st)} traces (expected 1)"
-                    )
-                    stats["skipped_merge_failed_channels"] += 1
-                    continue
-
-                merged_tr = channel_st[0]
-
-                # Determine date from actual trace starttime
-                tr_start = merged_tr.stats.starttime
-                year = tr_start.year
-                doy = tr_start.julday
-
-                # Check completeness
-                complete, duration, reason = is_full_day(
-                    merged_tr, args.tolerance_seconds
-                )
-                if not complete:
-                    print(f"[SKIP] {fpath} — incomplete: {reason}")
-                    stats["skipped_incomplete_channels"] += 1
-                    continue
-
-                # Build output path
-                out_name = build_output_name(merged_tr, year, doy)
-                out_path = output_root / out_name
-
-                if out_path.exists() and not args.overwrite:
-                    print(f"[SKIP] {fpath} -> {out_path} — already exists")
-                    continue
-
-                if args.dry_run:
-                    print(f"[DRY]  {fpath} -> {out_path}")
-                else:
-                    Stream([merged_tr]).write(str(out_path), format="MSEED")
-                    print(f"[OK]   {fpath} -> {out_path}")
-                stats["written_channels"] += 1
-
-    # Summary
-    print("\n" + "=" * 60)
-    print("Processing Summary")
-    print("=" * 60)
+    print("\n" + "=" * 50)
+    print("Summary")
+    print("=" * 50)
     for k, v in stats.items():
-        print(f"  {k:<35} {v}")
-    print("=" * 60)
+        print(f"  {k:<28} {v}")
+    print(f"  {'output':<28} {output_root}")
+    print("=" * 50)
 
 
 if __name__ == "__main__":

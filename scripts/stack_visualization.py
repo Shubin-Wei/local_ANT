@@ -31,6 +31,7 @@ import h5py
 import numpy as np
 import yaml
 from scipy.signal import butter, detrend, sosfiltfilt
+from tqdm import tqdm
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "matplotlib"))
 
@@ -433,7 +434,7 @@ def load_records(
     h5_files = sorted(stack_dir.rglob("*.h5"))
     scan_stats["h5_scanned"] = len(h5_files)
 
-    for file_path in h5_files:
+    for file_path in tqdm(h5_files, desc="Loading stacks", unit="file"):
         try:
             with h5py.File(file_path, "r") as h5:
                 dataset_path = f"AuxiliaryData/{stack_name}/{component}"
@@ -544,7 +545,7 @@ def discover_stack_names(stack_dir: Path, component: str) -> List[str]:
     if not stack_dir.exists():
         return []
     names = set()
-    for file_path in sorted(stack_dir.rglob("*.h5")):
+    for file_path in tqdm(sorted(stack_dir.rglob("*.h5")), desc="Discovering stacks", unit="file"):
         try:
             with h5py.File(file_path, "r") as h5:
                 aux = h5.get("AuxiliaryData")
@@ -601,7 +602,7 @@ def prepare_matrix(
     matrix = np.zeros((len(records), filtered_time.size), dtype=np.float64)
     distances = np.zeros(len(records), dtype=np.float64)
 
-    for index, record in enumerate(records):
+    for index, record in enumerate(tqdm(records, desc="Filtering traces", unit="trace")):
         trace = detrend(record.data, type="constant")
         trace = sosfiltfilt(sos, trace)
         trace = trace[time_mask]
@@ -845,7 +846,7 @@ def run_validate_only(args: argparse.Namespace) -> None:
     sample_maxlag = None
     attrs_issues = []
 
-    for fp in h5_files:
+    for fp in tqdm(h5_files, desc="Validating files", unit="file"):
         try:
             with h5py.File(fp, "r") as h5:
                 aux = h5.get("AuxiliaryData")

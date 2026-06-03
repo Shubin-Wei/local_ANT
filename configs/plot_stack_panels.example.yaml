@@ -1,0 +1,60 @@
+# Configuration for plot_stack_panels.py
+# Paths are relative to this YAML file's directory.
+# CLI flags override values set here.
+
+# --- Paths ---
+stack-dir: /data/Shenxz/Weishb/HJ/LineStackData/Line6
+outdir: /data/Shenxz/Weishb/HJ/LineFigures/Line6
+
+# --- Filter ---
+freqmin: 0.3
+freqmax: 1
+component: ZZ
+methods:
+  - linear
+  - pws
+  - robust
+
+# --- Station filter ---
+# Single station or comma-separated list:
+#   station: CF.17982
+#   station: "17982,58808"
+# Or a list:
+#   station:
+#     - CF.17982
+#     - CF.58808
+
+# --- Distance filter ---
+# min-dist: 0.0
+# max-dist: 50.0
+# max-records: 100
+
+# --- Time window ---
+maxlag: 10
+
+# --- Plot style ---
+bottom-style: wiggle
+output-format:
+  - pdf
+  - png
+dpi: 600
+overwrite: true
+
+# --- Plot appearance ---
+# cmap: RdBu_r
+# clip-percentile: 99.0
+# figure-width: 7.2
+# figure-height: 5.5
+# min-figure-height: 5.4
+# max-figure-height: 9.0
+# max-distance-ticks: 8
+# max-time-ticks: 5
+wiggle-scale: 50
+wiggle-every: 1
+# no-title: false
+
+# --- Other ---
+# outname: custom_filename_stem
+# allow-missing-distance: false
+# validate-only: false
+# log-level: INFO
