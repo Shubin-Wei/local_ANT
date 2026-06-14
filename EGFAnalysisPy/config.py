@@ -81,22 +81,23 @@ class Config(object):
 
         self.root = os.getcwd()
         # self.root = '/home/yang/Projects/EGFAnalysisTimeFreq_py/Feidong_test'
-        self.waveform_path = self.root + '/FeidongCFs'
+        self.waveform_path = self.root + '/CFs'           # CF/EGF input directory
         # self.waveform_path = self.root + '/AllCFs'
         self.result_path = self.root + '/DisperPicker/result'
         self.isEGF = False
         self.StartV = 0.5
-        self.EndV = 4
-        self.StartT = 0.2
-        self.EndT = 5
-        self.DeltaT = 0.1
+        self.EndV = 3.5
+        self.MinStaDist = 0.5
+        self.StartT = 0.4
+        self.EndT = 3.0
+        self.DeltaT = 0.02
         self.DeltaV = 0.005
         self.GreenFcnObjects = GreenFcnObjectsType.A_add_B
         self.WinAlpha = 0.1
-        self.NoiseTime = 150
-        self.MinSNR = 5.0
+        self.NoiseTime = 60
+        self.MinSNR = 2.0
         self.WinPeriodNum = 5
-        self.WinMinTime = 25
+        self.WinMinTime = 0.2
         self.FilterKaiserPara = 6
         self.MaxFilterLengthLog = 14
 
@@ -112,13 +113,13 @@ class Config(object):
         self.batch_size = 1
         
         # Picking thresholds (need fine-tuning)
-        self.confidence_G = 0.6 
-        self.mean_confidence_C = 0.4 
-        self.confidence_C = 0 
-        self.random_plot_ratio = 1 
+        self.confidence_G = 0.4
+        self.mean_confidence_C = 0.25
+        self.confidence_C = 0
+        self.random_plot_ratio = 0.02
 
         # Another config
-        self.min_len = round(self.range_T[2]/5) 
+        self.min_len = round(self.range_T[2]/8)
         self.ref_T = None
         self.ref_T2 = [] 
         self.test = False  

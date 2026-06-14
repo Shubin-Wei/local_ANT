@@ -3,8 +3,8 @@
 # CLI flags override values set here.
 
 # --- Paths ---
-stack-dir: /data/Shenxz/Weishb/HJ/SurfaceStackData
-outdir: /data/Shenxz/Weishb/HJ/figures
+stack-dir: ../TestData/StackData
+outdir: ../TestData/figures
 
 # --- Filter ---
 freqmin: 1

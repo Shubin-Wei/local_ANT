@@ -12,6 +12,11 @@ import os
 # ---------------------------------------------------------------------------
 
 BOUNDARY_EPS_FRACTION = 0.01
+# Minimum boundary padding expressed in GRID CELLS. The fractional margin above
+# is a fixed distance and shrinks (in cells) as the grid coarsens, which lets
+# stations fall into the boundary ring and segfaults DSurfTomo's ray tracer.
+# Whenever the spacing is known we floor the margin to this many cells per side.
+MIN_BOUNDARY_CELLS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -198,30 +203,75 @@ def infer_grid(points):
     }
 
 
-def compute_region_origin(grid_info):
-    lat_eps = max(grid_info["lat_range"] * BOUNDARY_EPS_FRACTION, 1e-4)
-    lon_eps = max(grid_info["lon_range"] * BOUNDARY_EPS_FRACTION, 1e-4)
+def _boundary_eps(rng, spacing=None):
+    """Boundary padding for one axis.
+
+    Without a known spacing this falls back to the fractional margin. When the
+    cell size is known the margin is floored to MIN_BOUNDARY_CELLS cells so that
+    no station can land in the grid's boundary ring (a DSurfTomo segfault).
+    """
+    eps = max(rng * BOUNDARY_EPS_FRACTION, 1e-4)
+    if spacing is not None:
+        eps = max(eps, MIN_BOUNDARY_CELLS * spacing)
+    return eps
+
+
+def compute_region_origin(grid_info, dvxd=None, dvzd=None):
+    lat_eps = _boundary_eps(grid_info["lat_range"], dvxd)
+    lon_eps = _boundary_eps(grid_info["lon_range"], dvzd)
     goxd = grid_info["lat_max"] + lat_eps
     gozd = grid_info["lon_min"] - lon_eps
     return lat_eps, lon_eps, goxd, gozd
 
 
 def compute_region_defaults(grid_info, nx, ny):
-    lat_eps, lon_eps, goxd, gozd = compute_region_origin(grid_info)
-    dvxd = (grid_info["lat_range"] + 2.0 * lat_eps) / max(nx - 3, 1)
-    dvzd = (grid_info["lon_range"] + 2.0 * lon_eps) / max(ny - 3, 1)
+    # Count mode: spacing is derived from nx/ny. Reserve MIN_BOUNDARY_CELLS cells
+    # on each side so the usable interior fully contains the station footprint.
+    dvxd = grid_info["lat_range"] / max(nx - 1 - 2 * MIN_BOUNDARY_CELLS, 1)
+    dvzd = grid_info["lon_range"] / max(ny - 1 - 2 * MIN_BOUNDARY_CELLS, 1)
+    _, _, goxd, gozd = compute_region_origin(grid_info, dvxd, dvzd)
     return dvxd, dvzd, goxd, gozd
 
 
 def compute_grid_counts_from_spacing(grid_info, dvxd, dvzd):
     if dvxd <= 0 or dvzd <= 0:
         raise ValueError("dvxd and dvzd must be positive.")
-    _, _, goxd, gozd = compute_region_origin(grid_info)
-    lat_eps = max(grid_info["lat_range"] * BOUNDARY_EPS_FRACTION, 1e-4)
-    lon_eps = max(grid_info["lon_range"] * BOUNDARY_EPS_FRACTION, 1e-4)
+    lat_eps, lon_eps, goxd, gozd = compute_region_origin(grid_info, dvxd, dvzd)
     nx = int(((grid_info["lat_range"] + 2.0 * lat_eps) / dvxd) + 0.999999) + 3
     ny = int(((grid_info["lon_range"] + 2.0 * lon_eps) / dvzd) + 0.999999) + 3
     return max(nx, 4), max(ny, 4), goxd, gozd
+
+
+# ---------------------------------------------------------------------------
+# Sparse-matrix size guard (DSurfTomo uses 32-bit integer indexing)
+# ---------------------------------------------------------------------------
+
+INT32_MAX = 2147483647
+
+
+def estimate_sparse_size(dall, nx, ny, nz, sparsity):
+    """maxnar and iw length DSurfTomo will allocate (main.f90:287, 300)."""
+    maxnar = int(sparsity * dall * nx * ny * nz)
+    return maxnar, 2 * maxnar + 1
+
+
+def check_sparse_matrix_size(dall, nx, ny, nz, sparsity):
+    """Abort early if DSurfTomo's iw array would overflow a 32-bit integer.
+
+    maxnar = sparsity*dall*nx*ny*nz and iw is allocated as 2*maxnar+1; once that
+    exceeds INT32_MAX the Fortran allocate fails (segfault / 'integer iw'). It
+    scales with region size and data volume, so it must be checked per dataset.
+    """
+    maxnar, iw_len = estimate_sparse_size(dall, nx, ny, nz, sparsity)
+    if maxnar <= 0 or iw_len > INT32_MAX:
+        raise ValueError(
+            "Sparse matrix too large for DSurfTomo's 32-bit indexing: "
+            "maxnar=%d, iw needs %d ints (limit %d) for dall=%d, nx*ny*nz=%d, "
+            "sparsity=%.3f. Lower the sparsity fraction, coarsen the grid, or "
+            "reduce the number of measurements." % (
+                maxnar, iw_len, INT32_MAX, dall, nx * ny * nz, sparsity)
+        )
+    return maxnar, iw_len
 
 
 def infer_default_nx_ny(points):

@@ -71,6 +71,7 @@ local_ANT/
 │   ├── clean_mseed_for_noisepy.py
 │   ├── local_cc_workflow.py
 │   ├── stack_visualization.py
+│   ├── plot_stack_panels.py
 │   └── export_egfanalysis_input.py
 ├── configs/                 # 配置文件示例
 ├── docs/                    # 文档
@@ -91,7 +92,7 @@ local_ANT/
 | 文档 | 说明 |
 |------|------|
 | [安装指南](docs/INSTALL.md) | 从零安装全部环境 |
-| [完整流程](docs/workflow.md) | 8 个步骤的详细操作说明 |
+| [完整流程](docs/workflow.md) | 6 个步骤的详细操作说明 |
 
 ### 引用
 
@@ -163,6 +164,7 @@ local_ANT/
 │   ├── clean_mseed_for_noisepy.py
 │   ├── local_cc_workflow.py
 │   ├── stack_visualization.py
+│   ├── plot_stack_panels.py
 │   └── export_egfanalysis_input.py
 ├── configs/                 # Example configuration files
 ├── docs/                    # Documentation

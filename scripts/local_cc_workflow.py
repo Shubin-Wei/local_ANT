@@ -737,6 +737,12 @@ def validate_options(options: ProcessingOptions) -> List[str]:
         errors.append(f"maxlag must be > 0, got {options.maxlag}")
     if options.cc_len <= 0:
         errors.append(f"cc_len must be > 0, got {options.cc_len}")
+    if options.maxlag > 0 and options.cc_len > 0 and options.maxlag > options.cc_len / 2:
+        errors.append(
+            f"maxlag ({options.maxlag} s) must be <= cc_len/2 ({options.cc_len / 2:.0f} s): "
+            "a correlation window of cc_len seconds only spans lags of +/- cc_len/2, so the "
+            "stored CCF arrays would be shorter than the stack stage expects"
+        )
     if options.step <= 0:
         errors.append(f"step must be > 0, got {options.step}")
     if options.sampling_rate <= 0:

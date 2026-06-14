@@ -54,6 +54,9 @@ for index in range(file_num):
                                              MinSNR=config.MinSNR)
 
     sta_info = [gfcn.StaDist, gfcn.Longitude_A, gfcn.Latitude_A, gfcn.Longitude_B, gfcn.Latitude_B]
+    if gfcn.StaDist < config.MinStaDist:
+        print(f'  Skipped: station distance {gfcn.StaDist:.3f} km < {config.MinStaDist} km')
+        continue
     group_image = gfcn.GroupVelocityImgCalculate()
     group_image = group_image[:config.input_size[0], :config.input_size[1]]
     if True not in np.isnan(group_image):
@@ -87,10 +90,10 @@ for index in range(file_num):
         if True not in np.isnan(phase_image):
             batch_phase_image[0, config.input_size[0]-phase_image.shape[0]:, :group_image.shape[1]] = phase_image
     print(f'\n  Start picking')
-    pick.mean_confidence_G = 0.3
+    pick.mean_confidence_G = 0.2
     group_velocity, phase_velocity, prob_G, prob_C = pick.pick(group_image=batch_group_image, 
                                                                phase_image=batch_phase_image, sta_info=[sta_info], 
-                                                               snr=[snr], file_list=[file_name], ct=2, 
+                                                               snr=[snr], file_list=[file_name], ct=1.5,
                                                                save_result=True, 
                                                                group_velocity_label=batch_group_v if config.test else None, 
                                                                phase_velocity_label=batch_phase_v if config.test else None)
@@ -99,9 +102,9 @@ for index in range(file_num):
     print('\n  Quality control')
     if np.count_nonzero(snr) == 0:  
         snr = np.ones(config.input_size[1])
-    group_velocity = qc.qc(group_velocity[0], snr, v_range=[0.6, 3.5], diff_range=[-0.07, 0.08],  
+    group_velocity = qc.qc(group_velocity[0], snr, v_range=[0.5, 3.5], diff_range=[-0.07, 0.08],
                            upward=0.4, each_stage_upward=0.3, min_len=config.min_len, skip=False)
-    phase_velocity = qc.qc(phase_velocity[0], snr, v_range=[0.6, 3.8], diff_range=[-0.1, 0.1],  
+    phase_velocity = qc.qc(phase_velocity[0], snr, v_range=[0.5, 3.8], diff_range=[-0.1, 0.1],
                            upward=0, each_stage_upward=0.2, min_len=config.min_len, skip=True)
     all_G.append(group_velocity)
     all_C.append(phase_velocity)

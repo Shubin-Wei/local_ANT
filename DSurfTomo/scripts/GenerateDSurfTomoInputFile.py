@@ -148,28 +148,45 @@ def write_input_file(
     noiselevel,
     threshold,
 ):
-    dummy = "cccc" * 10
+    # Fortran list-directed reads (read(10,*) ...) take only the leading
+    # value(s) on each line and ignore the rest, so trailing "c: ..." comments
+    # are safe. The period lines carry no comment (read(10,*)(tRc(i),...) would
+    # otherwise stop mid-line anyway), matching the manual's example .in.
+    dummy = "c" * 69
+
+    def line(value_str, comment):
+        return "%-33s%s\n" % (value_str, "c: " + comment)
+
     with open(output_path, "w") as inputfile:
         inputfile.write(dummy + "\n")
         inputfile.write("c INPUT PARAMETERS\n")
         inputfile.write(dummy + "\n")
-        inputfile.write("%s\n" % data_file_name)
-        inputfile.write("%d %d %d\n" % (nx, ny, nz))
-        inputfile.write("%.6f %.6f\n" % (goxd, gozd))
-        inputfile.write("%.6f %.6f\n" % (dvxd, dvzd))
-        inputfile.write("%d\n" % nsrcmax)
-        inputfile.write("%.3f %.3f\n" % (weight, damp))
-        inputfile.write("%d\n" % sublayers)
-        inputfile.write("%.3f %.3f\n" % (minvel, maxvel))
-        inputfile.write("%d\n" % maxiteration)
-        inputfile.write("%.3f\n" % sparsityfraction)
-        for periods in [periods_rc, periods_rg, periods_lc, periods_lg]:
-            inputfile.write("%d\n" % len(periods))
+        inputfile.write(line("%s" % data_file_name, "data file"))
+        inputfile.write(line("%d %d %d" % (nx, ny, nz),
+                             "nx ny nz (grid number in lat lon and depth direction)"))
+        inputfile.write(line("%.6f %.6f" % (goxd, gozd),
+                             "goxd gozd (upper left point,[lat,lon])"))
+        inputfile.write(line("%.6f %.6f" % (dvxd, dvzd),
+                             "dvxd dvzd (grid interval in lat and lon direction)"))
+        inputfile.write(line("%d" % nsrcmax, "max(sources, receivers)"))
+        inputfile.write(line("%.3f %.3f" % (weight, damp), "weight damp"))
+        inputfile.write(line("%d" % sublayers,
+                             "sublayers (for computing depth kernel, 2~5)"))
+        inputfile.write(line("%.3f %.3f" % (minvel, maxvel),
+                             "minimum velocity, maximum velocity (a priori information)"))
+        inputfile.write(line("%d" % maxiteration, "maximum iteration"))
+        inputfile.write(line("%.3f" % sparsityfraction, "sparsity fraction"))
+        kmax_comments = ["kmaxRc (followed by periods)", "kmaxRg", "kmaxLc", "kmaxLg"]
+        for periods, comment in zip(
+            [periods_rc, periods_rg, periods_lc, periods_lg], kmax_comments
+        ):
+            inputfile.write(line("%d" % len(periods), comment))
             if periods:
                 inputfile.write(" ".join("%.3f" % value for value in periods) + "\n")
-        inputfile.write("%d\n" % synthetic_flag)
-        inputfile.write("%.3f\n" % noiselevel)
-        inputfile.write("%.3f\n" % threshold)
+        inputfile.write(line("%d" % synthetic_flag,
+                             "synthetic flag(0:real data,1:synthetic)"))
+        inputfile.write(line("%.3f" % noiselevel, "noiselevel"))
+        inputfile.write(line("%.3f" % threshold, "threshold"))
 
 
 def main():

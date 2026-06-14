@@ -77,8 +77,7 @@ pip install -r requirements.txt
 
 ```bash
 cd DSurfTomo
-./configure
-make
+python configure          # configure 是 Python 脚本，会自动进入 src/ 执行 make 并把可执行文件复制到 bin/
 ```
 
 ### GMT（可选，用于绘图）
@@ -183,13 +182,13 @@ ccf-dir: ../TestData/CCFData          # 互相关结果输出目录
 stack-dir: ../TestData/StackData      # 叠加结果输出目录
 
 # 处理参数
-freqmin: 0.5          # 最低频率 (Hz)
+freqmin: 0.2          # 最低频率 (Hz)
 freqmax: 10           # 最高频率 (Hz)
-sampling-rate: 50.0   # 采样率 (Hz)
-maxlag: 500           # 最大滞后时间 (秒)
+sampling-rate: 25.0   # 采样率 (Hz)
+maxlag: 100           # 最大滞后时间 (秒)
 inc-hours: 24         # 每段数据长度 (小时)
-cc-len: 3600          # 互相关窗口长度 (秒)
-step: 1800.0          # 窗口滑动步长 (秒)
+cc-len: 600           # 互相关窗口长度 (秒)
+step: 300.0           # 窗口滑动步长 (秒)
 
 # 归一化
 time-norm: rma         # 时间域归一化方法
@@ -236,6 +235,17 @@ python scripts/stack_visualization.py --config configs/my_stack_viz_config.yaml
 ```
 
 **输出：** 移出（moveout）图，保存在 `--outdir` 指定的目录（默认 `TestData/figures/`）。
+
+**出版级多面板图（可选）：** `scripts/plot_stack_panels.py` 生成 2×N 的多面板 moveout 图（N = 叠加方法数，上行为 image、下行为 wiggle/symmetric），适合论文插图：
+
+```bash
+python scripts/plot_stack_panels.py \
+    --stack-dir TestData/StackData \
+    --methods linear pws robust \
+    --component ZZ
+```
+
+也可使用配置文件（见 `configs/plot_stack_panels.example.yaml`）。
 
 ---
 
@@ -478,9 +488,11 @@ local_ANT/
 │   ├── clean_mseed_for_noisepy.py      # Step 1: 数据清洗
 │   ├── local_cc_workflow.py            # Step 3: NoisePy 互相关工作流
 │   ├── stack_visualization.py          # Step 3c: 叠加结果可视化
+│   ├── plot_stack_panels.py            # Step 3c: 出版级多面板 moveout 图
 │   └── export_egfanalysis_input.py     # Step 4: 导出 EGF 输入
 ├── configs/                            # 配置文件示例
 │   ├── local_cc_workflow.example.yaml
+│   ├── plot_stack_panels.example.yaml
 │   └── stack_visualization.example.yaml
 ├── EGFAnalysisPy/                      # Step 5: 频散分析 + CNN 曲线提取
 │   ├── run.py                          # 一步完成频散分析与拾取
@@ -495,7 +507,7 @@ local_ANT/
     ├── CleanData/                      # 清洗后数据
     ├── CCFData/                        # 互相关结果
     ├── StackData/                      # 叠加结果
-    ├── EGFAnalysisInputData/           # EGF 输入（CF .dat 波形）
+    ├── EGFAnalysisInputData/           # EGF 输入（CF .dat 波形，Step 4 运行后生成）
     ├── figures/                        # 可视化图片
     └── station.csv                     # 台站信息
 ```

@@ -3,12 +3,12 @@
 # CLI flags override values set here.
 
 # --- Paths ---
-stack-dir: /data/Shenxz/Weishb/HJ/LineStackData/Line6
-outdir: /data/Shenxz/Weishb/HJ/LineFigures/Line6
+stack-dir: ../TestData/StackData
+outdir: ../TestData/figures
 
 # --- Filter ---
-freqmin: 0.3
-freqmax: 1
+freqmin: 1
+freqmax: 5
 component: ZZ
 methods:
   - linear
@@ -49,8 +49,8 @@ overwrite: true
 # max-figure-height: 9.0
 # max-distance-ticks: 8
 # max-time-ticks: 5
-wiggle-scale: 50
-wiggle-every: 1
+wiggle-scale: 20
+wiggle-every: 10
 # no-title: false
 
 # --- Other ---

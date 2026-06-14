@@ -3,26 +3,26 @@
 # CLI flags override values set here.
 
 # --- Paths ---
-data-dir: /data/Shenxz/Weishb/HJ/SurfaceData
-station-csv: /data/Shenxz/Weishb/HJ/SurfaceData/station.csv
-ccf-dir: /data/Shenxz/Weishb/HJ/SurfaceCCFData
-stack-dir: /data/Shenxz/Weishb/HJ/SurfaceStackData
+data-dir: ../TestData/CleanData       # Step 1 输出 / output of Step 1
+station-csv: ../TestData/station.csv  # Step 2 台站文件 / station file from Step 2
+ccf-dir: ../TestData/CCFData          # 互相关输出 / cross-correlation output
+stack-dir: ../TestData/StackData      # 叠加输出 / stacking output
 
 # --- Stage control ---
 # stage: all                  # cc, stack, or all
 # overwrite: true            # remove existing output dirs before running
 
 # --- Processing ---
-freqmin: 0.3
+freqmin: 0.2
 freqmax: 10
 sampling-rate: 25.0
-maxlag: 500
+maxlag: 100
 inc-hours: 24
-cc-len: 1800
-step: 900.0
+cc-len: 600
+step: 300.0
 max-over-std: 10
 smoothspect-n: 20
-smooth-n: 10
+smooth-n: 30
 
 # --- Normalization ---
 time-norm: rma

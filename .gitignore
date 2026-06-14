@@ -27,6 +27,10 @@ Thumbs.db
 # Data (too large for GitHub — download or generate per workflow)
 TestData/
 
+# DisperPicker neural-net datasets (~190 MB — download or regenerate per workflow)
+EGFAnalysisPy/DisperPicker/data/TrainingData/
+EGFAnalysisPy/DisperPicker/data/ValidationData/
+
 # DSurfTomo build artifacts
 DSurfTomo/bin/
 DSurfTomo/src/*.o

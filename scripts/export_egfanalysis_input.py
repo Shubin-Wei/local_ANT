@@ -1,7 +1,6 @@
 import argparse
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import h5py
 import numpy as np
@@ -13,21 +12,12 @@ DEFAULT_OUTPUT_ROOT = SCRIPT_DIR / "egfanalysis_input"
 DEFAULT_COMPONENT = "ZZ"
 
 
-@dataclass(frozen=True)
-class StationRecord:
-    full_name: str
-    code: str
-    network: str
-    lat: float
-    lon: float
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Export NoisePy stack HDF5 files to the text format required by "
             "EGFAnalysisTimeFreq. The script writes one .dat waveform per "
-            "cross-station stack, plus a station file and waveform list."
+            "cross-station stack."
         )
     )
     parser.add_argument(
@@ -160,7 +150,7 @@ def export_file(
     stack_name: str,
     component: str,
     output_dir: Path,
-) -> Optional[Dict[str, str]]:
+) -> Optional[Path]:
     src = h5_path.parent.parent.name
     rec = h5_path.parent.name
     if src == rec:
@@ -184,63 +174,7 @@ def export_file(
     out_path = output_dir / out_name
     write_dat_file(out_path, attrs=attrs, times=times, gab=gab, gba=gba)
 
-    return {
-        "src_full": src,
-        "rec_full": rec,
-        "src_alias": src_alias,
-        "rec_alias": rec_alias,
-        "src_net": split_station_name(src)[0],
-        "rec_net": split_station_name(rec)[0],
-        "output_dat": str(out_path),
-        "lat_src": float(attrs.get("latS", 0)),
-        "lon_src": float(attrs.get("lonS", 0)),
-        "lat_rec": float(attrs.get("latR", 0)),
-        "lon_rec": float(attrs.get("lonR", 0)),
-    }
-
-
-def collect_station_records(rows: Sequence[Dict[str, str]]) -> List[StationRecord]:
-    stations: Dict[str, StationRecord] = {}
-    for row in rows:
-        src_full = row["src_full"]
-        rec_full = row["rec_full"]
-
-        if src_full not in stations:
-            stations[src_full] = StationRecord(
-                full_name=src_full,
-                code=row["src_alias"],
-                network=row["src_net"],
-                lat=float(row["lat_src"]),
-                lon=float(row["lon_src"]),
-            )
-        if rec_full not in stations:
-            stations[rec_full] = StationRecord(
-                full_name=rec_full,
-                code=row["rec_alias"],
-                network=row["rec_net"],
-                lat=float(row["lat_rec"]),
-                lon=float(row["lon_rec"]),
-            )
-    return sorted(stations.values(), key=lambda item: item.code)
-
-
-def write_station_file(stations: Sequence[StationRecord], output_dir: Path) -> Path:
-    path = output_dir / "stations.txt"
-    with path.open("w", encoding="utf-8") as f:
-        for station in stations:
-            # EGFAnalysisTimeFreq expects: station_name longitude latitude
-            f.write(f"{station.code}   {station.lon:.7f}  {station.lat:.8f}\n")
-    return path
-
-
-def write_waveform_list(rows: Sequence[Dict[str, str]], output_dir: Path) -> Path:
-    path = output_dir / "EGFfiles.txt"
-    names = sorted(Path(row["output_dat"]).name for row in rows)
-    with path.open("w", encoding="utf-8") as f:
-        for name in names:
-            f.write(f"{name}\n")
-    return path
-
+    return out_path
 
 
 def export_dataset_stack(
@@ -258,7 +192,7 @@ def export_dataset_stack(
     if total_files == 0:
         raise ValueError(f"No .h5 files found in stack directory: {stack_dir}")
 
-    exported: List[Dict[str, str]] = []
+    exported: List[Path] = []
 
     desc = f"Exporting {stack_name}/{component}"
     for h5_path in tqdm(stack_files, desc=desc, unit="file"):
@@ -269,30 +203,25 @@ def export_dataset_stack(
         if station is not None and src != station and rec != station:
             continue
 
-        row = export_file(
+        out_path = export_file(
             h5_path=h5_path,
             stack_name=stack_name,
             component=component,
             output_dir=output_dir,
         )
-        if row is not None:
-            exported.append(row)
+        if out_path is not None:
+            exported.append(out_path)
 
     if not exported:
         raise ValueError(
             f"No cross-station stacks were exported from {stack_dir} for {stack_name}/{component}."
         )
 
-    stations = collect_station_records(exported)
-    write_station_file(stations, output_dir)
-    write_waveform_list(exported, output_dir)
-
     return {
         "stack_name": stack_name,
         "component": component,
         "output_dir": str(output_dir),
         "exported": len(exported),
-        "station_count": len(stations),
     }
 
 

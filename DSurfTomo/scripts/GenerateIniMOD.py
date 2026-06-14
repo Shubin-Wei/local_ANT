@@ -158,6 +158,30 @@ def mean_velocity_at_period(records, period_map, target_period, wave_type, vel_t
     return float(np.mean(values)), len(values), chosen_period
 
 
+DEFAULT_FALLBACK_VELGRAD = 0.2  # km/s/km, gentle increase when the estimate is degenerate
+
+
+def estimate_minvel_velgrad(vs1, used_period1, vs2, used_period2):
+    """Empirical initial Vs(z) = minvel + velgrad*z from two period velocities.
+
+    The empirical depth rule (depth ~ v*0.92*T/3) assumes velocity increases with
+    period. When the dispersion is flat or decreasing (d2 <= d1, or a non-positive
+    gradient), the estimate is degenerate; rather than abort we fall back to a
+    gentle positive gradient anchored at the shallower velocity, so the routine
+    works for any region. Returns (minvel, velgrad, used_fallback, d1, d2).
+    """
+    d1 = vs1 * 0.92 * used_period1 / 3.0
+    d2 = vs2 * 0.92 * used_period2 / 3.0
+    if d2 > d1:
+        velgrad = (vs2 - vs1) / (d2 - d1)
+        minvel = vs1 - velgrad * d1
+        if velgrad > 0 and minvel > 0:
+            return minvel, velgrad, False, d1, d2
+    velgrad = DEFAULT_FALLBACK_VELGRAD
+    minvel = max(min(vs1, vs2) - velgrad * d1, 0.1)
+    return minvel, velgrad, True, d1, d2
+
+
 def generate_mod(nx, ny, dep1, minvel, velgrad, output_path):
     nz = len(dep1)
     mod = np.zeros((nz * ny, nx))
@@ -230,17 +254,9 @@ def main():
         records, period_map, period2, wave_type, vel_type, prefer="upper"
     )
 
-    d1 = vs_1 * 0.92 * used_period1 / 3.0
-    d2 = vs_2 * 0.92 * used_period2 / 3.0
-    if d2 <= d1:
-        raise ValueError(
-            "Computed depth bounds are invalid: d1=%.3f, d2=%.3f "
-            "(used T1=%.3f s, T2=%.3f s). Try a smaller T1, a larger T2, or manual mode."
-            % (d1, d2, used_period1, used_period2)
-        )
-
-    velgrad = (vs_2 - vs_1) / (d2 - d1)
-    minvel = vs_1 - velgrad * d1
+    minvel, velgrad, fellback, d1, d2 = estimate_minvel_velgrad(
+        vs_1, used_period1, vs_2, used_period2
+    )
 
     print("")
     print(
@@ -257,8 +273,9 @@ def main():
         print("Warning: T2 estimate uses only %d records, which is not very stable." % n2)
     print("Depth bounds from empirical rule: d1=%.4f km, d2=%.4f km" % (d1, d2))
     print("Recommended minvel=%.4f km/s, velgrad=%.4f km/s/km" % (minvel, velgrad))
-    if velgrad <= 0:
-        print("Warning: recommended velgrad is non-positive. Check period selection or use manual override.")
+    if fellback:
+        print("Warning: dispersion is flat or decreasing (d1=%.4f, d2=%.4f); using a "
+              "fallback gentle-gradient model. Consider manual minvel/velgrad." % (d1, d2))
     print("")
 
     points = sorted(
