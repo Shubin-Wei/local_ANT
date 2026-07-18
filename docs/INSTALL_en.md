@@ -104,10 +104,10 @@ pip install numpy pandas scipy matplotlib
 # YAML config parsing
 pip install pyyaml
 
-# Time range handling (needed by local_cc_workflow.py)
+# Time range handling (needed by scripts/02_correlation.py)
 pip install datetimerange
 
-# HDF5 file I/O (needed by export_egfanalysis_input.py)
+# HDF5 file I/O (needed by scripts/04_export_egf.py)
 pip install h5py
 ```
 
@@ -116,6 +116,31 @@ Or install everything in one command:
 ```bash
 pip install obspy numpy pandas scipy matplotlib pyyaml datetimerange h5py
 ```
+
+### 2e. Linear-array inversion dependencies (evodcinv)
+
+The linear-array inversion (step 06a, `scripts/06a_line_inversion/`) uses
+[evodcinv](https://github.com/keurfonluu/evodcinv) for 1-D dispersion
+inversion, with disba as its forward solver. Both are compatible with the
+NoisePy environment (Python ≥ 3.8), so install them there — no extra
+environment is needed:
+
+```bash
+conda activate noisepy
+pip install evodcinv tqdm
+```
+
+Verify:
+
+```bash
+python -c "import evodcinv, disba; print('evodcinv OK, disba', disba.__version__)"
+```
+
+> **Version note**: disba 0.6.1 was confirmed working on the original
+> project machine; the exact evodcinv version could not be recovered from
+> the original environment (to be confirmed). If you hit API
+> incompatibilities, try `pip install "evodcinv==2.*"` and consult its
+> documentation.
 
 ### 2c. (Optional) Install MPI support
 
@@ -313,6 +338,14 @@ import datetimerange; print('datetimerange OK')
 "
 
 echo ""
+echo "=== 1b. Linear-inversion deps (optional, needed by step 06a) ==="
+python -c "
+import evodcinv; print('evodcinv OK')
+import disba; print('disba OK')
+import tqdm; print('tqdm OK')
+" || echo "evodcinv not installed (fine if you only run areal inversion; see 2e)"
+
+echo ""
 echo "=== 2. EGFAnalysisPy environment ==="
 conda activate egfanalysispy
 python -c "
@@ -393,12 +426,12 @@ python PrepareDSurfTomoProject.py
 
 ## Environment Quick Reference
 
-| Step | Environment |
-|------|-------------|
-| Step 1: Data cleaning | `conda activate noisepy` |
-| Step 2: Prepare station file | No Python needed |
-| Step 3: Cross-correlation | `conda activate noisepy` |
-| Step 4: Export EGF data | `conda activate noisepy` |
-| Step 5: EGFAnalysisPy dispersion + picking | `conda activate egfanalysispy` |
-| Step 6: DSurfTomo inversion | `conda activate noisepy` (Python scripts) + `DSurfTomo/bin/DSurfTomo` (executable) |
-| GMT plotting | System terminal (no Python environment needed) |
+| Step | User entry | Environment |
+|------|------------|-------------|
+| 01 Data cleaning | `scripts/01_clean.py` | `conda activate noisepy` |
+| 02 Cross-correlation + stacking | `scripts/02_correlation.py` | `conda activate noisepy` |
+| 03 Stack QC visualization | `scripts/03_stack_qc.py`, `scripts/03b_stack_panels.py` | `conda activate noisepy` |
+| 04 Export EGF input | `scripts/04_export_egf.py` | `conda activate noisepy` |
+| 05 Dispersion analysis + picking | `scripts/05_dispersion.py` | `conda activate egfanalysispy` |
+| 06a Linear-array inversion | `scripts/06a_line_inversion/01_invert.py`, `02_stitch.py` | `conda activate noisepy` (with evodcinv, see 2e) |
+| 06b Areal-array inversion | `scripts/06b_area_inversion/01_prepare.py`, `02_invert.py`, `03_plot.py` | `conda activate noisepy` + compiled `DSurfTomo/bin/DSurfTomo`; plotting needs GMT 6 |

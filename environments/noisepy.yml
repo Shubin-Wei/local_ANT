@@ -1,0 +1,33 @@
+# NoisePy 环境:步骤 01–04、06a、06b 入口脚本
+# NoisePy environment: steps 01–04, 06a, and the 06b entry scripts.
+#
+# 创建 / create : conda env create -f environments/noisepy.yml
+# 激活 / enable : conda activate noisepy
+#
+# 未锁定次要版本;下列版本在原项目机器上实测可用(Python 3.10.20):
+# Minor versions are not pinned; the versions below were verified on the
+# original project machine (Python 3.10.20):
+#   noisepy-seis 0.9.93, obspy 1.5.0, numpy 1.26.4, scipy 1.12.0,
+#   pandas 1.5.3, matplotlib 3.10.9, h5py 3.16.0, PyYAML 6.0,
+#   DateTimeRange 2.3.2, tqdm 4.68.2, disba 0.6.1
+#   (evodcinv 版本待确认 / evodcinv version to be confirmed)
+name: noisepy
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - noisepy-seis
+      - obspy
+      - numpy
+      - scipy
+      - pandas
+      - matplotlib
+      - h5py
+      - pyyaml
+      - datetimerange
+      # 线状反演(06a)依赖;仅做面状反演可删去这两行
+      # linear-inversion (06a) deps; drop if you only run areal inversion
+      - evodcinv
+      - tqdm

@@ -104,10 +104,10 @@ pip install numpy pandas scipy matplotlib
 # 配置文件解析
 pip install pyyaml
 
-# 时间范围处理（local_cc_workflow.py 需要）
+# 时间范围处理（scripts/02_correlation.py 需要）
 pip install datetimerange
 
-# HDF5 文件读写（export_egfanalysis_input.py 需要）
+# HDF5 文件读写（scripts/04_export_egf.py 需要）
 pip install h5py
 ```
 
@@ -116,6 +116,28 @@ pip install h5py
 ```bash
 pip install obspy numpy pandas scipy matplotlib pyyaml datetimerange h5py
 ```
+
+### 2e. 线状台阵反演依赖（evodcinv）
+
+线状台阵反演（步骤 06a，`scripts/06a_line_inversion/`）使用
+[evodcinv](https://github.com/keurfonluu/evodcinv) 做一维频散反演，
+其正演内核为 disba。这两个包与 NoisePy 环境兼容（需要 Python ≥ 3.8），
+直接装进 noisepy 环境即可，无需再建新环境：
+
+```bash
+conda activate noisepy
+pip install evodcinv tqdm
+```
+
+验证：
+
+```bash
+python -c "import evodcinv, disba; print('evodcinv OK, disba', disba.__version__)"
+```
+
+> **版本说明**：原项目机器上确认过 disba 0.6.1 可用；evodcinv 的具体版本
+> 未能从原环境考证（待确认），如遇接口不兼容，可尝试
+> `pip install "evodcinv==2.*"` 并参阅其官方文档。
 
 ### 2c. （可选）安装 MPI 支持
 
@@ -314,6 +336,14 @@ import datetimerange; print('datetimerange OK')
 "
 
 echo ""
+echo "=== 1b. 线状反演依赖（可选，步骤 06a 需要）==="
+python -c "
+import evodcinv; print('evodcinv OK')
+import disba; print('disba OK')
+import tqdm; print('tqdm OK')
+" || echo "evodcinv 未安装（仅做面状反演可忽略；见 2e 节）"
+
+echo ""
 echo "=== 2. EGFAnalysisPy 环境 ==="
 conda activate egfanalysispy
 python -c "
@@ -394,12 +424,12 @@ python PrepareDSurfTomoProject.py
 
 ## 环境切换速查
 
-| 步骤 | 使用的环境 |
-|------|------------|
-| Step 1: 数据清洗 | `conda activate noisepy` |
-| Step 2: 准备台站文件 | 无需 Python |
-| Step 3: 互相关计算 | `conda activate noisepy` |
-| Step 4: 导出 EGF 数据 | `conda activate noisepy` |
-| Step 5: EGFAnalysisPy 频散分析 + 拾取 | `conda activate egfanalysispy` |
-| Step 6: DSurfTomo 反演 | `conda activate noisepy`（Python 脚本）+ `DSurfTomo/bin/DSurfTomo`（可执行文件） |
-| GMT 绘图 | 系统终端（无需 Python 环境） |
+| 步骤 | 用户入口 | 使用的环境 |
+|------|----------|------------|
+| 01 数据清洗 | `scripts/01_clean.py` | `conda activate noisepy` |
+| 02 互相关 + 叠加 | `scripts/02_correlation.py` | `conda activate noisepy` |
+| 03 叠加质检可视化 | `scripts/03_stack_qc.py`、`scripts/03b_stack_panels.py` | `conda activate noisepy` |
+| 04 导出 EGF 输入 | `scripts/04_export_egf.py` | `conda activate noisepy` |
+| 05 频散分析 + 拾取 | `scripts/05_dispersion.py` | `conda activate egfanalysispy` |
+| 06a 线状反演 | `scripts/06a_line_inversion/01_invert.py`、`02_stitch.py` | `conda activate noisepy`（含 evodcinv，见 2e） |
+| 06b 面状反演 | `scripts/06b_area_inversion/01_prepare.py`、`02_invert.py`、`03_plot.py` | `conda activate noisepy` + 编译好的 `DSurfTomo/bin/DSurfTomo`；绘图需 GMT 6 |
