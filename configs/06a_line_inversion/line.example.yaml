@@ -1,0 +1,62 @@
+# =====================================================================
+# LANT pipeline configuration
+#   1D dispersion inversion (evodcinv) per station pair -> pseudo-2D section
+#   used by: scripts/06a_line_inversion/01_invert.py and 02_stitch.py
+# Edit this file; no parameters are hard-coded in the scripts.
+# =====================================================================
+
+paths:
+  # EGFAnalysisPy output (contains CDisp.<pair>.txt / GDisp.<pair>.txt)
+  input_dir:  /path/to/LineDisperPicker/Line1/qc_result
+  # station coordinates/elevations used to shape the top of section.png
+  station_csv: /path/to/LineData/Line1/station.csv
+  # where models/, figs/, summary.txt and section.png are written
+  output_dir: /path/to/LineInversion/Line1
+
+inversion:
+  curve_type: phase     # phase (CDisp) | group (GDisp) | both (joint)
+  workers: 16           # parallel worker processes
+  min_points: 8         # skip a curve with fewer valid (vel>0) points
+  plot: true            # save the per-pair figure
+
+  # output depth grid (the best model is resampled onto this for stitching).
+  # NOTE: with this dataset (Tmax ~0.5 s, c ~2.2 km/s) the dispersion only
+  # constrains ~0.4-0.6 km, so the model is parameterized to ~0.6 km, not deeper
+  # (depth sensitivity ~ wavelength/3 = c*T/3).
+  zmax: 0.6            # max depth (km)
+  dz: 0.01             # depth step (km)
+
+  # layered search space (defines the inversion depth & velocity bounds).
+  # one entry per layer; thickness in km, vs in km/s, given as [min, max].
+  # sum of thickness maxima ~= parameterized depth (here ~0.67 km).
+  layers:
+    - {thickness: [0.01, 0.04], vs: [0.3, 2.5]}
+    - {thickness: [0.02, 0.08], vs: [0.5, 3.0]}
+    - {thickness: [0.03, 0.12], vs: [0.8, 3.2]}
+    - {thickness: [0.04, 0.18], vs: [1.0, 3.5]}
+    - {thickness: [0.05, 0.25], vs: [1.2, 3.8]}
+
+  optimizer:            # evodcinv CPSO settings
+    popsize: 20
+    maxiter: 150
+    maxrun: 1
+
+stitch:
+  topography: true      # shift section columns so the top follows local terrain
+  title: "S-wave Velocity Section"
+  show_stations: true   # station triangles along the terrain surface
+  depth_guides: []      # optional depth-below-ground guide lines (km)
+  vertical_exaggeration: 2.0
+  dpi: 300
+  save_pdf: true
+  misfit_max: 0.2       # drop models with misfit above this (null = keep all)
+  nbins: 120            # number of along-line distance bins
+  smooth: 1.2           # gaussian smoothing sigma in cells (0 = off)
+  contour_step: 0.25    # velocity contour interval km/s (0 = off)
+  cmap: jet_r           # original low-Vs warm / high-Vs cool color scheme
+  vmin: null            # auto, 2nd percentile
+  vmax: 4
+  taper_slope: 0.1      # mask the section into an inverted trapezoid (wide top,
+                        # narrow bottom): trim this many km from each side per km
+                        # of depth, since edges get less reliable with depth.
+                        # 0 = keep the full rectangle.
