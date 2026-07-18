@@ -35,6 +35,7 @@ EGFAnalysisPy/DisperPicker/data/ValidationData/
 DSurfTomo/bin/
 DSurfTomo/src/*.o
 DSurfTomo/src/*.mod
+DSurfTomo/src/DSurfTomo
 
 # EGFAnalysisPy runtime outputs (Step 5)
 EGFAnalysisPy/DisperPicker/result/qc_result/
