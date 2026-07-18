@@ -19,9 +19,9 @@ Raw miniSEED data
   │                                         → qc_result/CDisp.*.txt, GDisp.*.txt
   │
   ├─▶ [06a] scripts/06a_line_inversion/     linear array: evodcinv 1-D inversion → pseudo-2D section
-  │         (see docs/line_inversion.md)
+  │         (see docs/line_inversion_en.md)
   └─▶ [06b] scripts/06b_area_inversion/     areal array: DSurfTomo 3-D inversion
-            (see docs/area_inversion.md)
+            (see docs/area_inversion_en.md)
 ```
 
 ### Choosing the inversion branch
@@ -340,7 +340,7 @@ python scripts/06a_line_inversion/01_invert.py --config configs/06a_line_inversi
 python scripts/06a_line_inversion/02_stitch.py --config configs/06a_line_inversion/my_line.yaml
 ```
 
-Full details (applicability, config walkthrough, result interpretation): [line_inversion.md](line_inversion.md).
+Full details (applicability, config walkthrough, result interpretation): [line_inversion_en.md](line_inversion_en.md).
 
 ## 06b Areal-array inversion (DSurfTomo)
 
@@ -354,13 +354,13 @@ python scripts/06b_area_inversion/02_invert.py  --config configs/06b_area_invers
 python scripts/06b_area_inversion/03_plot.py    --config configs/06b_area_inversion/my_area.yaml
 ```
 
-The interactive scripts under `DSurfTomo/scripts/` remain available for manual step-by-step runs (`PrepareDSurfTomoProject.py` all-in-one, or `extractnew.py` → `GenerateIniMOD.py` → `GenerateDSurfTomoInputFile.py`); see [area_inversion.md](area_inversion.md).
+The interactive scripts under `DSurfTomo/scripts/` remain available for manual step-by-step runs (`PrepareDSurfTomoProject.py` all-in-one, or `extractnew.py` → `GenerateIniMOD.py` → `GenerateDSurfTomoInputFile.py`); see [area_inversion_en.md](area_inversion_en.md).
 
 ---
 
 ## FAQ
 
-Frequently asked questions are collected in [FAQ.md](FAQ.md).
+Frequently asked questions are collected in [FAQ_en.md](FAQ_en.md).
 
 ## License
 

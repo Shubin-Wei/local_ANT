@@ -220,10 +220,10 @@ local_ANT/
 |----------|-------------|
 | [Installation Guide](docs/INSTALL_en.md) | Install everything from scratch (incl. DSurfTomo build) |
 | [Full Workflow](docs/workflow_en.md) | Detailed steps 01–06 (with old→new script-name mapping) |
-| [Configuration](docs/CONFIG.md) | Config layering, precedence, runtime-config mechanism |
-| [Linear inversion](docs/line_inversion.md) | Branch 06a: scope, config, running |
-| [Areal inversion](docs/area_inversion.md) | Branch 06b: DSurfTomo build, config, running |
-| [FAQ](docs/FAQ.md) | Frequently asked questions |
+| [Configuration](docs/CONFIG_en.md) | Config layering, precedence, runtime-config mechanism |
+| [Linear inversion](docs/line_inversion_en.md) | Branch 06a: scope, config, running |
+| [Areal inversion](docs/area_inversion_en.md) | Branch 06b: DSurfTomo build, config, running |
+| [FAQ](docs/FAQ_en.md) | Frequently asked questions |
 
 ### Citations
 

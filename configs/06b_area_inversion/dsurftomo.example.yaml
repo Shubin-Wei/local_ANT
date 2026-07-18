@@ -1,51 +1,47 @@
 # =====================================================================
-# 06b_area_inversion — 面状台阵反演(DSurfTomo)/ areal-array inversion
-#   入口 / entries (依次运行 / run in order):
+# 06b_area_inversion — areal-array inversion (DSurfTomo)
+#   entries (run in order):
 #     python scripts/06b_area_inversion/01_prepare.py --config <this file>
 #     python scripts/06b_area_inversion/02_invert.py  --config <this file>
 #     python scripts/06b_area_inversion/03_plot.py    --config <this file>
-#   环境 / env: noisepy 环境即可(入口只做文件准备与调用);
-#               反演本体是编译好的 Fortran 程序,绘图需要 GMT 6。
+#   env: the noisepy environment is sufficient (entries only prepare
+#        files and call programs); the inversion itself is the compiled
+#        Fortran binary, plotting requires GMT 6.
 #
-# prepare 段的键与 DSurfTomo/scripts/PrepareDSurfTomoProject.py 的
-# 命令行参数一一对应,入口脚本负责转换;含义详见该脚本 --help。
-# Keys under `prepare` mirror the CLI of PrepareDSurfTomoProject.py;
-# the entry script translates YAML -> CLI. See its --help for details.
+# Keys under `prepare` mirror the CLI of
+# DSurfTomo/scripts/PrepareDSurfTomoProject.py; the entry script
+# translates YAML -> CLI. See its --help for details.
 # =====================================================================
 
 paths:
-  # 05 步的 qc_result 目录(含 CDisp.*/GDisp.*)
-  # step-05 qc_result directory (CDisp.* / GDisp.* files)
+  # Step-05 qc_result directory (CDisp.* / GDisp.* files)
   input_dir:   /path/to/DisperPicker_result/qc_result
-  # DSurfTomo 工程目录(所有生成文件写到这里,不污染仓库)
   # DSurfTomo project dir (all generated files go here, repo stays clean)
   project_dir: /path/to/DSurfTomoProject
-  # 编译出的可执行文件;null = 用 configs/00_project.yaml 里的 dsurftomo_bin
-  # compiled executable; null = take dsurftomo_bin from 00_project.yaml
+  # Compiled executable; null = take dsurftomo_bin from 00_project.yaml
   dsurftomo_bin: null
 
 prepare:
   curve_type: phase        # both | phase | group
-  period_step: 0.1         # 周期网格步长 s / strict period grid step (s)
-  min_period: null         # null = 自动 / auto-detect
-  max_period: null         # null = 自动 / auto-detect
-  wave_type: 2             # 1=Love, 2=Rayleigh
-  # 网格:二选一 / grid: choose ONE of the two
-  grid_spacing: null       # [dvxd, dvzd],度 / degrees, e.g. [0.005, 0.005]
+  period_step: 0.1         # strict period grid step (s)
+  min_period: null         # null = auto-detect
+  max_period: null         # null = auto-detect
+  wave_type: 2             # 1 = Love, 2 = Rayleigh
+  # Grid: choose exactly ONE of the two
+  grid_spacing: null       # [dvxd, dvzd] in degrees, e.g. [0.005, 0.005]
   grid_count:   null       # [nx, ny], e.g. [25, 30]
-  # 深度节点 km / depth nodes (km)
+  # Depth nodes (km)
   depths: "0,0.2,0.4,0.6,0.8,1.0,1.3,1.6,2.0,2.5"
-  minvel: null             # 初始模型地表速度;null = 自动 / auto
-  velgrad: null            # 初始模型速度梯度;null = 自动 / auto
-  t1: 0.5                  # 模型估计用短周期 s / short period (s)
-  t2: 1.8                  # 模型估计用长周期 s / long period (s)
-  model_vel: phase         # phase | group,估计初始模型所用速度
-  nsrcmax: null            # null = 推荐值 / recommended
-  weight: 5.0              # 平滑权重 / smoothing weight
-  damp: 1.0                # 阻尼 / damping
+  minvel: null             # initial-model surface velocity; null = auto
+  velgrad: null            # initial-model velocity gradient; null = auto
+  t1: 0.5                  # short period for model estimate (s)
+  t2: 1.8                  # long period for model estimate (s)
+  model_vel: phase         # phase | group, velocity used for model estimate
+  nsrcmax: null            # null = recommended value
+  weight: 5.0              # smoothing weight
+  damp: 1.0                # damping
   sublayers: 3
 
 plot:
-  # 要运行的 GMT 绘图脚本(位于 DSurfTomo/scripts/)
   # GMT plotting scripts to run (from DSurfTomo/scripts/)
   scripts: [plotdepth_subplot.gmt]

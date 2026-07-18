@@ -1,31 +1,26 @@
 # =====================================================================
-# 01_clean — 数据清洗 / miniSEED cleaning for NoisePy
-#   入口 / entry: python scripts/01_clean.py --config configs/01_clean.yaml
-#   环境 / env:   conda activate noisepy
+# 01_clean — miniSEED cleaning for NoisePy
+#   entry: python scripts/01_clean.py --config configs/01_clean.yaml
+#   env:   conda activate noisepy
 #
-# 每个键与 scripts/01_clean.py 的同名命令行参数一一对应;
-# 命令行参数会覆盖本文件中的值。
 # Keys mirror the CLI options of scripts/01_clean.py one-to-one;
-# CLI options override values given here.
+# explicit CLI options override values given here.
 # =====================================================================
 
-# 原始 miniSEED 根目录(按台站分子目录)/ raw miniSEED root (one subdir per station)
+# Raw miniSEED root (one subdirectory per station)
 input-root: ../TestData/RawData
 
-# 清洗结果输出根目录 / cleaned output root
+# Cleaned output root
 output-root: ../TestData/CleanData
 
-# 单日数据最低完整度(0–1),低于该值的天被丢弃
-# minimum per-day completeness (0–1); days below are dropped
+# Minimum per-day completeness (0-1); days below are dropped
 min-completeness: 0.8
 
-# 只保留的通道代码,null = 自动选择 / channel code to keep, null = auto
+# Channel code to keep; null = auto (Z component)
 target-channel: null
 
-# 处理日期范围 [开始, 结束],格式 YYYY-MM-DD;null = 全部
-# date range [start, end], YYYY-MM-DD; null = everything
+# Date range [start, end], format YYMMDD, both ends exclusive; null = everything
 date-range: null
 
-# 是否覆盖已存在的输出(默认 false,避免静默覆盖)
-# overwrite existing outputs (default false)
+# Overwrite existing outputs (default false, to avoid silent overwrites)
 overwrite: false

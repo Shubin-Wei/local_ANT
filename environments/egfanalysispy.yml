@@ -1,11 +1,8 @@
-# EGFAnalysisPy 环境:步骤 05(频散分析与 DisperPicker 拾取)
 # EGFAnalysisPy environment: step 05 (dispersion analysis & picking).
 #
-# 创建 / create : conda env create -f environments/egfanalysispy.yml
-# 激活 / enable : conda activate egfanalysispy
+# create : conda env create -f environments/egfanalysispy.yml
+# enable : conda activate egfanalysispy
 #
-# TensorFlow 1.13 只支持到 Python 3.6,版本必须严格锁定
-# (与 EGFAnalysisPy/requirements.txt 一致,原项目机器实测可用)。
 # TensorFlow 1.13 supports Python up to 3.6 only; versions are pinned
 # strictly (identical to EGFAnalysisPy/requirements.txt, verified on the
 # original project machine).

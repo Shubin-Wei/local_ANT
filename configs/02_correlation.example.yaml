@@ -3,10 +3,10 @@
 # CLI flags override values set here.
 
 # --- Paths ---
-data-dir: ../TestData/CleanData       # Step 1 输出 / output of Step 1
-station-csv: ../TestData/station.csv  # Step 2 台站文件 / station file from Step 2
-ccf-dir: ../TestData/CCFData          # 互相关输出 / cross-correlation output
-stack-dir: ../TestData/StackData      # 叠加输出 / stacking output
+data-dir: ../TestData/CleanData       # output of step 01
+station-csv: ../TestData/station.csv  # station file (see workflow step 01)
+ccf-dir: ../TestData/CCFData          # cross-correlation output
+stack-dir: ../TestData/StackData      # stacking output
 
 # --- Stage control ---
 # stage: all                  # cc, stack, or all
