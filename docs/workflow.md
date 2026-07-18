@@ -1,535 +1,367 @@
-# 本地 miniSEED 数据背景噪声面波层析成像完整流程
+# 背景噪声成像完整流程(01–06)
 
-本项目实现了从原始 miniSEED 地震数据到三维横波速度模型的完整背景噪声面波层析成像流程。整个流程分为 6 个步骤，依次使用 3 个软件包和若干辅助脚本完成。
+本项目实现从原始 miniSEED 数据到横波速度模型的完整背景噪声成像流程。公共流程为 01–05 五步;第 05 步之后按台阵类型二选一进入 **06a 线状反演** 或 **06b 面状反演** 分支。
+
+所有命令都在**项目根目录**执行;每步独立运行,可从任意中间步骤继续。
 
 ## 流程概览
 
 ```
 原始 miniSEED 数据
   │
-  ▼ [Step 1] clean_mseed_for_noisepy.py
-清洗后的 miniSEED 数据（NoisePy 格式）
+  ▼ [01] scripts/01_clean.py                数据清洗(NoisePy 命名格式)
+  ▼ [02] scripts/02_correlation.py          互相关 + 叠加(NoisePy)
+  │        前置:准备台站文件 station.csv
+  ▼ [03] scripts/03_stack_qc.py             叠加质检可视化(可选但推荐)
+  │      scripts/03b_stack_panels.py        出版级多面板图
+  ▼ [04] scripts/04_export_egf.py           导出 EGFAnalysisPy 输入(.dat)
+  ▼ [05] scripts/05_dispersion.py           频散分析 + DisperPicker 拾取
+  │                                         → qc_result/CDisp.*.txt、GDisp.*.txt
   │
-  ▼ [Step 2] 准备台站经纬度文件 station.csv
-  │
-  ▼ [Step 3] local_cc_workflow.py（NoisePy）
-互相关函数 (CCF) + 叠加结果 (Stack)
-  │    └─ [可选] stack_visualization.py 可视化叠加结果
-  │
-  ▼ [Step 4] export_egfanalysis_input.py
-EGFAnalysisPy 输入格式（.dat 波形 + stations.txt + EGFfiles.txt）
-  │
-  ▼ [Step 5] EGFAnalysisPy（run.py）
-频散分析 + DisperPicker 自动拾取 + 质量控制 → 频散曲线（qc_result/CDisp.*.txt、GDisp.*.txt）
-  │
-  ▼ [Step 6] DSurfTomo 反演
-    ├── extractnew.py          → surfdata.dat
-    ├── GenerateIniMOD.py      → MOD 初始模型
-    ├── GenerateDSurfTomoInputFile.py → DSurfTomo.in
-    ├── DSurfTomo 程序执行反演
-    └── GMT 脚本绘图（深度切片、剖面、射线路径、棋盘测试）
+  ├─▶ [06a] scripts/06a_line_inversion/     线状台阵:evodcinv 一维反演 → 伪二维剖面
+  │         (详见 docs/line_inversion.md)
+  └─▶ [06b] scripts/06b_area_inversion/     面状台阵:DSurfTomo 三维反演
+            (详见 docs/area_inversion.md)
 ```
+
+### 如何选择反演分支
+
+| | 06a 线状反演 | 06b 面状反演 |
+|---|---|---|
+| 台阵形态 | 台站近似排成一条测线 | 台站覆盖一个二维区域 |
+| 方法 | evodcinv:逐台站对一维 Vs(z) 反演(CPSO),按中点拼接 | DSurfTomo:频散直接反演三维 Vs |
+| 输入 | 05 步 `qc_result/`(直接使用) | 05 步 `qc_result/`(经 06b-1 转换为 surfdata.dat) |
+| 结果 | 伪二维 Vs 深度剖面(section.png/.npz) | 三维 Vs 模型 + 深度切片图 |
+| 附加依赖 | evodcinv(装入 noisepy 环境,INSTALL §2e) | DSurfTomo 编译(INSTALL §4)、GMT 6 |
+
+两个分支相互独立,互不依赖,也可以对同一批数据都跑。
+
+### 各步骤环境与输入输出
+
+| 步骤 | 用户入口 | 环境 | 主要输入 | 主要输出 |
+|------|----------|------|----------|----------|
+| 01 | `scripts/01_clean.py` | noisepy | 原始 miniSEED | 清洗后 `.ms` |
+| 02 | `scripts/02_correlation.py` | noisepy | 清洗数据 + station.csv | CCF + Stack(HDF5) |
+| 03 | `scripts/03_stack_qc.py`、`03b_stack_panels.py` | noisepy | Stack | moveout 图 |
+| 04 | `scripts/04_export_egf.py` | noisepy | Stack | CF `.dat` + stations.txt |
+| 05 | `scripts/05_dispersion.py` | egfanalysispy | CF `.dat` | 频散曲线 `qc_result/` |
+| 06a | `scripts/06a_line_inversion/01_invert.py`、`02_stitch.py` | noisepy + evodcinv | `qc_result/` | 一维模型集 + 伪二维剖面 |
+| 06b | `scripts/06b_area_inversion/01_prepare.py`、`02_invert.py`、`03_plot.py` | noisepy + DSurfTomo 可执行文件 + GMT | `qc_result/` | 三维模型 + 切片图 |
+
+### 旧脚本名 → 新入口对照(迁移指南)
+
+| 旧名称 | 新名称 |
+|--------|--------|
+| `scripts/clean_mseed_for_noisepy.py` | `scripts/01_clean.py` |
+| `scripts/local_cc_workflow.py` | `scripts/02_correlation.py` |
+| `scripts/stack_visualization.py` | `scripts/03_stack_qc.py` |
+| `scripts/plot_stack_panels.py` | `scripts/03b_stack_panels.py` |
+| `scripts/export_egfanalysis_input.py` | `scripts/04_export_egf.py` |
+| 手改 `EGFAnalysisPy/config.py` + `python run.py` | `scripts/05_dispersion.py --config configs/05_dispersion.yaml` |
+| `lant_invert.py` / `lant_stitch.py`(本地项目版本) | `scripts/06a_line_inversion/01_invert.py` / `02_stitch.py` |
+| `configs/local_cc_workflow.example.yaml` 等 | `configs/02_correlation.example.yaml` 等(编号对应) |
+
+配置行为不变:旧配置文件内容可直接复制到新的同义文件中使用。
 
 ## 软件包引用
 
-本项目使用了以下开源软件包，感谢原作者的贡献：
+本项目使用了以下开源软件包,感谢原作者的贡献:
 
 - **NoisePy** — 背景噪声互相关计算
   Jiang, C., & Denolle, M. A. (2020). NoisePy: A New High-Performance Python Tool for Ambient-Noise Seismology. *Seismological Research Letters*, 91(3), 1853–1866. https://doi.org/10.1785/0220190364
   GitHub: https://github.com/noisepy/NoisePy
 
-- **EGFAnalysisPy** — 面波频散分析（EGFAnalysisTimeFreq 的纯 Python 重写，内置 DisperPicker）
+- **EGFAnalysisPy** — 面波频散分析(EGFAnalysisTimeFreq 的纯 Python 重写,内置 DisperPicker)
   Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. https://doi.org/10.1111/j.1365-246X.2006.03028.x
-  作者：姚华建（中国科学技术大学）
+  作者:姚华建(中国科学技术大学)
 
-- **DisperPicker** — 基于深度学习的频散曲线自动提取（已内置于 EGFAnalysisPy）
+- **DisperPicker** — 基于深度学习的频散曲线自动提取(已内置于 EGFAnalysisPy)
   Yang, S., Zhang, H., Gu, N., Gao, J., Xu, J., Jin, J., Li, J., & Yao, H. (2022). Automatically Extracting Surface Wave Group and Phase Velocity Dispersion Curves from Dispersion Spectrograms Using a Convolutional Neural Network. *Seismological Research Letters*. https://doi.org/10.1785/0220210280
   GitHub: https://github.com/ShaoboYang-USTC/DisperPicker
 
-- **DSurfTomo** — 面波直接反演三维横波速度结构
+- **DSurfTomo** — 面波直接反演三维横波速度结构(仅 06b 分支使用)
   Fang, H., Yao, H., Zhang, H., Huang, Y. C., & van der Hilst, R. D. (2015). Direct inversion of surface wave dispersion for three-dimensional shallow crustal structure based on ray tracing: methodology and application. *Geophysical Journal International*, 201(3), 1251–1263. https://doi.org/10.1093/gji/ggv069
+
+- **evodcinv / disba** — 频散曲线一维演化算法反演(仅 06a 分支使用)
+  Luu, K. GitHub: https://github.com/keurfonluu/evodcinv
 
 ## 环境准备
 
-### Python 环境
+详细步骤见 [INSTALL.md](INSTALL.md)。摘要:
 
 ```bash
-conda create -n noisepy -y python=3.10 pip
-conda activate noisepy
-pip install noisepy-seis
-pip install obspy numpy pandas pyyaml datetimerange h5py scipy matplotlib
+conda env create -f environments/noisepy.yml        # 01–04、06a、06b 入口
+conda env create -f environments/egfanalysispy.yml  # 05
+cd DSurfTomo && python configure && cd ..           # 仅 06b 需要
+conda activate noisepy && python tools/check_environment.py
 ```
 
-### EGFAnalysisPy 环境
-
-EGFAnalysisPy 内置 DisperPicker，依赖 TensorFlow 1.13，需要单独的 Python 3.6 环境：
-
-```bash
-conda create -n egfanalysispy -y python=3.6 pip
-conda activate egfanalysispy
-cd EGFAnalysisPy
-pip install -r requirements.txt
-```
-
-预训练模型已包含在 `EGFAnalysisPy/DisperPicker/saver/` 中，无需额外下载。
-
-### DSurfTomo 编译
-
-```bash
-cd DSurfTomo
-python configure          # configure 是 Python 脚本，会自动进入 src/ 执行 make 并把可执行文件复制到 bin/
-```
-
-### GMT（可选，用于绘图）
-
-DSurfTomo 的绘图脚本需要 GMT 6+。
+预训练模型已包含在 `EGFAnalysisPy/DisperPicker/saver/`,无需下载。
 
 ---
 
-## Step 1：数据清洗
+## 01 数据清洗
 
-**目的：** 剔除不满一天的数据，将原始 miniSEED 文件转换为 NoisePy 所需的命名格式。
+**目的:** 剔除不完整的天数据,将原始 miniSEED 转换为 NoisePy 命名格式。
 
-**脚本：** `scripts/clean_mseed_for_noisepy.py`
+**入口:** `scripts/01_clean.py`(环境:noisepy)
 
-**输入：**
-- 原始 miniSEED 文件目录，按台站分子目录存放
-  ```
-  RawData/
-  ├── CF.17982/
-  │   ├── 230901000000    # 文件名为时间戳 YYMMDDHHmmss
-  │   ├── 230902000000
-  │   └── ...
-  ├── CF.58808/
-  └── CN.20496/
-  ```
+**输入:** 原始 miniSEED 目录,按台站分子目录:
 
-**命令：**
+```
+RawData/
+├── CF.17982/
+│   ├── 230901000000    # 文件名为北京时间戳 YYMMDDHHmmss
+│   └── ...
+├── CF.58808/
+└── CN.20496/
+```
+
+**命令:**
 
 ```bash
-python scripts/clean_mseed_for_noisepy.py \
+# 用配置文件(推荐;先 cp configs/01_clean.example.yaml configs/01_clean.yaml 并编辑)
+python scripts/01_clean.py --config configs/01_clean.yaml
+
+# 或直接命令行(命令行参数覆盖配置文件)
+python scripts/01_clean.py \
     --input-root  TestData/RawData \
     --output-root TestData/CleanData \
-    --time-zone beijing \
-    --target-channel Z \
-    --tolerance-seconds 60
+    --target-channel Z
 ```
 
-**参数说明：**
+**参数说明:**
+
 | 参数 | 说明 |
 |------|------|
-| `--input-root` | 原始 miniSEED 文件根目录 |
+| `--config` | YAML 配置文件,键名与下列参数一致 |
+| `--input-root` | 原始 miniSEED 根目录 |
 | `--output-root` | 清洗后输出目录 |
-| `--time-zone` | 文件名时间戳的时区：`beijing`（默认）或 `utc` |
-| `--target-channel` | 目标通道/分量，如 `Z`、`BNZ`、`BHZ` |
-| `--tolerance-seconds` | 判定"满一天"的容差（秒），默认 60 |
-| `--date-range START END` | 仅处理日期严格在 START 和 END 之间的文件（两端不含），格式 YYMMDD，如 `--date-range 260316 260429` |
-| `--dry-run` | 仅打印操作不实际写入 |
+| `--min-completeness` | 单日数据最低完整度(0~1,默认 0.8) |
+| `--target-channel` | 目标通道/分量,如 `Z`、`BNZ`(默认自动取 Z 分量) |
+| `--date-range START END` | 仅处理日期严格在两者之间的文件(两端不含),格式 YYMMDD |
+| `--overwrite` | 覆盖已有输出(默认不覆盖) |
+| `--dry-run` | 仅打印操作,不写文件 |
+| `--verbose` | 逐文件详细日志 |
 
-**输出：**
-```
-CleanData/
-├── CF17982_BNZ00_2023258.ms
-├── CF17982_BNZ00_2023259.ms
-└── ...
-```
-文件名格式：`{台网}{台站}_{通道}{位置码}_{年+儒略日}.ms`
+**输出:** `CleanData/CF17982_BNZ00_2023258.ms ...`,命名 `{台网}{台站}_{通道}{位置码}_{年+儒略日}.ms`
 
----
-
-## Step 2：准备台站信息文件
-
-**目的：** 创建 NoisePy 需要的台站坐标文件。
-
-**格式：** CSV 文件，包含以下列：
+**前置准备(02 步需要):台站坐标 CSV**
 
 ```csv
 network,station,channel,latitude,longitude,elevation
 CF,17982,BNZ,42.323349,118.546867,844
 CF,58808,BNZ,42.321987,118.54599,822
-CN,20496,BNZ,42.318123,118.543602,786
 ```
 
-**注意事项：**
-- 台站名、台网代码需与 miniSEED 文件头信息一致
-- 经纬度使用十进制度数
-- 高程单位为米
-- 保存为 `TestData/station.csv`
+台网/台站需与 miniSEED 头一致;经纬度十进制度;高程单位米。
 
 ---
 
-## Step 3：互相关计算与叠加
+## 02 互相关计算与叠加
 
-**目的：** 使用 NoisePy 计算台站对之间的背景噪声互相关函数并叠加。
+**目的:** 用 NoisePy 计算台站对间背景噪声互相关函数(CCF)并叠加。
 
-**脚本：** `scripts/local_cc_workflow.py`
-
-### 3a. 编写配置文件
-
-复制并修改示例配置：
+**入口:** `scripts/02_correlation.py`(环境:noisepy)
 
 ```bash
-cp configs/local_cc_workflow.example.yaml configs/my_config.yaml
+cp configs/02_correlation.example.yaml configs/my_02.yaml   # 编辑路径与参数
 ```
 
-**关键配置参数（`configs/local_cc_workflow.example.yaml`）：**
+**关键配置参数:**
 
 ```yaml
-# 数据路径
-data-dir: ../TestData/CleanData      # Step 1 的输出目录
-station-csv: ../TestData/station.csv  # Step 2 的台站文件
-ccf-dir: ../TestData/CCFData          # 互相关结果输出目录
-stack-dir: ../TestData/StackData      # 叠加结果输出目录
+data-dir: ../TestData/CleanData       # 01 步输出
+station-csv: ../TestData/station.csv  # 台站文件
+ccf-dir: ../TestData/CCFData          # 互相关输出
+stack-dir: ../TestData/StackData      # 叠加输出
 
-# 处理参数
 freqmin: 0.2          # 最低频率 (Hz)
 freqmax: 10           # 最高频率 (Hz)
-sampling-rate: 25.0   # 采样率 (Hz)
-maxlag: 100           # 最大滞后时间 (秒)
-inc-hours: 24         # 每段数据长度 (小时)
-cc-len: 600           # 互相关窗口长度 (秒)
-step: 300.0           # 窗口滑动步长 (秒)
-
-# 归一化
-time-norm: rma         # 时间域归一化方法
-freq-norm: rma         # 频率域归一化方法
-
-# 叠加
-stack-method: all      # 叠加方法: linear / pws / robust / all
+sampling-rate: 25.0   # 重采样率 (Hz)
+maxlag: 100           # 最大滞后 (s)
+inc-hours: 24         # 数据分段长度 (h)
+cc-len: 600           # 互相关窗长 (s)
+step: 300.0           # 滑动步长 (s)
+time-norm: rma        # 时间域归一化
+freq-norm: rma        # 频率域归一化
+stack-method: all     # linear / pws / robust / all
 ```
 
-### 3b. 运行互相关和叠加
+**命令:**
 
 ```bash
-# 验证配置（不实际运行）
-python scripts/local_cc_workflow.py --config configs/my_config.yaml --validate-only
-
-# 仅运行互相关
-python scripts/local_cc_workflow.py --config configs/my_config.yaml --stage cc
-
-# 仅运行叠加
-python scripts/local_cc_workflow.py --config configs/my_config.yaml --stage stack
-
-# 一次运行全部
-python scripts/local_cc_workflow.py --config configs/my_config.yaml
+python scripts/02_correlation.py --config configs/my_02.yaml --validate-only  # 只验证配置
+python scripts/02_correlation.py --config configs/my_02.yaml --stage cc       # 只互相关
+python scripts/02_correlation.py --config configs/my_02.yaml --stage stack    # 只叠加
+python scripts/02_correlation.py --config configs/my_02.yaml                  # 全部
 ```
-
-### 3c. 可视化叠加结果（可选）
-
-**脚本：** `scripts/stack_visualization.py`
-
-```bash
-python scripts/stack_visualization.py \
-    --stack-dir TestData/StackData \
-    --freqmin 1 --freqmax 5 \
-    --component ZZ \
-    --stack-method linear \
-    --maxlag 10 \
-    --style both
-```
-
-也可以使用配置文件（见 `configs/stack_visualization.example.yaml`）：
-
-```bash
-python scripts/stack_visualization.py --config configs/my_stack_viz_config.yaml
-```
-
-**输出：** 移出（moveout）图，保存在 `--outdir` 指定的目录（默认 `TestData/figures/`）。
-
-**出版级多面板图（可选）：** `scripts/plot_stack_panels.py` 生成 2×N 的多面板 moveout 图（N = 叠加方法数，上行为 image、下行为 wiggle/symmetric），适合论文插图：
-
-```bash
-python scripts/plot_stack_panels.py \
-    --stack-dir TestData/StackData \
-    --methods linear pws robust \
-    --component ZZ
-```
-
-也可使用配置文件（见 `configs/plot_stack_panels.example.yaml`）。
 
 ---
 
-## Step 4：导出 EGFAnalysisPy 所需数据
+## 03 叠加质检可视化
 
-**目的：** 将 NoisePy 叠加结果（HDF5 格式）转换为 EGFAnalysisPy 需要的文本格式（CF `.dat` 波形）。
+**目的:** 检查叠加结果质量,选择后续使用的叠加方法。可选但强烈建议。
 
-**脚本：** `scripts/export_egfanalysis_input.py`
+**入口:** `scripts/03_stack_qc.py`(环境:noisepy)
 
 ```bash
-python scripts/export_egfanalysis_input.py \
-    --stack-dir  TestData/StackData \
-    --stack-method all \
-    --component ZZ \
-    --output-root TestData/EGFAnalysisInputData
+python scripts/03_stack_qc.py \
+    --stack-dir TestData/StackData \
+    --freqmin 1 --freqmax 5 \
+    --component ZZ --stack-method linear --maxlag 10 --style both
+# 或
+python scripts/03_stack_qc.py --config configs/03_stack_qc.yaml
 ```
 
-**参数说明：**
+**输出:** moveout 图(默认写入 `--outdir`)。
+
+**出版级多面板图(可选):** `scripts/03b_stack_panels.py` 生成 2×N 多面板 moveout 图(N=叠加方法数,上行 image、下行 wiggle/symmetric):
+
+```bash
+python scripts/03b_stack_panels.py --stack-dir TestData/StackData --methods linear pws robust --component ZZ
+# 或 --config configs/03b_stack_panels.yaml
+```
+
+**叠加方法怎么选:** `linear` 最常用;`pws` 信噪比更高;`robust` 抗异常值;建议 02 步用 `all` 全算,再用本步对比选优。
+
+---
+
+## 04 导出 EGFAnalysisPy 所需数据
+
+**目的:** 将 NoisePy 叠加结果(HDF5)转换为 EGFAnalysisPy 的文本格式(CF `.dat`)。
+
+**入口:** `scripts/04_export_egf.py`(环境:noisepy)
+
+```bash
+python scripts/04_export_egf.py \
+    --stack-dir  TestData/StackData \
+    --stack-method all --component ZZ \
+    --output-root TestData/EGFAnalysisInputData
+# 或 --config configs/04_export_egf.yaml
+```
+
+**参数说明:**
+
 | 参数 | 说明 |
 |------|------|
+| `--config` | YAML 配置文件 |
 | `--stack-dir` | NoisePy 叠加结果目录 |
-| `--stack-method` | 叠加方法：`linear` / `pws` / `robust` / `all`（默认） |
-| `--component` | 分量，默认 `ZZ` |
-| `--station` | 可选，仅导出包含指定台站的台站对 |
+| `--stack-method` | `linear` / `pws` / `robust` / `all`(默认) |
+| `--component` | 分量,默认 `ZZ` |
+| `--station` | 可选,仅导出含指定台站的台站对 |
 | `--output-root` | 输出根目录 |
 
-**输出目录结构：**
+**输出目录结构:**
+
 ```
 EGFAnalysisInputData/
 ├── Allstack_linear/ZZ/
-│   ├── CF17982_CF58808.dat    # 波形数据（三列：时间, gab, gba）
-│   ├── CF17982_CN20496.dat
+│   ├── CF17982_CF58808.dat    # 波形(三列:时间, gab, gba)
 │   ├── stations.txt           # 台站坐标
 │   └── EGFfiles.txt           # 波形文件列表
 ├── Allstack_pws/ZZ/
 └── Allstack_robust/ZZ/
 ```
 
-每个 `.dat` 文件的格式：
-```
-  经度_源台站      纬度_源台站      高程_源台站      (第1行)
-  经度_接收台站    纬度_接收台站    高程_接收台站    (第2行)
-  时间(s)          gab              gba              (第3行起)
-```
+`.dat` 文件格式:第 1、2 行为源/接收台站的 `经度 纬度 高程`,第 3 行起为 `时间(s) gab gba`。
 
 ---
 
-## Step 5：EGFAnalysisPy 频散分析与曲线提取
+## 05 频散分析与曲线拾取
 
-**目的：** 对经验格林函数 / 互相关函数做时频分析生成频散能量图，并用内置的 DisperPicker（CNN）自动拾取群速度、相速度频散曲线，经质量控制后输出。**整个过程在一个 Python 进程内完成，无需 MATLAB。**
+**目的:** 对 CF/EGF 做时频分析生成频散能量图,用内置 DisperPicker(CNN)自动拾取群速度、相速度频散曲线,经质量控制后输出。整个过程一个命令完成,无需 MATLAB、无需进入 EGFAnalysisPy 目录改配置。
 
-**工具：** `EGFAnalysisPy/run.py`
-
-`run.py` 的内部流程：频散能量图计算 → DisperPicker 拾取 → 用拾取的群速度加窗做时变滤波、重算相速度能量图 → 再次拾取 → 质量控制 → 输出频散曲线。输入正是 Step 4 导出的 CF `.dat` 波形（格式与原 EGFAnalysisTimeFreq 完全一致）。
-
-### 5a. 配置
+**入口:** `scripts/05_dispersion.py`(环境:**egfanalysispy**)
 
 ```bash
-cd EGFAnalysisPy
-cp config_test.py config.py        # 以示例参数为起点，或直接编辑 config.py
-```
-
-编辑 `config.py` 中的关键参数：
-
-```python
-self.waveform_path = self.root + '/FeidongCFs'        # ← 改为 Step 4 的 .dat 波形目录
-self.result_path   = self.root + '/DisperPicker/result'  # 结果输出目录
-self.isEGF  = False        # CF 用 False，EGF 用 True
-self.StartT = 0.2          # 起始周期 (s)
-self.EndT   = 5.0          # 结束周期 (s)
-self.DeltaT = 0.1          # 周期步长 (s)
-self.StartV = 0.5          # 起始速度 (km/s)
-self.EndV   = 4.0          # 结束速度 (km/s)
-self.DeltaV = 0.005        # 速度步长（固定 0.005 km/s）
-```
-
-> 后续 Step 6（DSurfTomo）会用到这里的周期范围与步长，请记下。`DeltaV` 必须为 0.005 km/s（DisperPicker 要求）。
-
-### 5b. 运行
-
-```bash
+cp configs/05_dispersion.example.yaml configs/my_05.yaml   # 编辑
 conda activate egfanalysispy
-python run.py
+python scripts/05_dispersion.py --config configs/my_05.yaml
 ```
 
-程序遍历 `waveform_path` 下所有 `.dat` 文件，逐对处理。预训练模型已随包提供（`EGFAnalysisPy/DisperPicker/saver/`），无需额外下载。
+**关键配置(`configs/05_dispersion.example.yaml`,参数含义与 EGFAnalysisPy/config.py 一致):**
 
-### 5c. 输出
+```yaml
+paths:
+  waveform_path: /path/to/EGFAnalysisInputData/Allstack_robust/ZZ  # 04 步输出
+  result_path:   /path/to/DisperPicker_result
+run:
+  parallel: false     # true 用多进程(run_parallel.py)
+  workers: 4
+dispersion:
+  StartT: 0.4         # 周期范围与步长——06 步会用到,请记下
+  EndT: 3.0
+  DeltaT: 0.02
+  StartV: 0.5
+  EndV: 3.5
+  DeltaV: 0.005       # DisperPicker 要求固定 0.005 km/s
+```
+
+入口脚本会把 YAML 渲染成运行时配置(`<result_path>/runtime_config.py`,含来源与时间戳,可追溯),再调用 `EGFAnalysisPy/run_parallel.py`;仓库内的 `EGFAnalysisPy/config.py` 不会被修改。内部流程:频散能量图 → DisperPicker 拾取 → 按群速度加窗时变滤波重算相速度图 → 再拾取 → 质量控制 → 输出。
+
+**高级用法:** 也可以直接 `cd EGFAnalysisPy && python run_parallel.py --config 自定义config.py -w 8`(或编辑 `config.py` 后 `python run.py`),行为与原版一致。
+
+**输出:**
 
 ```
-EGFAnalysisPy/DisperPicker/result/
+<result_path>/
+├── runtime_config.py          # 本次运行的完整参数(自动生成)
 ├── qc_result/
 │   ├── CDisp.FD01_FD16.txt    # 相速度频散曲线
 │   ├── GDisp.FD01_FD16.txt    # 群速度频散曲线
 │   └── ...
-├── qc_plot/                   # 每条曲线的能量图 + 拾取结果对比图
-├── all_C.png / mean_C.png     # 全部 / 平均相速度统计图
-└── all_G.png / mean_G.png     # 全部 / 平均群速度统计图
+├── qc_plot/                   # 能量图 + 拾取对比图(按 random_plot_ratio 抽样)
+├── all_C.png / mean_C.png
+└── all_G.png / mean_G.png
 ```
 
-每条频散曲线文件（前两行为台站坐标，数据列为 `周期 速度 信噪比 概率`）：
+频散曲线文件格式(前两行为两台站的 `经度 纬度`,数据列为 `周期 速度 信噪比 概率`):
+
 ```
-117.43333100    31.81069500       # 台站 A 经度  纬度
-117.48089000    31.66345700       # 台站 B 经度  纬度
-0.20   1.250   6.100   0.950      # 周期(s)  速度(km/s)  信噪比  DisperPicker 概率
+117.43333100    31.81069500
+117.48089000    31.66345700
+0.20   1.250   6.100   0.950
 0.30   1.310   5.800   0.880
-...
 ```
 
-> 该输出可直接作为 Step 6 `extractnew.py` 的 `egfpy` 输入，台站坐标已内嵌在文件头，无需额外的 station 文件。
+> `qc_result/` 就是两个反演分支的公共输入:06a 直接读取;06b 由 `01_prepare.py` 转换。台站坐标内嵌在文件头,无需额外 station 文件。
 
 ---
 
-## Step 6：DSurfTomo 面波层析成像反演
+## 06a 线状台阵反演(evodcinv)
 
-**目的：** 将频散曲线数据反演为三维横波速度模型。
-
-**脚本位置：** `DSurfTomo/scripts/`
-
-### 方式一：一体化交互式流程（推荐）
-
-使用 `PrepareDSurfTomoProject.py` 一步完成数据准备、初始模型和配置文件生成：
+台站近似排成一条测线时使用。两步:逐台站对一维反演 → 拼接伪二维剖面。
 
 ```bash
-cd DSurfTomo/scripts
-python PrepareDSurfTomoProject.py
+cp configs/06a_line_inversion/line.example.yaml configs/06a_line_inversion/my_line.yaml
+conda activate noisepy    # 需已安装 evodcinv(INSTALL §2e)
+python scripts/06a_line_inversion/01_invert.py --config configs/06a_line_inversion/my_line.yaml
+python scripts/06a_line_inversion/02_stitch.py --config configs/06a_line_inversion/my_line.yaml
 ```
 
-该脚本会交互式引导你完成以下步骤：
-1. 输入 Step 5 的频散曲线目录（`EGFAnalysisPy/DisperPicker/result/qc_result`），自动识别为 `egfpy` 输入
-2. 设置频散曲线的周期和速度参数
-3. 生成 `surfdata.dat`（频散数据格式转换）
-4. 生成 `MOD`（初始速度模型）
-5. 生成 `DSurfTomo.in`（反演配置文件）
-6. 可选：生成 `MOD.true`（棋盘测试真实模型）
+详细说明(适用条件、配置逐项解释、结果解读)见 [line_inversion.md](line_inversion.md)。
 
-### 方式二：分步执行
+## 06b 面状台阵反演(DSurfTomo)
 
-#### 6a. 转换频散数据 → surfdata.dat
-
-**脚本：** `extractnew.py`（交互式，按提示输入）
+台站覆盖二维区域时使用。三步:准备工程 → 运行反演 → GMT 绘图。
 
 ```bash
-python extractnew.py
-# input directory:  /path/to/EGFAnalysisPy/DisperPicker/result/qc_result
-# （自动识别 Detected input source: egfpy）
-# curve type (phase/group/both): both
-# strict period step (s): 0.1
-# wave type (1=Love, 2=Rayleigh): 2
-# output surfdata path: surfdata.dat
+cp configs/06b_area_inversion/dsurftomo.example.yaml configs/06b_area_inversion/my_area.yaml
+conda activate noisepy    # 需已编译 DSurfTomo(INSTALL §4);绘图需 GMT 6
+python scripts/06b_area_inversion/01_prepare.py --config configs/06b_area_inversion/my_area.yaml
+python scripts/06b_area_inversion/02_invert.py  --config configs/06b_area_inversion/my_area.yaml
+python scripts/06b_area_inversion/03_plot.py    --config configs/06b_area_inversion/my_area.yaml
 ```
 
-`extractnew.py` 读取 `qc_result/` 下的 `CDisp.*.txt`、`GDisp.*.txt`，台站坐标取自文件头，无需额外的 station 文件。周期步长须与 Step 5 的 `DeltaT` 一致。
-
-**输出：** `surfdata.dat` + `surfdata.json`（元数据）
-
-#### 6b. 生成初始模型 → MOD
-
-**脚本：** `GenerateIniMOD.py`
-
-```bash
-python GenerateIniMOD.py
-```
-
-交互式输入参数：
-- 深度网格节点（如 `0 0.2 0.5 1 2 3 5`）
-- 水平网格间距或网格点数
-- 每层初始速度（默认根据频散数据自动计算）
-
-**输出：** `MOD`（初始模型文件）
-
-#### 6c. 生成配置文件 → DSurfTomo.in
-
-**脚本：** `GenerateDSurfTomoInputFile.py`
-
-```bash
-python GenerateDSurfTomoInputFile.py
-```
-
-交互式输入参数：
-- 反演参数（迭代次数、阻尼因子等）
-- 速度约束范围
-- 平滑参数
-
-**输出：** `DSurfTomo.in`
-
-#### 6d. 可选：生成棋盘测试模型
-
-**脚本：** `GenerateTrueMOD.py`
-
-```bash
-python GenerateTrueMOD.py
-```
-
-**输出：** `MOD.true`
-
-#### 6e. 运行 DSurfTomo 反演
-
-```bash
-/path/to/DSurfTomo/bin/DSurfTomo
-```
-
-程序读取当前目录下的 `DSurfTomo.in`、`surfdata.dat`、`MOD`，执行反演。
-
-**输出文件（部分）：**
-- `MOD_iter_*.dat` — 每次迭代的速度模型
-- `residual.dat` — 残差
-- `raypath_*.dat` — 射线路径
-
-### 6f. 结果可视化（GMT 脚本）
-
-```bash
-# 深度切片图
-bash plotdepth_subplot.gmt --project-dir /path/to/project
-
-# 剖面图
-bash plotcross_subplot.gmt --project-dir /path/to/project \
-    --profiles "lon1/lat1/lon2/lat2/label"
-
-# 射线路径图
-bash plotray_subplot.gmt --project-dir /path/to/project
-
-# 棋盘测试结果图
-bash plotchecker_subplot.gmt --project-dir /path/to/project
-```
-
-### 6g. 频散数据统计（可选）
-
-```bash
-python plot_dispersion_period_counts.py --surfdata /path/to/surfdata.dat
-```
+也可以使用 `DSurfTomo/scripts/` 下的交互式脚本手动分步执行(`PrepareDSurfTomoProject.py` 一体式,或 `extractnew.py` → `GenerateIniMOD.py` → `GenerateDSurfTomoInputFile.py` 分步),详见 [area_inversion.md](area_inversion.md)。
 
 ---
-
-## 目录结构说明
-
-```
-local_ANT/
-├── scripts/                            # 辅助脚本（连接各软件包的胶水代码）
-│   ├── clean_mseed_for_noisepy.py      # Step 1: 数据清洗
-│   ├── local_cc_workflow.py            # Step 3: NoisePy 互相关工作流
-│   ├── stack_visualization.py          # Step 3c: 叠加结果可视化
-│   ├── plot_stack_panels.py            # Step 3c: 出版级多面板 moveout 图
-│   └── export_egfanalysis_input.py     # Step 4: 导出 EGF 输入
-├── configs/                            # 配置文件示例
-│   ├── local_cc_workflow.example.yaml
-│   ├── plot_stack_panels.example.yaml
-│   └── stack_visualization.example.yaml
-├── EGFAnalysisPy/                      # Step 5: 频散分析 + CNN 曲线提取
-│   ├── run.py                          # 一步完成频散分析与拾取
-│   ├── config.py / config_test.py      # 参数配置
-│   └── DisperPicker/                   # 内置 DisperPicker 及预训练模型（saver/）
-├── DSurfTomo/                          # 面波层析成像反演
-│   ├── bin/                            # 可执行文件
-│   ├── scripts/                        # 数据准备和绘图脚本
-│   └── src/                            # 源代码
-└── TestData/                           # 示例数据
-    ├── RawData/                        # 原始 miniSEED
-    ├── CleanData/                      # 清洗后数据
-    ├── CCFData/                        # 互相关结果
-    ├── StackData/                      # 叠加结果
-    ├── EGFAnalysisInputData/           # EGF 输入（CF .dat 波形，Step 4 运行后生成）
-    ├── figures/                        # 可视化图片
-    └── station.csv                     # 台站信息
-```
 
 ## 常见问题
 
-### 周期和速度参数需要一致吗？
-是的。Step 5（EGFAnalysisPy `config.py`）设置的周期范围、步长必须与 Step 6（`extractnew.py` 的 period step）保持一致。DisperPicker 要求速度步长固定为 0.005 km/s（`DeltaV`）。
-
-### 如何选择叠加方法？
-- `linear`：线性叠加，最常用
-- `pws`：相位加权叠加，信噪比较高
-- `robust`：鲁棒叠加，对异常值不敏感
-- `all`：同时计算所有方法
-
-建议先用 `all` 全部计算，然后通过 `stack_visualization.py` 对比选择最优结果。
-
-### extractnew.py 的输入是什么？
-仅支持 `egfpy` 输入类型：EGFAnalysisPy（`run.py`）的 `qc_result/` 输出 `CDisp.*.txt`（相速度）和 `GDisp.*.txt`（群速度）。文件头两行为台站坐标（经度 纬度），数据列为 `周期 速度 信噪比 概率`；第 4 列是 DisperPicker 概率，不作为保留标志。输入目录可指向 `qc_result` 目录或其父目录，台站坐标已内嵌在文件头，无需额外的 station 文件。
-
----
+常见问题已集中到 [FAQ.md](FAQ.md)。
 
 ## 许可证
 
-各软件包遵循其原始许可证。辅助脚本（`scripts/` 和 `DSurfTomo/scripts/`）随项目发布。
+各软件包遵循其原始许可证。辅助脚本(`scripts/` 和 `DSurfTomo/scripts/`)随项目发布。

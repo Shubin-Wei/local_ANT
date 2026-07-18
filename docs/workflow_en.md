@@ -1,535 +1,367 @@
-# Complete Workflow: Ambient Noise Surface Wave Tomography from Local miniSEED Data
+# Complete Ambient Noise Imaging Workflow (01–06)
 
-This project implements a complete ambient noise surface wave tomography pipeline — from raw miniSEED seismic data to a 3D shear-wave velocity model. The workflow consists of 6 steps, using 3 software packages and several helper scripts. **EGFAnalysisPy** is a pure-Python rewrite of EGFAnalysisTimeFreq with the deep-learning picker DisperPicker (and its pretrained model) bundled in, performing dispersion analysis and curve extraction in a single step — no MATLAB required.
+This project implements a complete ambient noise imaging pipeline from raw miniSEED data to shear-wave velocity models. Stages 01–05 are common; after step 05 the pipeline splits into two parallel branches — **06a linear-array inversion** or **06b areal-array inversion** — chosen by array geometry.
 
-## Workflow Overview
+All commands are executed from the **repository root**; every step runs independently and can be resumed midway.
+
+## Pipeline overview
 
 ```
 Raw miniSEED data
   │
-  ▼ [Step 1] clean_mseed_for_noisepy.py
-Cleaned miniSEED data (NoisePy format)
+  ▼ [01] scripts/01_clean.py                data cleaning (NoisePy naming format)
+  ▼ [02] scripts/02_correlation.py          cross-correlation + stacking (NoisePy)
+  │        prerequisite: station.csv
+  ▼ [03] scripts/03_stack_qc.py             stack QC visualization (optional, recommended)
+  │      scripts/03b_stack_panels.py        publication-grade panel figure
+  ▼ [04] scripts/04_export_egf.py           export EGFAnalysisPy input (.dat)
+  ▼ [05] scripts/05_dispersion.py           dispersion analysis + DisperPicker picking
+  │                                         → qc_result/CDisp.*.txt, GDisp.*.txt
   │
-  ▼ [Step 2] Prepare station coordinate file (station.csv)
-  │
-  ▼ [Step 3] local_cc_workflow.py (NoisePy)
-Cross-correlation functions (CCF) + stacked results
-  │    └─ [Optional] stack_visualization.py for QC
-  │
-  ▼ [Step 4] export_egfanalysis_input.py
-EGFAnalysisPy input format (.dat waveforms + stations.txt + EGFfiles.txt)
-  │
-  ▼ [Step 5] EGFAnalysisPy (run.py)
-Dispersion analysis + DisperPicker auto-picking + QC → dispersion curves (qc_result/CDisp.*.txt, GDisp.*.txt)
-  │
-  ▼ [Step 6] DSurfTomo inversion
-    ├── extractnew.py               → surfdata.dat
-    ├── GenerateIniMOD.py           → MOD (initial model)
-    ├── GenerateDSurfTomoInputFile.py → DSurfTomo.in
-    ├── Run DSurfTomo inversion
-    └── GMT scripts for plotting (depth slices, cross-sections, ray paths, checkerboard tests)
+  ├─▶ [06a] scripts/06a_line_inversion/     linear array: evodcinv 1-D inversion → pseudo-2D section
+  │         (see docs/line_inversion.md)
+  └─▶ [06b] scripts/06b_area_inversion/     areal array: DSurfTomo 3-D inversion
+            (see docs/area_inversion.md)
 ```
 
-## Citations
+### Choosing the inversion branch
 
-This project integrates the following open-source software packages. All credit goes to their original authors:
+| | 06a linear inversion | 06b areal inversion |
+|---|---|---|
+| Array geometry | stations roughly along one line | stations covering a 2-D region |
+| Method | evodcinv: per-pair 1-D Vs(z) inversion (CPSO), stitched at pair midpoints | DSurfTomo: direct inversion for 3-D Vs |
+| Input | step-05 `qc_result/` (used directly) | step-05 `qc_result/` (converted to surfdata.dat by 06b-1) |
+| Result | pseudo-2D Vs depth section (section.png/.npz) | 3-D Vs model + depth-slice figures |
+| Extra deps | evodcinv (into the noisepy env, INSTALL §2e) | compiled DSurfTomo (INSTALL §4), GMT 6 |
 
-- **NoisePy** — Ambient noise cross-correlation
+The branches are fully independent; you may also run both on the same dataset.
+
+### Environment and I/O per step
+
+| Step | User entry | Env | Main input | Main output |
+|------|------------|-----|------------|-------------|
+| 01 | `scripts/01_clean.py` | noisepy | raw miniSEED | cleaned `.ms` |
+| 02 | `scripts/02_correlation.py` | noisepy | cleaned data + station.csv | CCF + Stack (HDF5) |
+| 03 | `scripts/03_stack_qc.py`, `03b_stack_panels.py` | noisepy | Stack | moveout figures |
+| 04 | `scripts/04_export_egf.py` | noisepy | Stack | CF `.dat` + stations.txt |
+| 05 | `scripts/05_dispersion.py` | egfanalysispy | CF `.dat` | dispersion curves `qc_result/` |
+| 06a | `scripts/06a_line_inversion/01_invert.py`, `02_stitch.py` | noisepy + evodcinv | `qc_result/` | 1-D model set + pseudo-2D section |
+| 06b | `scripts/06b_area_inversion/01_prepare.py`, `02_invert.py`, `03_plot.py` | noisepy + DSurfTomo binary + GMT | `qc_result/` | 3-D model + slice figures |
+
+### Old script names → new entries (migration guide)
+
+| Old name | New name |
+|----------|----------|
+| `scripts/clean_mseed_for_noisepy.py` | `scripts/01_clean.py` |
+| `scripts/local_cc_workflow.py` | `scripts/02_correlation.py` |
+| `scripts/stack_visualization.py` | `scripts/03_stack_qc.py` |
+| `scripts/plot_stack_panels.py` | `scripts/03b_stack_panels.py` |
+| `scripts/export_egfanalysis_input.py` | `scripts/04_export_egf.py` |
+| editing `EGFAnalysisPy/config.py` + `python run.py` | `scripts/05_dispersion.py --config configs/05_dispersion.yaml` |
+| `lant_invert.py` / `lant_stitch.py` (local project copies) | `scripts/06a_line_inversion/01_invert.py` / `02_stitch.py` |
+| `configs/local_cc_workflow.example.yaml` etc. | `configs/02_correlation.example.yaml` etc. (matching numbers) |
+
+Configuration behaviour is unchanged: contents of old config files can be copied verbatim into their renamed counterparts.
+
+## Package citations
+
+This project uses the following open-source packages — many thanks to their authors:
+
+- **NoisePy** — ambient noise cross-correlation
   Jiang, C., & Denolle, M. A. (2020). NoisePy: A New High-Performance Python Tool for Ambient-Noise Seismology. *Seismological Research Letters*, 91(3), 1853–1866. https://doi.org/10.1785/0220190364
   GitHub: https://github.com/noisepy/NoisePy
 
-- **EGFAnalysisPy** — Surface wave dispersion analysis (pure-Python rewrite of EGFAnalysisTimeFreq, DisperPicker bundled)
+- **EGFAnalysisPy** — surface-wave dispersion analysis (pure-Python rewrite of EGFAnalysisTimeFreq, DisperPicker bundled)
   Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. https://doi.org/10.1111/j.1365-246X.2006.03028.x
-  Author: Huajian Yao (University of Science and Technology of China)
+  Author: Huajian Yao (USTC)
 
-- **DisperPicker** — CNN-based automatic dispersion curve extraction (bundled within EGFAnalysisPy)
+- **DisperPicker** — deep-learning dispersion-curve extraction (bundled inside EGFAnalysisPy)
   Yang, S., Zhang, H., Gu, N., Gao, J., Xu, J., Jin, J., Li, J., & Yao, H. (2022). Automatically Extracting Surface Wave Group and Phase Velocity Dispersion Curves from Dispersion Spectrograms Using a Convolutional Neural Network. *Seismological Research Letters*. https://doi.org/10.1785/0220210280
   GitHub: https://github.com/ShaoboYang-USTC/DisperPicker
 
-- **DSurfTomo** — Direct surface wave tomography for 3D shear-wave velocity
+- **DSurfTomo** — direct inversion for 3-D shear-wave structure (branch 06b only)
   Fang, H., Yao, H., Zhang, H., Huang, Y. C., & van der Hilst, R. D. (2015). Direct inversion of surface wave dispersion for three-dimensional shallow crustal structure based on ray tracing: methodology and application. *Geophysical Journal International*, 201(3), 1251–1263. https://doi.org/10.1093/gji/ggv069
 
-## Prerequisites
+- **evodcinv / disba** — 1-D dispersion inversion with evolutionary algorithms (branch 06a only)
+  Luu, K. GitHub: https://github.com/keurfonluu/evodcinv
 
-### Python Environment
+## Environment setup
 
-```bash
-conda create -n noisepy -y python=3.10 pip
-conda activate noisepy
-pip install noisepy-seis
-pip install obspy numpy pandas pyyaml datetimerange h5py scipy matplotlib
-```
-
-### EGFAnalysisPy Environment
-
-EGFAnalysisPy bundles DisperPicker and depends on TensorFlow 1.13, so it needs a separate Python 3.6 environment:
+See [INSTALL_en.md](INSTALL_en.md) for details. Summary:
 
 ```bash
-conda create -n egfanalysispy -y python=3.6 pip
-conda activate egfanalysispy
-cd EGFAnalysisPy
-pip install -r requirements.txt
+conda env create -f environments/noisepy.yml        # entries for 01–04, 06a, 06b
+conda env create -f environments/egfanalysispy.yml  # step 05
+cd DSurfTomo && python configure && cd ..           # only needed for 06b
+conda activate noisepy && python tools/check_environment.py
 ```
 
-The pretrained model is already included in `EGFAnalysisPy/DisperPicker/saver/` — no extra download needed.
-
-### Compile DSurfTomo
-
-```bash
-cd DSurfTomo
-python configure          # configure is a Python script; it runs make in src/ and copies the binary to bin/
-```
-
-### GMT (Optional, for Plotting)
-
-The DSurfTomo plotting scripts require GMT 6+.
+The pretrained model ships in `EGFAnalysisPy/DisperPicker/saver/` — no download needed.
 
 ---
 
-## Step 1: Data Cleaning
+## 01 Data cleaning
 
-**Goal:** Remove incomplete (less than one full day) records and convert raw miniSEED files to the naming format required by NoisePy.
+**Purpose:** drop incomplete days and convert raw miniSEED into NoisePy naming format.
 
-**Script:** `scripts/clean_mseed_for_noisepy.py`
+**Entry:** `scripts/01_clean.py` (env: noisepy)
 
-**Input:**
-- Raw miniSEED files organized by station subdirectory:
-  ```
-  RawData/
-  ├── CF.17982/
-  │   ├── 230901000000    # Filename is a timestamp: YYMMDDHHmmss
-  │   ├── 230902000000
-  │   └── ...
-  ├── CF.58808/
-  └── CN.20496/
-  ```
+**Input:** raw miniSEED root with one subdirectory per station:
 
-**Command:**
+```
+RawData/
+├── CF.17982/
+│   ├── 230901000000    # filename is a Beijing timestamp YYMMDDHHmmss
+│   └── ...
+├── CF.58808/
+└── CN.20496/
+```
+
+**Commands:**
 
 ```bash
-python scripts/clean_mseed_for_noisepy.py \
+# with a config file (recommended; first cp configs/01_clean.example.yaml configs/01_clean.yaml)
+python scripts/01_clean.py --config configs/01_clean.yaml
+
+# or pure CLI (CLI flags override the config file)
+python scripts/01_clean.py \
     --input-root  TestData/RawData \
     --output-root TestData/CleanData \
-    --time-zone beijing \
-    --target-channel Z \
-    --tolerance-seconds 60
+    --target-channel Z
 ```
 
-**Parameters:**
-| Parameter | Description |
-|-----------|-------------|
-| `--input-root` | Root directory of raw miniSEED files |
-| `--output-root` | Output directory for cleaned files |
-| `--time-zone` | Timezone for filename timestamps: `beijing` (default) or `utc` |
-| `--target-channel` | Target channel/component, e.g. `Z`, `BNZ`, `BHZ` |
-| `--tolerance-seconds` | Tolerance (in seconds) for full-day completeness check (default: 60) |
-| `--date-range START END` | Only process files whose date is strictly between START and END (both excluded), format YYMMDD, e.g. `--date-range 260316 260429` |
-| `--dry-run` | Print actions without writing any files |
+**Options:**
 
-**Output:**
-```
-CleanData/
-├── CF17982_BNZ00_2023258.ms
-├── CF17982_BNZ00_2023259.ms
-└── ...
-```
-Filename format: `{network}{station}_{channel}{location}_{year}{day-of-year}.ms`
+| Option | Description |
+|--------|-------------|
+| `--config` | YAML file whose keys mirror the options below |
+| `--input-root` | raw miniSEED root directory |
+| `--output-root` | cleaned output directory |
+| `--min-completeness` | minimum per-day completeness (0–1, default 0.8) |
+| `--target-channel` | channel/component, e.g. `Z`, `BNZ` (default: auto Z) |
+| `--date-range START END` | only dates strictly between the two (exclusive), format YYMMDD |
+| `--overwrite` | overwrite existing outputs (off by default) |
+| `--dry-run` | print actions without writing |
+| `--verbose` | per-file logging |
 
----
+**Output:** `CleanData/CF17982_BNZ00_2023258.ms ...`, named `{net}{sta}_{chan}{loc}_{year+julday}.ms`
 
-## Step 2: Prepare Station Coordinate File
-
-**Goal:** Create the station catalog file required by NoisePy.
-
-**Format:** CSV file with the following columns:
+**Prerequisite for step 02: station coordinate CSV**
 
 ```csv
 network,station,channel,latitude,longitude,elevation
 CF,17982,BNZ,42.323349,118.546867,844
 CF,58808,BNZ,42.321987,118.54599,822
-CN,20496,BNZ,42.318123,118.543602,786
 ```
 
-**Notes:**
-- Station names and network codes must match the miniSEED file headers
-- Coordinates use decimal degrees
-- Elevation is in meters
-- Save as `TestData/station.csv`
+Network/station must match the miniSEED headers; decimal degrees; elevation in metres.
 
 ---
 
-## Step 3: Cross-Correlation and Stacking
+## 02 Cross-correlation and stacking
 
-**Goal:** Compute ambient noise cross-correlation functions between station pairs and stack them using NoisePy.
+**Purpose:** compute and stack ambient-noise cross-correlation functions with NoisePy.
 
-**Script:** `scripts/local_cc_workflow.py`
-
-### 3a. Create Configuration File
-
-Copy and edit the example config:
+**Entry:** `scripts/02_correlation.py` (env: noisepy)
 
 ```bash
-cp configs/local_cc_workflow.example.yaml configs/my_config.yaml
+cp configs/02_correlation.example.yaml configs/my_02.yaml   # edit paths & params
 ```
 
-**Key configuration parameters (`configs/local_cc_workflow.example.yaml`):**
+**Key parameters:**
 
 ```yaml
-# Data paths
-data-dir: ../TestData/CleanData      # Output from Step 1
-station-csv: ../TestData/station.csv  # Station file from Step 2
-ccf-dir: ../TestData/CCFData          # Cross-correlation output
-stack-dir: ../TestData/StackData      # Stacking output
+data-dir: ../TestData/CleanData       # step-01 output
+station-csv: ../TestData/station.csv
+ccf-dir: ../TestData/CCFData
+stack-dir: ../TestData/StackData
 
-# Processing parameters
-freqmin: 0.2          # Minimum frequency (Hz)
-freqmax: 10           # Maximum frequency (Hz)
-sampling-rate: 25.0   # Target sampling rate (Hz)
-maxlag: 100           # Maximum lag time (seconds)
-inc-hours: 24         # Processing chunk length (hours)
-cc-len: 600           # Correlation window length (seconds)
-step: 300.0           # Window sliding step (seconds)
-
-# Normalization
-time-norm: rma         # Time-domain normalization
-freq-norm: rma         # Frequency-domain normalization
-
-# Stacking
-stack-method: all      # Stacking method: linear / pws / robust / all
+freqmin: 0.2          # Hz
+freqmax: 10           # Hz
+sampling-rate: 25.0   # Hz
+maxlag: 100           # s
+inc-hours: 24
+cc-len: 600           # s
+step: 300.0           # s
+time-norm: rma
+freq-norm: rma
+stack-method: all     # linear / pws / robust / all
 ```
 
-### 3b. Run Cross-Correlation and Stacking
+**Commands:**
 
 ```bash
-# Validate configuration (dry run)
-python scripts/local_cc_workflow.py --config configs/my_config.yaml --validate-only
-
-# Run cross-correlation only
-python scripts/local_cc_workflow.py --config configs/my_config.yaml --stage cc
-
-# Run stacking only
-python scripts/local_cc_workflow.py --config configs/my_config.yaml --stage stack
-
-# Run both stages
-python scripts/local_cc_workflow.py --config configs/my_config.yaml
+python scripts/02_correlation.py --config configs/my_02.yaml --validate-only
+python scripts/02_correlation.py --config configs/my_02.yaml --stage cc
+python scripts/02_correlation.py --config configs/my_02.yaml --stage stack
+python scripts/02_correlation.py --config configs/my_02.yaml
 ```
-
-### 3c. Visualize Stacked Results (Optional)
-
-**Script:** `scripts/stack_visualization.py`
-
-```bash
-python scripts/stack_visualization.py \
-    --stack-dir TestData/StackData \
-    --freqmin 1 --freqmax 5 \
-    --component ZZ \
-    --stack-method linear \
-    --maxlag 10 \
-    --style both
-```
-
-Or use a YAML config file (see `configs/stack_visualization.example.yaml`):
-
-```bash
-python scripts/stack_visualization.py --config configs/my_stack_viz_config.yaml
-```
-
-**Output:** Moveout plots saved to `--outdir` (default: `TestData/figures/`).
-
-**Publication-quality multi-panel figure (optional):** `scripts/plot_stack_panels.py` produces a 2×N multi-panel moveout figure (N = number of stack methods; top row image, bottom row wiggle/symmetric), suitable for journal figures:
-
-```bash
-python scripts/plot_stack_panels.py \
-    --stack-dir TestData/StackData \
-    --methods linear pws robust \
-    --component ZZ
-```
-
-A YAML config file can also be used (see `configs/plot_stack_panels.example.yaml`).
 
 ---
 
-## Step 4: Export Data for EGFAnalysisPy
+## 03 Stack QC visualization
 
-**Goal:** Convert NoisePy stacking results (HDF5 format) to the text format required by EGFAnalysisPy (CF `.dat` waveforms).
+**Purpose:** inspect stack quality and choose the stacking method for later steps. Optional but strongly recommended.
 
-**Script:** `scripts/export_egfanalysis_input.py`
+**Entry:** `scripts/03_stack_qc.py` (env: noisepy)
 
 ```bash
-python scripts/export_egfanalysis_input.py \
-    --stack-dir  TestData/StackData \
-    --stack-method all \
-    --component ZZ \
-    --output-root TestData/EGFAnalysisInputData
+python scripts/03_stack_qc.py \
+    --stack-dir TestData/StackData \
+    --freqmin 1 --freqmax 5 \
+    --component ZZ --stack-method linear --maxlag 10 --style both
+# or
+python scripts/03_stack_qc.py --config configs/03_stack_qc.yaml
 ```
 
-**Parameters:**
-| Parameter | Description |
-|-----------|-------------|
-| `--stack-dir` | NoisePy stacking result directory |
-| `--stack-method` | Stacking method: `linear` / `pws` / `robust` / `all` (default) |
-| `--component` | Component, default `ZZ` |
-| `--station` | Optional: only export pairs involving this station |
-| `--output-root` | Output root directory |
+**Output:** moveout figures (written to `--outdir`).
 
-**Output directory structure:**
+**Publication-grade panels (optional):** `scripts/03b_stack_panels.py` builds a 2×N panel moveout figure (N = number of stack methods; image row + wiggle/symmetric row):
+
+```bash
+python scripts/03b_stack_panels.py --stack-dir TestData/StackData --methods linear pws robust --component ZZ
+# or --config configs/03b_stack_panels.yaml
+```
+
+**Choosing a stack method:** `linear` is the workhorse; `pws` boosts SNR; `robust` resists outliers; run `all` in step 02 and compare here.
+
+---
+
+## 04 Export EGFAnalysisPy input
+
+**Purpose:** convert NoisePy stacks (HDF5) into EGFAnalysisPy's text format (CF `.dat`).
+
+**Entry:** `scripts/04_export_egf.py` (env: noisepy)
+
+```bash
+python scripts/04_export_egf.py \
+    --stack-dir  TestData/StackData \
+    --stack-method all --component ZZ \
+    --output-root TestData/EGFAnalysisInputData
+# or --config configs/04_export_egf.yaml
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--config` | YAML config file |
+| `--stack-dir` | NoisePy stack directory |
+| `--stack-method` | `linear` / `pws` / `robust` / `all` (default) |
+| `--component` | component, default `ZZ` |
+| `--station` | optional; only pairs involving this station |
+| `--output-root` | output root directory |
+
+**Output layout:**
+
 ```
 EGFAnalysisInputData/
 ├── Allstack_linear/ZZ/
-│   ├── CF17982_CF58808.dat    # Waveform (3 columns: time, gab, gba)
-│   ├── CF17982_CN20496.dat
-│   ├── stations.txt           # Station coordinates
-│   └── EGFfiles.txt           # Waveform file list
+│   ├── CF17982_CF58808.dat    # waveform (3 columns: time, gab, gba)
+│   ├── stations.txt
+│   └── EGFfiles.txt
 ├── Allstack_pws/ZZ/
 └── Allstack_robust/ZZ/
 ```
 
-Each `.dat` waveform file format:
-```
-  source_longitude      source_latitude      source_elevation      (line 1)
-  receiver_longitude    receiver_latitude    receiver_elevation    (line 2)
-  time(s)               gab                  gba                   (line 3+)
-```
+`.dat` format: lines 1–2 hold `lon lat elev` of the source/receiver stations; data lines are `time(s) gab gba`.
 
 ---
 
-## Step 5: Dispersion Analysis & Curve Extraction with EGFAnalysisPy
+## 05 Dispersion analysis and curve picking
 
-**Goal:** Compute dispersion energy images from the empirical Green's / cross-correlation functions and automatically pick group and phase velocity dispersion curves with the bundled DisperPicker (CNN), followed by quality control. **This all happens in a single Python process — no MATLAB required.**
+**Purpose:** time–frequency analysis of CF/EGF into dispersion energy diagrams, automatic group/phase-velocity picking with the bundled DisperPicker (CNN), quality control, and output — one command, no MATLAB, no editing files inside EGFAnalysisPy.
 
-**Tool:** `EGFAnalysisPy/run.py`
-
-Internally, `run.py` does: dispersion energy image computation → DisperPicker picking → time-variable filtering (windowed with the picked group velocity) and phase-velocity recomputation → re-picking → quality control → dispersion curve output. The input is the CF `.dat` waveforms exported in Step 4 (identical format to the original EGFAnalysisTimeFreq input).
-
-### 5a. Configure
+**Entry:** `scripts/05_dispersion.py` (env: **egfanalysispy**)
 
 ```bash
-cd EGFAnalysisPy
-cp config_test.py config.py        # start from the example, or edit config.py directly
-```
-
-Edit the key parameters in `config.py`:
-
-```python
-self.waveform_path = self.root + '/FeidongCFs'        # ← point to the Step 4 .dat directory
-self.result_path   = self.root + '/DisperPicker/result'  # result output directory
-self.isEGF  = False        # False for CF, True for EGF
-self.StartT = 0.2          # start period (s)
-self.EndT   = 5.0          # end period (s)
-self.DeltaT = 0.1          # period step (s)
-self.StartV = 0.5          # start velocity (km/s)
-self.EndV   = 4.0          # end velocity (km/s)
-self.DeltaV = 0.005        # velocity step (fixed at 0.005 km/s)
-```
-
-> Step 6 (DSurfTomo) reuses the period range and step set here, so note them down. `DeltaV` must be 0.005 km/s (required by DisperPicker).
-
-### 5b. Run
-
-```bash
+cp configs/05_dispersion.example.yaml configs/my_05.yaml   # edit
 conda activate egfanalysispy
-python run.py
+python scripts/05_dispersion.py --config configs/my_05.yaml
 ```
 
-The program iterates over every `.dat` file under `waveform_path`, processing each pair. The pretrained model ships with the package (`EGFAnalysisPy/DisperPicker/saver/`) — no extra download needed.
+**Key parameters (`configs/05_dispersion.example.yaml`; meanings follow EGFAnalysisPy/config.py):**
 
-### 5c. Output
+```yaml
+paths:
+  waveform_path: /path/to/EGFAnalysisInputData/Allstack_robust/ZZ  # step-04 output
+  result_path:   /path/to/DisperPicker_result
+run:
+  parallel: false     # true = multiprocessing (run_parallel.py)
+  workers: 4
+dispersion:
+  StartT: 0.4         # period range & step — step 06 will need these
+  EndT: 3.0
+  DeltaT: 0.02
+  StartV: 0.5
+  EndV: 3.5
+  DeltaV: 0.005       # DisperPicker requires exactly 0.005 km/s
+```
+
+The entry renders the YAML into a runtime config (`<result_path>/runtime_config.py`, with source and timestamp for provenance) and invokes `EGFAnalysisPy/run_parallel.py`; the bundled `EGFAnalysisPy/config.py` is never modified. Internal flow: energy diagram → DisperPicker picking → group-velocity-windowed time-variable filtering and re-computed phase diagram → second picking → QC → output.
+
+**Advanced:** you may still run `cd EGFAnalysisPy && python run_parallel.py --config your_config.py -w 8` (or edit `config.py` and `python run.py`) — behaviour is identical to upstream.
+
+**Output:**
 
 ```
-EGFAnalysisPy/DisperPicker/result/
+<result_path>/
+├── runtime_config.py          # full parameters of this run (auto-generated)
 ├── qc_result/
-│   ├── CDisp.FD01_FD16.txt    # phase velocity dispersion curve
-│   ├── GDisp.FD01_FD16.txt    # group velocity dispersion curve
+│   ├── CDisp.FD01_FD16.txt    # phase-velocity curves
+│   ├── GDisp.FD01_FD16.txt    # group-velocity curves
 │   └── ...
-├── qc_plot/                   # per-pair energy image + picked curve figures
-├── all_C.png / mean_C.png     # all / mean phase velocity summary
-└── all_G.png / mean_G.png     # all / mean group velocity summary
+├── qc_plot/                   # energy diagrams + picking comparison (sampled)
+├── all_C.png / mean_C.png
+└── all_G.png / mean_G.png
 ```
 
-Each dispersion curve file (first two rows are station coordinates; data columns are `period velocity snr probability`):
+Curve file format (lines 1–2: `lon lat` of the two stations; data: `period velocity SNR probability`):
+
 ```
-117.43333100    31.81069500       # station A  longitude  latitude
-117.48089000    31.66345700       # station B  longitude  latitude
-0.20   1.250   6.100   0.950      # period(s)  velocity(km/s)  snr  DisperPicker probability
+117.43333100    31.81069500
+117.48089000    31.66345700
+0.20   1.250   6.100   0.950
 0.30   1.310   5.800   0.880
-...
 ```
 
-> This output feeds directly into the Step 6 `extractnew.py` `egfpy` input; station coordinates are embedded in the file header, so no separate station file is needed.
+> `qc_result/` is the common input of both inversion branches: 06a reads it directly; 06b converts it via `01_prepare.py`. Station coordinates are embedded in the file headers — no extra station file needed.
 
 ---
 
-## Step 6: DSurfTomo Surface Wave Tomography Inversion
+## 06a Linear-array inversion (evodcinv)
 
-**Goal:** Invert dispersion curve data for a 3D shear-wave velocity model.
-
-**Scripts location:** `DSurfTomo/scripts/`
-
-### Option A: All-in-One Interactive Workflow (Recommended)
-
-Use `PrepareDSurfTomoProject.py` to complete data preparation, initial model, and configuration in one step:
+Use when stations lie roughly along one line. Two steps: per-pair 1-D inversion → stitch a pseudo-2D section.
 
 ```bash
-cd DSurfTomo/scripts
-python PrepareDSurfTomoProject.py
+cp configs/06a_line_inversion/line.example.yaml configs/06a_line_inversion/my_line.yaml
+conda activate noisepy    # evodcinv required (INSTALL §2e)
+python scripts/06a_line_inversion/01_invert.py --config configs/06a_line_inversion/my_line.yaml
+python scripts/06a_line_inversion/02_stitch.py --config configs/06a_line_inversion/my_line.yaml
 ```
 
-The script interactively guides you through:
-1. Entering the Step 5 dispersion curve directory (`EGFAnalysisPy/DisperPicker/result/qc_result`), auto-detected as `egfpy` input
-2. Setting period and velocity parameters
-3. Generating `surfdata.dat` (dispersion data format conversion)
-4. Generating `MOD` (initial velocity model)
-5. Generating `DSurfTomo.in` (inversion configuration file)
-6. Optional: generating `MOD.true` (checkerboard test true model)
+Full details (applicability, config walkthrough, result interpretation): [line_inversion.md](line_inversion.md).
 
-### Option B: Step-by-Step Execution
+## 06b Areal-array inversion (DSurfTomo)
 
-#### 6a. Convert Dispersion Curves → surfdata.dat
-
-**Script:** `extractnew.py` (interactive — answer the prompts)
+Use when stations cover a 2-D region. Three steps: prepare project → run inversion → GMT plotting.
 
 ```bash
-python extractnew.py
-# input directory:  /path/to/EGFAnalysisPy/DisperPicker/result/qc_result
-# (auto-detected: Detected input source: egfpy)
-# curve type (phase/group/both): both
-# strict period step (s): 0.1
-# wave type (1=Love, 2=Rayleigh): 2
-# output surfdata path: surfdata.dat
+cp configs/06b_area_inversion/dsurftomo.example.yaml configs/06b_area_inversion/my_area.yaml
+conda activate noisepy    # compiled DSurfTomo required (INSTALL §4); plotting needs GMT 6
+python scripts/06b_area_inversion/01_prepare.py --config configs/06b_area_inversion/my_area.yaml
+python scripts/06b_area_inversion/02_invert.py  --config configs/06b_area_inversion/my_area.yaml
+python scripts/06b_area_inversion/03_plot.py    --config configs/06b_area_inversion/my_area.yaml
 ```
 
-`extractnew.py` reads `CDisp.*.txt` and `GDisp.*.txt` under `qc_result/`; station coordinates are taken from the file headers, so no separate station file is needed. The period step must match the `DeltaT` used in Step 5.
-
-**Output:** `surfdata.dat` + `surfdata.json` (metadata)
-
-#### 6b. Generate Initial Model → MOD
-
-**Script:** `GenerateIniMOD.py`
-
-```bash
-python GenerateIniMOD.py
-```
-
-Interactive prompts for:
-- Depth grid nodes (e.g. `0 0.2 0.5 1 2 3 5`)
-- Horizontal grid spacing or grid point count
-- Initial velocity per layer (defaults computed from dispersion data)
-
-**Output:** `MOD` (initial model file)
-
-#### 6c. Generate Configuration → DSurfTomo.in
-
-**Script:** `GenerateDSurfTomoInputFile.py`
-
-```bash
-python GenerateDSurfTomoInputFile.py
-```
-
-Interactive prompts for:
-- Inversion parameters (iterations, damping, etc.)
-- Velocity constraint range
-- Smoothing parameters
-
-**Output:** `DSurfTomo.in`
-
-#### 6d. Optional: Generate Checkerboard Test Model
-
-**Script:** `GenerateTrueMOD.py`
-
-```bash
-python GenerateTrueMOD.py
-```
-
-**Output:** `MOD.true`
-
-#### 6e. Run DSurfTomo Inversion
-
-```bash
-/path/to/DSurfTomo/bin/DSurfTomo
-```
-
-The program reads `DSurfTomo.in`, `surfdata.dat`, and `MOD` from the current directory and runs the inversion.
-
-**Output files (partial list):**
-- `MOD_iter_*.dat` — velocity model at each iteration
-- `residual.dat` — residuals
-- `raypath_*.dat` — ray paths
-
-### 6f. Visualize Results (GMT Scripts)
-
-```bash
-# Depth slice maps
-bash plotdepth_subplot.gmt --project-dir /path/to/project
-
-# Cross-section profiles
-bash plotcross_subplot.gmt --project-dir /path/to/project \
-    --profiles "lon1/lat1/lon2/lat2/label"
-
-# Ray path maps
-bash plotray_subplot.gmt --project-dir /path/to/project
-
-# Checkerboard test results
-bash plotchecker_subplot.gmt --project-dir /path/to/project
-```
-
-### 6g. Dispersion Data Statistics (Optional)
-
-```bash
-python plot_dispersion_period_counts.py --surfdata /path/to/surfdata.dat
-```
+The interactive scripts under `DSurfTomo/scripts/` remain available for manual step-by-step runs (`PrepareDSurfTomoProject.py` all-in-one, or `extractnew.py` → `GenerateIniMOD.py` → `GenerateDSurfTomoInputFile.py`); see [area_inversion.md](area_inversion.md).
 
 ---
-
-## Directory Structure
-
-```
-local_ANT/
-├── scripts/                            # Helper scripts (glue code between packages)
-│   ├── clean_mseed_for_noisepy.py      # Step 1: Data cleaning
-│   ├── local_cc_workflow.py            # Step 3: NoisePy cross-correlation workflow
-│   ├── stack_visualization.py          # Step 3c: Stack visualization
-│   ├── plot_stack_panels.py            # Step 3c: Publication-quality multi-panel moveout
-│   └── export_egfanalysis_input.py     # Step 4: Export EGF input
-├── configs/                            # Example configuration files
-│   ├── local_cc_workflow.example.yaml
-│   ├── plot_stack_panels.example.yaml
-│   └── stack_visualization.example.yaml
-├── EGFAnalysisPy/                      # Step 5: Dispersion analysis + CNN picker
-│   ├── run.py                          # One-step dispersion analysis & picking
-│   ├── config.py / config_test.py      # Parameter configuration
-│   └── DisperPicker/                   # Bundled DisperPicker with pretrained model (saver/)
-├── DSurfTomo/                          # Surface wave tomography inversion
-│   ├── bin/                            # Executables
-│   ├── scripts/                        # Data preparation and plotting scripts
-│   └── src/                            # Source code
-└── TestData/                           # Example data
-    ├── RawData/                        # Raw miniSEED
-    ├── CleanData/                      # Cleaned data
-    ├── CCFData/                        # Cross-correlation results
-    ├── StackData/                      # Stacking results
-    ├── EGFAnalysisInputData/           # EGF input (CF .dat waveforms, generated by Step 4)
-    ├── figures/                        # Visualizations
-    └── station.csv                     # Station information
-```
 
 ## FAQ
 
-### Must the period and velocity parameters be consistent across steps?
-Yes. The period range and step set in Step 5 (EGFAnalysisPy `config.py`) must match the period step used in Step 6 (`extractnew.py`). DisperPicker requires a fixed velocity step of 0.005 km/s (`DeltaV`).
-
-### How do I choose a stacking method?
-- `linear`: Linear stacking — most commonly used
-- `pws`: Phase-weighted stacking — higher SNR
-- `robust`: Robust stacking — less sensitive to outliers
-- `all`: Compute all methods simultaneously
-
-We recommend computing `all` first, then comparing results with `stack_visualization.py` to select the best.
-
-### What input does extractnew.py take?
-Only the `egfpy` input type: the `qc_result/` output of EGFAnalysisPy (`run.py`) — `CDisp.*.txt` (phase) and `GDisp.*.txt` (group). The first two rows hold the station coordinates (lon lat); data columns are `period velocity snr probability`, where the 4th column is the DisperPicker probability and is not used as a keep flag. The input directory may point to the `qc_result` directory or its parent. Station coordinates are embedded in the file headers, so no separate station file is needed.
-
----
+Frequently asked questions are collected in [FAQ.md](FAQ.md).
 
 ## License
 
-Each software package is distributed under its own original license. The helper scripts (`scripts/` and `DSurfTomo/scripts/`) are distributed with this project.
+Each package keeps its original license. Helper scripts (`scripts/` and `DSurfTomo/scripts/`) are released with this project.
