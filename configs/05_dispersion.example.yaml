@@ -1,0 +1,65 @@
+# =====================================================================
+# 05_dispersion — 频散分析与曲线拾取 / dispersion analysis & picking
+#   入口 / entry: python scripts/05_dispersion.py --config configs/05_dispersion.yaml
+#   环境 / env:   conda activate egfanalysispy   (Python 3.6 + TensorFlow 1.13)
+#
+# 本文件是用户唯一需要维护的 05 步配置。入口脚本读取它之后,会在
+# 输出目录生成 EGFAnalysisPy 所需的运行时 config 模块并调用
+# run.py / run_parallel.py;仓库内的 EGFAnalysisPy/config.py 只是
+# 默认模板,不会被修改。
+# This is the single user-facing config for step 05. The entry script
+# renders it into the runtime config module EGFAnalysisPy expects and
+# invokes run.py / run_parallel.py; the bundled EGFAnalysisPy/config.py
+# stays untouched.
+#
+# 参数含义与默认值与 EGFAnalysisPy/config.py 保持一致。
+# Meanings and defaults follow EGFAnalysisPy/config.py.
+# =====================================================================
+
+paths:
+  # 04 步导出的 CF/EGF 目录(指到分量一级,如 .../Allstack_robust/ZZ)
+  # CF/EGF input dir from step 04 (down to component, e.g. .../Allstack_robust/ZZ)
+  waveform_path: /path/to/egfanalysis_input/Allstack_robust/ZZ
+  # 结果输出目录 / result output directory
+  result_path:   /path/to/DisperPicker_result
+
+run:
+  parallel: false        # true 用 run_parallel.py / use run_parallel.py
+  workers: 4             # 并行进程数(仅 parallel: true 时生效)/ worker count
+
+signal:
+  isEGF: false           # 输入是 EGF 还是 CF / input is EGF (true) or CF (false)
+  GreenFcnObjects: A_add_B   # A_add_B | A | B(正负支处理方式 / lag-branch handling)
+  WinAlpha: 0.1          # 时窗 Tukey 系数 / Tukey window alpha
+  NoiseTime: 60          # 噪声窗长度,秒 / noise window length (s)
+  MinSNR: 2.0            # 最低信噪比 / minimum SNR
+  WinPeriodNum: 5        # 群速度窗内周期数 / periods per group-velocity window
+  WinMinTime: 0.2        # 最小窗长,秒 / minimum window length (s)
+  FilterKaiserPara: 6    # FIR 滤波器 Kaiser 参数 / FIR Kaiser parameter
+  MaxFilterLengthLog: 14 # 滤波器最大长度 log2 / max filter length (log2)
+
+dispersion:
+  StartV: 0.5            # 速度范围下限 km/s / velocity range min (km/s)
+  EndV: 3.5              # 速度范围上限 km/s / velocity range max (km/s)
+  StartT: 0.4            # 周期范围下限 s / period range min (s)
+  EndT: 3.0              # 周期范围上限 s / period range max (s)
+  DeltaT: 0.02           # 周期步长 s / period step (s)
+  DeltaV: 0.005          # 速度步长 km/s / velocity step (km/s)
+  MinStaDist: 0.5        # 最小台间距 km / minimum station distance (km)
+  # 波长/台间距最低比值(质量控制;原先硬编码在 run.py)
+  # minimum wavelength-to-distance ratio (QC; formerly hard-coded)
+  MinWavelengthRatio: 2.0
+
+picker:
+  # DisperPicker 拾取阈值(按数据微调;此处为通用默认值)
+  # picking thresholds (tune per dataset; generic defaults below)
+  confidence_G: 0.4
+  mean_confidence_C: 0.25
+  confidence_C: 0
+  # 每个文件绘制质检图的抽样比例(0–1;1=全画,慢)
+  # fraction of files that get a QC figure (0–1; 1 = all, slow)
+  random_plot_ratio: 0.02
+  # 参考周期覆盖(高级选项,通常保持 null / [])
+  # reference-period overrides (advanced; usually null / [])
+  ref_T: null
+  ref_T2: []

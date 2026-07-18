@@ -1,0 +1,38 @@
+# =====================================================================
+# 00_project — 项目级公共配置 / project-wide shared settings
+#
+# 用途:集中保存被多个步骤引用的路径,避免在每个阶段配置里重复。
+# Purpose: paths shared by several steps, so stage configs stay small.
+#
+# 使用者 / consumed by:
+#   scripts/05_dispersion.py          (egfanalysispy_dir)
+#   scripts/06b_area_inversion/*.py   (dsurftomo_bin, dsurftomo_dir)
+# 说明:01–04 步的脚本各自读取自己的阶段配置,不读取本文件;
+#       阶段配置里的路径永远优先于本文件。
+# Note: steps 01–04 read only their own stage configs. Stage-config
+#       paths always take precedence over values defined here.
+#
+# 优先级 / precedence:  命令行参数 > 阶段配置 > 本文件 > 代码默认值
+#                       CLI args  > stage config > this file > code defaults
+# =====================================================================
+
+# 项目名,仅用于日志与图题 / project name (logs & figure titles only)
+project_name: my_ant_project
+
+# 数据与结果的根目录(示例占位,请改成你的实际路径)
+# root directories for data and results (placeholders — edit them)
+data_root:   /path/to/project/data        # 原始与清洗后波形 / raw & cleaned waveforms
+work_root:   /path/to/project/work        # 各步骤输出 / per-step outputs
+
+# 台站坐标 CSV(与 02 步 station-csv 相同格式)
+# station coordinate CSV (same format as step 02 station-csv)
+station_csv: /path/to/project/data/station.csv
+
+# EGFAnalysisPy 所在目录(默认:仓库内子目录,一般不用改)
+# EGFAnalysisPy directory (default: bundled subdirectory; rarely changed)
+egfanalysispy_dir: EGFAnalysisPy
+
+# DSurfTomo 目录与编译出的可执行文件(见 docs/INSTALL.md 第 4 节)
+# DSurfTomo directory and compiled executable (see docs/INSTALL.md §4)
+dsurftomo_dir: DSurfTomo
+dsurftomo_bin: DSurfTomo/bin/DSurfTomo

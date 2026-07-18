@@ -1,0 +1,27 @@
+# =====================================================================
+# 04_export_egf — 导出 EGFAnalysisPy 输入 / export EGFAnalysisPy input
+#   入口 / entry: python scripts/04_export_egf.py --config configs/04_export_egf.yaml
+#   环境 / env:   conda activate noisepy
+#
+# 每个键与 scripts/04_export_egf.py 的同名命令行参数一一对应;
+# 命令行参数会覆盖本文件中的值。
+# Keys mirror the CLI options of scripts/04_export_egf.py; CLI wins.
+# =====================================================================
+
+# 02 步产出的叠加目录 / stack directory produced by step 02
+stack-dir: ../TestData/StackData
+
+# 导出的叠加方法:linear | pws | robust | all,或完整名如 Allstack_robust
+# stack method to export: linear | pws | robust | all, or a full name
+stack-method: all
+
+# 导出的分量 / component to export
+component: ZZ
+
+# 只导出包含该台站的台站对;null = 全部
+# only pairs involving this station; null = all pairs
+station: null
+
+# 导出文件的根目录(即 05 步的 waveform_path 上级目录)
+# output root (parent of step-05 waveform_path)
+output-root: ../TestData/egfanalysis_input
