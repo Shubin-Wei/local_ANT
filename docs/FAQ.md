@@ -10,7 +10,7 @@
 
 ### 周期和速度参数需要各步骤一致吗?
 
-是的。05 步(`configs/05_dispersion.yaml` 的 `dispersion:` 段)设置的周期范围与步长,必须与 06b 的 `prepare.period_step` 保持一致(06a 直接读取曲线文件,无此要求)。DisperPicker 要求速度步长 `DeltaV` 固定为 0.005 km/s。
+基本一致即可。06b 的 `prepare.period_step` 不必与 05 步的 `DeltaT` 完全相同,只要求 period_step 生成的周期网格点能落在 05 步输出曲线的周期采样中(通常取 `DeltaT` 或其整数倍最稳妥)。DisperPicker 要求速度步长 `DeltaV` 固定为 0.005 km/s。
 
 ### 如何选择叠加方法?
 
@@ -41,7 +41,7 @@
 
 ### 运行 06a 提示 `No module named 'evodcinv'`?
 
-evodcinv 未安装。`conda activate noisepy && pip install evodcinv tqdm`,见 [INSTALL.md](INSTALL.md) §2e。
+evodcinv 环境未创建或未激活。它使用独立的 Conda 环境:`conda env create -f environments/evodcinv.yml && conda activate evodcinv`,见 [INSTALL.md](INSTALL.md) §2e。
 
 ### 怎么快速自查环境?
 
@@ -55,12 +55,3 @@ python tools/check_environment.py
 
 DSurfTomo 尚未编译,或 `configs/00_project.yaml` 的 `dsurftomo_bin` 路径不对。编译方法见 [INSTALL.md](INSTALL.md) §4;编译产物默认在 `DSurfTomo/bin/DSurfTomo`。
 
-## 迁移
-
-### 我以前用的是旧脚本名(local_cc_workflow.py 等)?
-
-功能与配置完全兼容,只是改了名字和位置。对照表见 [workflow.md](workflow.md) 的"旧脚本名 → 新入口对照";旧配置文件内容可原样复制到新的对应文件。
-
-### 以前是手改 EGFAnalysisPy/config.py 或 LineXConfig.py?
-
-现在只需维护 `configs/05_dispersion.yaml`(每条测线/每批数据复制一份),入口会自动生成运行时配置;不再需要进入 EGFAnalysisPy 目录。手动方式仍然可用(`run_parallel.py --config 你的config.py`)。

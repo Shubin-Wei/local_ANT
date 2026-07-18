@@ -4,6 +4,8 @@
 
 - [ ] 在线状台阵速度结构反演流程中增加敏感核计算模块。
       Add a sensitivity-kernel computation module to the linear-array inversion workflow.
+- [ ] 入口脚本支持 MPI 并行(NoisePy 本体已支持 `noisepy-seis[mpi]`,入口尚未接入)。
+      Add MPI support to the entry scripts (NoisePy itself supports `noisepy-seis[mpi]`; the entries do not use it yet).
 
 ## 测试 / Tests
 
@@ -11,8 +13,8 @@
       Run steps 01–05 end-to-end on the small TestData set; record runtime and output sizes.
 - [ ] 编译 DSurfTomo 并用示例工程验证 06b 三个入口(01_prepare / 02_invert / 03_plot)端到端可用。
       Compile DSurfTomo and verify the three 06b entries end-to-end on a sample project.
-- [ ] 安装 evodcinv 后用少量台站对(`--max-files`)冒烟验证 06a 两个入口。
-      After installing evodcinv, smoke-test both 06a entries with a few pairs (`--max-files`).
+- [ ] 创建 evodcinv 环境(`environments/evodcinv.yml`)后用少量台站对(`--max-files`)冒烟验证 06a 两个入口。
+      After creating the evodcinv environment (`environments/evodcinv.yml`), smoke-test both 06a entries with a few pairs (`--max-files`).
 
 ## 文档 / Documentation
 

@@ -1,14 +1,15 @@
-# NoisePy environment: steps 01-04, 06a, and the 06b entry scripts.
+# NoisePy environment: steps 01-04 and the 06b entry scripts.
+# Official NoisePy install guide: https://github.com/noisepy/NoisePy
 #
 # create : conda env create -f environments/noisepy.yml
 # enable : conda activate noisepy
 #
-# Minor versions are not pinned; the versions below were verified on the
-# original project machine (Python 3.10.20):
-#   noisepy-seis 0.9.93, obspy 1.5.0, numpy 1.26.4, scipy 1.12.0,
-#   pandas 1.5.3, matplotlib 3.10.9, h5py 3.16.0, PyYAML 6.0,
-#   DateTimeRange 2.3.2, tqdm 4.68.2, disba 0.6.1
-#   (evodcinv version to be confirmed)
+# noisepy-seis transitively installs everything else these steps need
+# (obspy via pyasdf, numpy, scipy, pandas, matplotlib via obspy, h5py,
+# pyyaml, datetimerange, tqdm) — verified on the original project
+# machine (Python 3.10.20, noisepy-seis 0.9.93, obspy 1.5.0,
+# numpy 1.26.4, scipy 1.12.0, pandas 1.5.3, matplotlib 3.10.9,
+# h5py 3.16.0, PyYAML 6.0, DateTimeRange 2.3.2, tqdm 4.68.2).
 name: noisepy
 channels:
   - conda-forge
@@ -17,15 +18,3 @@ dependencies:
   - pip
   - pip:
       - noisepy-seis
-      - obspy
-      - numpy
-      - scipy
-      - pandas
-      - matplotlib
-      - h5py
-      - pyyaml
-      - datetimerange
-      # Linear-inversion (06a) deps; drop these two lines if you only
-      # run the areal inversion
-      - evodcinv
-      - tqdm

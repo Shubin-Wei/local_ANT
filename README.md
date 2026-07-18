@@ -57,8 +57,9 @@ git clone https://github.com/your-username/local_ANT.git
 cd local_ANT
 
 # 2. 创建环境(详见 docs/INSTALL.md)
-conda env create -f environments/noisepy.yml        # 步骤 01–04、06a、06b
+conda env create -f environments/noisepy.yml        # 步骤 01–04、06b
 conda env create -f environments/egfanalysispy.yml  # 步骤 05
+conda env create -f environments/evodcinv.yml        # 步骤 06a(仅线状反演)
 
 # 3. 编译 DSurfTomo(仅面状反演 06b 需要)
 cd DSurfTomo && python configure && cd ..
@@ -79,7 +80,7 @@ python scripts/01_clean.py --config configs/01_clean.yaml
 | 03 叠加质检 | `scripts/03_stack_qc.py`、`03b_stack_panels.py` | noisepy | Stack | moveout 图 |
 | 04 导出 EGF 输入 | `scripts/04_export_egf.py` | noisepy | Stack | CF `.dat` 波形 |
 | 05 频散分析拾取 | `scripts/05_dispersion.py` | **egfanalysispy** | CF `.dat` | 频散曲线 `qc_result/` |
-| 06a 线状反演 | `scripts/06a_line_inversion/01_invert.py`、`02_stitch.py` | noisepy(含 evodcinv) | 频散曲线 | 一维模型 + 伪二维剖面 |
+| 06a 线状反演 | `scripts/06a_line_inversion/01_invert.py`、`02_stitch.py` | evodcinv(独立环境) | 频散曲线 | 一维模型 + 伪二维剖面 |
 | 06b 面状反演 | `scripts/06b_area_inversion/01_prepare.py`、`02_invert.py`、`03_plot.py` | noisepy + DSurfTomo 可执行文件 + GMT 6 | 频散曲线 | 三维模型 + 深度切片图 |
 
 ### 项目结构
@@ -92,7 +93,7 @@ local_ANT/
 │   ├── 06b_area_inversion/      # 面状反演:01_prepare.py, 02_invert.py, 03_plot.py
 │   └── plot_station_distribution.py
 ├── configs/                     # 全部用户配置(00_project + 各阶段 example)
-├── environments/                # Conda 环境定义(noisepy.yml, egfanalysispy.yml)
+├── environments/                # Conda 环境定义(noisepy / egfanalysispy / evodcinv)
 ├── tools/                       # check_environment.py 环境自检
 ├── docs/                        # 安装、流程、配置、反演、FAQ 文档(中英)
 ├── EGFAnalysisPy/               # 频散分析 + DisperPicker(含预训练模型 saver/)
@@ -106,7 +107,7 @@ local_ANT/
 | 文档 | 说明 |
 |------|------|
 | [安装指南](docs/INSTALL.md) | 从零安装全部环境(含 DSurfTomo 编译) |
-| [完整流程](docs/workflow.md) | 01–06 各步骤详细操作(含旧脚本名迁移对照) |
+| [完整流程](docs/workflow.md) | 01–06 各步骤详细操作 |
 | [配置说明](docs/CONFIG.md) | 配置分层、优先级与运行时配置机制 |
 | [线状反演](docs/line_inversion.md) | 06a 分支:适用场景、配置与运行 |
 | [面状反演](docs/area_inversion.md) | 06b 分支:DSurfTomo 编译、配置与运行 |
@@ -170,8 +171,9 @@ git clone https://github.com/your-username/local_ANT.git
 cd local_ANT
 
 # 2. Create the environments (see docs/INSTALL_en.md)
-conda env create -f environments/noisepy.yml        # steps 01–04, 06a, 06b
+conda env create -f environments/noisepy.yml        # steps 01–04, 06b
 conda env create -f environments/egfanalysispy.yml  # step 05
+conda env create -f environments/evodcinv.yml        # step 06a (linear inversion only)
 
 # 3. Compile DSurfTomo (only needed for areal inversion 06b)
 cd DSurfTomo && python configure && cd ..
@@ -192,7 +194,7 @@ python scripts/01_clean.py --config configs/01_clean.yaml
 | 03 Stack QC | `scripts/03_stack_qc.py`, `03b_stack_panels.py` | noisepy | Stack | moveout figures |
 | 04 Export EGF input | `scripts/04_export_egf.py` | noisepy | Stack | CF `.dat` waveforms |
 | 05 Dispersion + picking | `scripts/05_dispersion.py` | **egfanalysispy** | CF `.dat` | dispersion curves `qc_result/` |
-| 06a Linear inversion | `scripts/06a_line_inversion/01_invert.py`, `02_stitch.py` | noisepy (with evodcinv) | dispersion curves | 1-D models + pseudo-2D section |
+| 06a Linear inversion | `scripts/06a_line_inversion/01_invert.py`, `02_stitch.py` | evodcinv (dedicated env) | dispersion curves | 1-D models + pseudo-2D section |
 | 06b Areal inversion | `scripts/06b_area_inversion/01_prepare.py`, `02_invert.py`, `03_plot.py` | noisepy + DSurfTomo binary + GMT 6 | dispersion curves | 3-D model + depth slices |
 
 ### Project Structure
@@ -205,7 +207,7 @@ local_ANT/
 │   ├── 06b_area_inversion/      # areal branch: 01_prepare.py, 02_invert.py, 03_plot.py
 │   └── plot_station_distribution.py
 ├── configs/                     # All user configs (00_project + per-stage examples)
-├── environments/                # Conda env definitions (noisepy.yml, egfanalysispy.yml)
+├── environments/                # Conda env definitions (noisepy / egfanalysispy / evodcinv)
 ├── tools/                       # check_environment.py
 ├── docs/                        # Install, workflow, config, inversion, FAQ (CN & EN)
 ├── EGFAnalysisPy/               # Dispersion analysis + DisperPicker (pretrained model in saver/)
@@ -219,7 +221,7 @@ local_ANT/
 | Document | Description |
 |----------|-------------|
 | [Installation Guide](docs/INSTALL_en.md) | Install everything from scratch (incl. DSurfTomo build) |
-| [Full Workflow](docs/workflow_en.md) | Detailed steps 01–06 (with old→new script-name mapping) |
+| [Full Workflow](docs/workflow_en.md) | Detailed steps 01–06 |
 | [Configuration](docs/CONFIG_en.md) | Config layering, precedence, runtime-config mechanism |
 | [Linear inversion](docs/line_inversion_en.md) | Branch 06a: scope, config, running |
 | [Areal inversion](docs/area_inversion_en.md) | Branch 06b: DSurfTomo build, config, running |

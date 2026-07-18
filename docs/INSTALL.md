@@ -31,6 +31,8 @@
 
 Conda 是一个 Python 环境管理工具，可以帮你创建相互隔离的 Python 环境，避免不同项目之间的依赖冲突。
 
+> 官方安装文档：https://docs.conda.io/en/latest/miniconda.html
+
 如果你已经安装了 Conda（Anaconda 或 Miniconda），可以跳过这一步。
 
 ### 检查是否已安装
@@ -68,7 +70,9 @@ https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh
 
 ## 2. 安装 NoisePy 及 Python 依赖
 
-本项目的大部分 Python 脚本都运行在同一个 Conda 环境中。我们把 NoisePy 和所有辅助脚本的依赖一起安装。
+步骤 01–04 及 06b 的入口脚本都运行在 noisepy 环境中。
+
+> NoisePy 官方安装文档：https://github.com/noisepy/NoisePy
 
 ### 2a. 创建环境并安装 NoisePy
 
@@ -88,72 +92,25 @@ pip install noisepy-seis
 > 引用：Jiang, C., & Denolle, M. A. (2020). *Seismological Research Letters*, 91(3), 1853–1866.
 > GitHub: https://github.com/noisepy/NoisePy
 
-### 2b. 安装辅助脚本的依赖
+### 2b. 辅助脚本的依赖（自动带全，无需单独安装）
 
-在同一个环境中继续安装：
+`pip install noisepy-seis` 会通过依赖关系自动安装本项目辅助脚本需要的全部包：
+obspy（经 pyasdf）、numpy、pandas、scipy、matplotlib（经 obspy）、pyyaml、
+datetimerange、h5py、tqdm——已在实际环境中逐一核验，**不需要再手动安装**。
 
-```bash
-conda activate noisepy
-
-# 地震数据处理
-pip install obspy
-
-# 数据处理和可视化
-pip install numpy pandas scipy matplotlib
-
-# 配置文件解析
-pip install pyyaml
-
-# 时间范围处理（scripts/02_correlation.py 需要）
-pip install datetimerange
-
-# HDF5 文件读写（scripts/04_export_egf.py 需要）
-pip install h5py
-```
-
-或者一行搞定：
-
-```bash
-pip install obspy numpy pandas scipy matplotlib pyyaml datetimerange h5py
-```
-
-### 2e. 线状台阵反演依赖（evodcinv）
-
-线状台阵反演（步骤 06a，`scripts/06a_line_inversion/`）使用
-[evodcinv](https://github.com/keurfonluu/evodcinv) 做一维频散反演，
-其正演内核为 disba。这两个包与 NoisePy 环境兼容（需要 Python ≥ 3.8），
-直接装进 noisepy 环境即可，无需再建新环境：
+可用以下命令确认：
 
 ```bash
 conda activate noisepy
-pip install evodcinv tqdm
+python -c "import obspy, numpy, pandas, scipy, matplotlib, yaml, datetimerange, h5py, tqdm; print('all deps OK')"
 ```
 
-验证：
 
-```bash
-python -c "import evodcinv, disba; print('evodcinv OK, disba', disba.__version__)"
-```
+### 2c. 关于 MPI
 
-> **版本说明**：原项目机器上确认过 disba 0.6.1 可用；evodcinv 的具体版本
-> 未能从原环境考证（待确认），如遇接口不兼容，可尝试
-> `pip install "evodcinv==2.*"` 并参阅其官方文档。
-
-### 2c. （可选）安装 MPI 支持
-
-如果你的数据量较大，想要并行计算加速，可以安装 MPI 版本：
-
-```bash
-# 先安装 MPI 库
-# Ubuntu/Debian:
-sudo apt install libopenmpi-dev
-
-# macOS:
-brew install open-mpi
-
-# 然后安装带 MPI 支持的 NoisePy
-pip install noisepy-seis[mpi]
-```
+本项目的入口脚本**目前不支持 MPI 并行**（已列入 TODO.md）。NoisePy 本体
+支持 MPI（`pip install noisepy-seis[mpi]`），如需自行使用请参阅
+NoisePy 官方文档：https://github.com/noisepy/NoisePy
 
 ### 2d. （可选）安装 Jupyter Notebook
 
@@ -163,6 +120,37 @@ pip install noisepy-seis[mpi]
 pip install ipykernel notebook
 python -m ipykernel install --user --name noisepy
 ```
+
+### 2e. 线状台阵反演环境（evodcinv，独立 Conda 环境）
+
+线状台阵反演（步骤 06a，`scripts/06a_line_inversion/`）使用
+[evodcinv](https://github.com/keurfonluu/evodcinv) 做一维频散反演，
+其正演内核为 [disba](https://github.com/keurfonluu/disba)。
+**请为它单独创建一个 Conda 环境，不要装进 noisepy 环境：**
+
+```bash
+conda create -n evodcinv -y python=3.10 pip
+conda activate evodcinv
+pip install evodcinv          # 官方推荐安装方式，会自动安装 disba
+pip install pyyaml matplotlib scipy tqdm   # 06a 入口脚本的其余依赖
+```
+
+也可以直接用仓库提供的环境定义一步创建：
+
+```bash
+conda env create -f environments/evodcinv.yml
+```
+
+验证：
+
+```bash
+conda activate evodcinv
+python -c "import evodcinv, disba; print('evodcinv OK, disba', disba.__version__)"
+```
+
+> **版本说明**：原项目机器上确认过 disba 0.6.1 可用；evodcinv 的具体版本
+> 未能从原环境考证（待确认），如遇接口不兼容，可尝试
+> `pip install "evodcinv==2.*"` 并参阅其官方文档。
 
 ---
 
@@ -190,6 +178,7 @@ pip install -r requirements.txt
 ```
 
 > **注意：** TensorFlow 1.13.1 不支持 Python 3.7+。如果你遇到安装失败，请确认 Python 版本为 3.6。
+> TensorFlow 1.13.1 官方页面：https://pypi.org/project/tensorflow/1.13.1/
 
 ### 3c. 验证安装
 
@@ -221,6 +210,7 @@ DSurfTomo 是一个 Fortran 编写的面波层析成像程序，需要编译才�
 > **什么是 DSurfTomo？**
 > DSurfTomo 直接将面波频散数据反演为三维横波速度模型，无需中间步骤构建相/群速度图。
 > 引用：Fang, H., et al. (2015). *Geophysical Journal International*, 201(3), 1251–1263.
+> 官方仓库：https://github.com/HongjianFang/DSurfTomo（本仓库内置修改版，直接编译内置版即可）
 
 ### 4a. 安装 Fortran 编译器
 
@@ -292,6 +282,8 @@ source ~/.bashrc
 
 GMT (Generic Mapping Tools) 用于 DSurfTomo 的结果绘图（深度切片、剖面、射线路径、棋盘测试）。如果你不需要绘图，可以跳过此步。
 
+> 官方网站与安装文档：https://www.generic-mapping-tools.org/ 、https://docs.generic-mapping-tools.org/latest/install.html
+
 ### 5a. 安装 GMT 6
 
 ```bash
@@ -336,12 +328,13 @@ import datetimerange; print('datetimerange OK')
 "
 
 echo ""
-echo "=== 1b. 线状反演依赖（可选，步骤 06a 需要）==="
+echo "=== 1b. evodcinv 环境（可选，步骤 06a 需要）==="
+conda activate evodcinv
 python -c "
 import evodcinv; print('evodcinv OK')
 import disba; print('disba OK')
 import tqdm; print('tqdm OK')
-" || echo "evodcinv 未安装（仅做面状反演可忽略；见 2e 节）"
+" || echo "evodcinv 环境未创建（仅做面状反演可忽略；见 2e 节）"
 
 echo ""
 echo "=== 2. EGFAnalysisPy 环境 ==="
@@ -431,5 +424,5 @@ python PrepareDSurfTomoProject.py
 | 03 叠加质检可视化 | `scripts/03_stack_qc.py`、`scripts/03b_stack_panels.py` | `conda activate noisepy` |
 | 04 导出 EGF 输入 | `scripts/04_export_egf.py` | `conda activate noisepy` |
 | 05 频散分析 + 拾取 | `scripts/05_dispersion.py` | `conda activate egfanalysispy` |
-| 06a 线状反演 | `scripts/06a_line_inversion/01_invert.py`、`02_stitch.py` | `conda activate noisepy`（含 evodcinv，见 2e） |
+| 06a 线状反演 | `scripts/06a_line_inversion/01_invert.py`、`02_stitch.py` | `conda activate evodcinv`（独立环境，见 2e） |
 | 06b 面状反演 | `scripts/06b_area_inversion/01_prepare.py`、`02_invert.py`、`03_plot.py` | `conda activate noisepy` + 编译好的 `DSurfTomo/bin/DSurfTomo`；绘图需 GMT 6 |

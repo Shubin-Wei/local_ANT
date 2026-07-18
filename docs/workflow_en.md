@@ -32,7 +32,7 @@ Raw miniSEED data
 | Method | evodcinv: per-pair 1-D Vs(z) inversion (CPSO), stitched at pair midpoints | DSurfTomo: direct inversion for 3-D Vs |
 | Input | step-05 `qc_result/` (used directly) | step-05 `qc_result/` (converted to surfdata.dat by 06b-1) |
 | Result | pseudo-2D Vs depth section (section.png/.npz) | 3-D Vs model + depth-slice figures |
-| Extra deps | evodcinv (into the noisepy env, INSTALL §2e) | compiled DSurfTomo (INSTALL §4), GMT 6 |
+| Extra deps | dedicated evodcinv env (INSTALL §2e) | compiled DSurfTomo (INSTALL §4), GMT 6 |
 
 The branches are fully independent; you may also run both on the same dataset.
 
@@ -45,23 +45,8 @@ The branches are fully independent; you may also run both on the same dataset.
 | 03 | `scripts/03_stack_qc.py`, `03b_stack_panels.py` | noisepy | Stack | moveout figures |
 | 04 | `scripts/04_export_egf.py` | noisepy | Stack | CF `.dat` + stations.txt |
 | 05 | `scripts/05_dispersion.py` | egfanalysispy | CF `.dat` | dispersion curves `qc_result/` |
-| 06a | `scripts/06a_line_inversion/01_invert.py`, `02_stitch.py` | noisepy + evodcinv | `qc_result/` | 1-D model set + pseudo-2D section |
+| 06a | `scripts/06a_line_inversion/01_invert.py`, `02_stitch.py` | evodcinv | `qc_result/` | 1-D model set + pseudo-2D section |
 | 06b | `scripts/06b_area_inversion/01_prepare.py`, `02_invert.py`, `03_plot.py` | noisepy + DSurfTomo binary + GMT | `qc_result/` | 3-D model + slice figures |
-
-### Old script names → new entries (migration guide)
-
-| Old name | New name |
-|----------|----------|
-| `scripts/clean_mseed_for_noisepy.py` | `scripts/01_clean.py` |
-| `scripts/local_cc_workflow.py` | `scripts/02_correlation.py` |
-| `scripts/stack_visualization.py` | `scripts/03_stack_qc.py` |
-| `scripts/plot_stack_panels.py` | `scripts/03b_stack_panels.py` |
-| `scripts/export_egfanalysis_input.py` | `scripts/04_export_egf.py` |
-| editing `EGFAnalysisPy/config.py` + `python run.py` | `scripts/05_dispersion.py --config configs/05_dispersion.yaml` |
-| `lant_invert.py` / `lant_stitch.py` (local project copies) | `scripts/06a_line_inversion/01_invert.py` / `02_stitch.py` |
-| `configs/local_cc_workflow.example.yaml` etc. | `configs/02_correlation.example.yaml` etc. (matching numbers) |
-
-Configuration behaviour is unchanged: contents of old config files can be copied verbatim into their renamed counterparts.
 
 ## Package citations
 
@@ -90,8 +75,9 @@ This project uses the following open-source packages — many thanks to their au
 See [INSTALL_en.md](INSTALL_en.md) for details. Summary:
 
 ```bash
-conda env create -f environments/noisepy.yml        # entries for 01–04, 06a, 06b
+conda env create -f environments/noisepy.yml        # entries for 01–04, 06b
 conda env create -f environments/egfanalysispy.yml  # step 05
+conda env create -f environments/evodcinv.yml        # 06a (linear inversion only)
 cd DSurfTomo && python configure && cd ..           # only needed for 06b
 conda activate noisepy && python tools/check_environment.py
 ```
@@ -300,8 +286,6 @@ dispersion:
 
 The entry renders the YAML into a runtime config (`<result_path>/runtime_config.py`, with source and timestamp for provenance) and invokes `EGFAnalysisPy/run_parallel.py`; the bundled `EGFAnalysisPy/config.py` is never modified. Internal flow: energy diagram → DisperPicker picking → group-velocity-windowed time-variable filtering and re-computed phase diagram → second picking → QC → output.
 
-**Advanced:** you may still run `cd EGFAnalysisPy && python run_parallel.py --config your_config.py -w 8` (or edit `config.py` and `python run.py`) — behaviour is identical to upstream.
-
 **Output:**
 
 ```
@@ -335,7 +319,7 @@ Use when stations lie roughly along one line. Two steps: per-pair 1-D inversion 
 
 ```bash
 cp configs/06a_line_inversion/line.example.yaml configs/06a_line_inversion/my_line.yaml
-conda activate noisepy    # evodcinv required (INSTALL §2e)
+conda activate evodcinv   # dedicated env (INSTALL §2e)
 python scripts/06a_line_inversion/01_invert.py --config configs/06a_line_inversion/my_line.yaml
 python scripts/06a_line_inversion/02_stitch.py --config configs/06a_line_inversion/my_line.yaml
 ```

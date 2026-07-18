@@ -5,6 +5,7 @@ Environment checker — reports what is usable, installs or changes nothing.
 Run it inside whichever conda environment you want to inspect:
 
     conda activate noisepy       && python tools/check_environment.py
+    conda activate evodcinv      && python tools/check_environment.py
     conda activate egfanalysispy && python tools/check_environment.py
 
 It prints PASS/FAIL per item; items irrelevant to the current environment
@@ -24,7 +25,7 @@ CHECKS = [
         "noisepy", "obspy", "numpy", "scipy", "pandas", "matplotlib",
         "h5py", "yaml", "datetimerange",
     ]),
-    ("linear inversion / step 06a", [
+    ("evodcinv env / step 06a", [
         "evodcinv", "disba", "tqdm",
     ]),
     ("egfanalysispy env / step 05", [

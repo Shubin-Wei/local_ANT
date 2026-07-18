@@ -20,7 +20,7 @@ Use this branch when stations cover a 2-D region (areal array) so that ray paths
 
 Set `dsurftomo_bin: DSurfTomo/bin/DSurfTomo` in `configs/00_project.yaml` (or `paths.dsurftomo_bin` in the stage config, which takes precedence).
 
-## Option 1: numbered entries (recommended)
+## Numbered entries (daily use)
 
 One config per inversion project:
 
@@ -44,15 +44,15 @@ Keys in the `prepare:` section mirror the CLI of `DSurfTomo/scripts/PrepareDSurf
 | Key | Meaning |
 |-----|---------|
 | `curve_type` | `both` / `phase` / `group` |
-| `period_step` | period grid step (s); **must equal the step-05 DeltaT** |
+| `period_step` | period grid step (s); it need not equal the step-05 DeltaT exactly — the generated period points only have to exist in the step-05 output curves (DeltaT or an integer multiple is the safe choice) |
 | `grid_spacing` or `grid_count` | horizontal grid, exactly one of: `[dvxd,dvzd]` (degrees) or `[nx,ny]` |
 | `depths` | depth nodes (km, comma-separated string) |
 | `minvel` / `velgrad` / `t1` / `t2` / `model_vel` | initial-model estimation (null = auto) |
 | `weight` / `damp` / `sublayers` / `nsrcmax` | smoothing, damping, etc. |
 
-## Option 2: interactive manual workflow
+## Internal scripts (for debugging)
 
-All original scripts under `DSurfTomo/scripts/` are preserved and can be run manually:
+The original scripts under `DSurfTomo/scripts/` are the underlying implementation called by the numbered 06b entries; all of them are preserved. Use the numbered entries day-to-day, and run these manually only for step-by-step debugging:
 
 ```bash
 cd DSurfTomo/scripts
@@ -70,7 +70,7 @@ python GenerateTrueMOD.py               # optional -> MOD.true (checkerboard tes
 cd /path/to/project && /path/to/local_ANT/DSurfTomo/bin/DSurfTomo
 ```
 
-`extractnew.py` reads `CDisp.*.txt` / `GDisp.*.txt` from `qc_result/`; station coordinates come from the file headers, no extra station file. The period step must match the step-05 `DeltaT`.
+`extractnew.py` reads `CDisp.*.txt` / `GDisp.*.txt` from `qc_result/`; station coordinates come from the file headers, no extra station file. Use the step-05 `DeltaT` (or an integer multiple) as the period step.
 
 ## Output
 
@@ -83,18 +83,22 @@ Produced in the project directory (verified against a real run):
 
 ## Plotting
 
-`03_plot.py` runs `plotdepth_subplot.gmt` by default (depth slices; grid parameters read automatically from `DSurfTomo.in`; continuous color palette). Other GMT scripts can be added to the `plot.scripts` list or run manually:
+All plotting is driven by `03_plot.py`: list the scripts to run under `plot.scripts` in the config (executed in order; `--project-dir`/`--output-dir` are passed automatically; scripts needing extra arguments use the `name:` + `args:` form):
 
-```bash
-cd DSurfTomo/scripts
-bash plotcross_subplot.gmt   --project-dir /path/to/project --profiles "lon1/lat1/lon2/lat2/label"   # cross-sections
-bash plotray_subplot.gmt     --project-dir /path/to/project    # ray paths
-bash plotchecker_subplot.gmt --project-dir /path/to/project    # checkerboard test
-python plot_dispersion_period_counts.py --surfdata /path/to/surfdata.dat   # data statistics
+```yaml
+plot:
+  scripts:
+    - plotdepth_subplot.gmt              # depth slices (gets --depths automatically)
+    - name: plotcross_subplot.gmt        # cross-sections
+      args: ["--profiles", "lon1/lat1/lon2/lat2/label"]
+    - plotray_subplot.gmt                # ray paths
+    - plotchecker_subplot.gmt            # checkerboard test
 ```
+
+All four GMT scripts share the same `--project-dir`/`--output-dir` interface; see each script's `--help` for further options. Dispersion-data statistics can be plotted separately with `python DSurfTomo/scripts/plot_dispersion_period_counts.py --surfdata <project_dir>/surfdata.dat`.
 
 ## Notes
 
 - Keep the project directory (`project_dir`) outside the repository; never commit inversion results to Git;
 - `01_prepare.py` refuses to run into a non-empty project directory unless `--overwrite` is given;
-- Checkerboard tests: in option 2, generate `MOD.true` with `GenerateTrueMOD.py` and set the forward-modeling switches per the DSurfTomo documentation.
+- Checkerboard tests: generate `MOD.true` with the internal script `GenerateTrueMOD.py` and set the forward-modeling switches per the DSurfTomo documentation.

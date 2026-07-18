@@ -31,6 +31,8 @@ This guide walks you through installing all software required by this project, f
 
 Conda is a Python environment manager that lets you create isolated environments for different projects, avoiding dependency conflicts.
 
+> Official installation docs: https://docs.conda.io/en/latest/miniconda.html
+
 If you already have Conda (Anaconda or Miniconda) installed, skip to Step 2.
 
 ### Check if Conda is installed
@@ -68,7 +70,9 @@ https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh
 
 ## 2. Install NoisePy and Python Dependencies
 
-Most Python scripts in this project run in a single Conda environment. We install NoisePy and all helper-script dependencies together.
+The entry scripts of steps 01-04 and 06b all run in the noisepy environment.
+
+> Official NoisePy installation guide: https://github.com/noisepy/NoisePy
 
 ### 2a. Create the environment and install NoisePy
 
@@ -88,75 +92,27 @@ pip install noisepy-seis
 > Citation: Jiang, C., & Denolle, M. A. (2020). *Seismological Research Letters*, 91(3), 1853–1866.
 > GitHub: https://github.com/noisepy/NoisePy
 
-### 2b. Install helper-script dependencies
+### 2b. Helper-script dependencies (installed automatically)
 
-While still in the `noisepy` environment:
+`pip install noisepy-seis` transitively installs every package the helper
+scripts need: obspy (via pyasdf), numpy, pandas, scipy, matplotlib (via
+obspy), pyyaml, datetimerange, h5py, tqdm — verified one by one in a real
+environment. **No extra manual installs are required.**
 
-```bash
-conda activate noisepy
-
-# Seismic data processing
-pip install obspy
-
-# Data processing and visualization
-pip install numpy pandas scipy matplotlib
-
-# YAML config parsing
-pip install pyyaml
-
-# Time range handling (needed by scripts/02_correlation.py)
-pip install datetimerange
-
-# HDF5 file I/O (needed by scripts/04_export_egf.py)
-pip install h5py
-```
-
-Or install everything in one command:
-
-```bash
-pip install obspy numpy pandas scipy matplotlib pyyaml datetimerange h5py
-```
-
-### 2e. Linear-array inversion dependencies (evodcinv)
-
-The linear-array inversion (step 06a, `scripts/06a_line_inversion/`) uses
-[evodcinv](https://github.com/keurfonluu/evodcinv) for 1-D dispersion
-inversion, with disba as its forward solver. Both are compatible with the
-NoisePy environment (Python ≥ 3.8), so install them there — no extra
-environment is needed:
+Confirm with:
 
 ```bash
 conda activate noisepy
-pip install evodcinv tqdm
+python -c "import obspy, numpy, pandas, scipy, matplotlib, yaml, datetimerange, h5py, tqdm; print('all deps OK')"
 ```
 
-Verify:
 
-```bash
-python -c "import evodcinv, disba; print('evodcinv OK, disba', disba.__version__)"
-```
+### 2c. About MPI
 
-> **Version note**: disba 0.6.1 was confirmed working on the original
-> project machine; the exact evodcinv version could not be recovered from
-> the original environment (to be confirmed). If you hit API
-> incompatibilities, try `pip install "evodcinv==2.*"` and consult its
-> documentation.
-
-### 2c. (Optional) Install MPI support
-
-For large datasets, MPI enables parallel processing:
-
-```bash
-# First install the MPI library
-# Ubuntu/Debian:
-sudo apt install libopenmpi-dev
-
-# macOS:
-brew install open-mpi
-
-# Then install NoisePy with MPI support
-pip install noisepy-seis[mpi]
-```
+The entry scripts of this project **do not support MPI parallelism yet**
+(tracked in TODO.md). NoisePy itself supports MPI
+(`pip install noisepy-seis[mpi]`); see the official NoisePy docs if you
+want to use it directly: https://github.com/noisepy/NoisePy
 
 ### 2d. (Optional) Install Jupyter Notebook
 
@@ -164,6 +120,39 @@ pip install noisepy-seis[mpi]
 pip install ipykernel notebook
 python -m ipykernel install --user --name noisepy
 ```
+
+### 2e. Linear-array inversion environment (evodcinv, separate Conda env)
+
+The linear-array inversion (step 06a, `scripts/06a_line_inversion/`) uses
+[evodcinv](https://github.com/keurfonluu/evodcinv) for 1-D dispersion
+inversion, with [disba](https://github.com/keurfonluu/disba) as its
+forward solver. **Create a dedicated Conda environment for it — do not
+install it into the noisepy environment:**
+
+```bash
+conda create -n evodcinv -y python=3.10 pip
+conda activate evodcinv
+pip install evodcinv          # official install method; pulls in disba
+pip install pyyaml matplotlib scipy tqdm   # remaining deps of the 06a entries
+```
+
+Or create it in one step from the bundled definition:
+
+```bash
+conda env create -f environments/evodcinv.yml
+```
+
+Verify:
+
+```bash
+conda activate evodcinv
+python -c "import evodcinv, disba; print('evodcinv OK, disba', disba.__version__)"
+```
+
+> **Version note**: disba 0.6.1 was confirmed working on the original
+> project machine; the exact evodcinv version could not be recovered
+> (to be confirmed). If you hit API incompatibilities, try
+> `pip install "evodcinv==2.*"` and consult its documentation.
 
 ---
 
@@ -222,6 +211,7 @@ DSurfTomo is a Fortran program for surface wave tomography. It must be compiled 
 > **What is DSurfTomo?**
 > DSurfTomo directly inverts surface wave dispersion data for 3D shear-wave velocity models, without the intermediate step of constructing phase/group velocity maps.
 > Citation: Fang, H., et al. (2015). *Geophysical Journal International*, 201(3), 1251–1263.
+> Official repository: https://github.com/HongjianFang/DSurfTomo (a modified copy is bundled in this repo — compile the bundled one)
 > License: MIT
 
 ### 4a. Install the Fortran compiler
@@ -294,6 +284,8 @@ source ~/.bashrc
 
 GMT (Generic Mapping Tools) is used by the DSurfTomo plotting scripts for depth slices, cross-sections, ray paths, and checkerboard test results. Skip this if you don't need these plots.
 
+> Official site and install docs: https://www.generic-mapping-tools.org/ , https://docs.generic-mapping-tools.org/latest/install.html
+
 ### 5a. Install GMT 6
 
 ```bash
@@ -338,12 +330,13 @@ import datetimerange; print('datetimerange OK')
 "
 
 echo ""
-echo "=== 1b. Linear-inversion deps (optional, needed by step 06a) ==="
+echo "=== 1b. evodcinv environment (optional, needed by step 06a) ==="
+conda activate evodcinv
 python -c "
 import evodcinv; print('evodcinv OK')
 import disba; print('disba OK')
 import tqdm; print('tqdm OK')
-" || echo "evodcinv not installed (fine if you only run areal inversion; see 2e)"
+" || echo "evodcinv environment not created (fine if you only run areal inversion; see 2e)"
 
 echo ""
 echo "=== 2. EGFAnalysisPy environment ==="
@@ -433,5 +426,5 @@ python PrepareDSurfTomoProject.py
 | 03 Stack QC visualization | `scripts/03_stack_qc.py`, `scripts/03b_stack_panels.py` | `conda activate noisepy` |
 | 04 Export EGF input | `scripts/04_export_egf.py` | `conda activate noisepy` |
 | 05 Dispersion analysis + picking | `scripts/05_dispersion.py` | `conda activate egfanalysispy` |
-| 06a Linear-array inversion | `scripts/06a_line_inversion/01_invert.py`, `02_stitch.py` | `conda activate noisepy` (with evodcinv, see 2e) |
+| 06a Linear-array inversion | `scripts/06a_line_inversion/01_invert.py`, `02_stitch.py` | `conda activate evodcinv` (separate env, see 2e) |
 | 06b Areal-array inversion | `scripts/06b_area_inversion/01_prepare.py`, `02_invert.py`, `03_plot.py` | `conda activate noisepy` + compiled `DSurfTomo/bin/DSurfTomo`; plotting needs GMT 6 |

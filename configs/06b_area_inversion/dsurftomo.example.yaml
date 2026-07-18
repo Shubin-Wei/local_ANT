@@ -43,5 +43,14 @@ prepare:
   sublayers: 3
 
 plot:
-  # GMT plotting scripts to run (from DSurfTomo/scripts/)
-  scripts: [plotdepth_subplot.gmt]
+  # GMT plotting scripts to run (from DSurfTomo/scripts/), executed in
+  # order by 03_plot.py with --project-dir/--output-dir added
+  # automatically. An entry is either a plain script name, or a mapping
+  # with extra arguments:
+  #   - plotdepth_subplot.gmt              # depth slices (gets --depths)
+  #   - name: plotcross_subplot.gmt        # cross-sections
+  #     args: ["--profiles", "lon1/lat1/lon2/lat2/label"]
+  #   - plotray_subplot.gmt                # ray paths
+  #   - plotchecker_subplot.gmt            # checkerboard test
+  scripts:
+    - plotdepth_subplot.gmt

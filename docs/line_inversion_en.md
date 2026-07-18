@@ -11,11 +11,11 @@ Use this branch when stations lie roughly along one line (e.g. a shallow explora
 
 ## Environment
 
-The noisepy environment plus evodcinv (installation: [INSTALL_en.md](INSTALL_en.md) §2e):
+A dedicated evodcinv Conda environment (installation: [INSTALL_en.md](INSTALL_en.md) §2e):
 
 ```bash
-conda activate noisepy
-pip install evodcinv tqdm   # if not installed yet
+conda env create -f environments/evodcinv.yml   # first time only
+conda activate evodcinv
 ```
 
 ## Input

@@ -32,7 +32,7 @@
 | 方法 | evodcinv:逐台站对一维 Vs(z) 反演(CPSO),按中点拼接 | DSurfTomo:频散直接反演三维 Vs |
 | 输入 | 05 步 `qc_result/`(直接使用) | 05 步 `qc_result/`(经 06b-1 转换为 surfdata.dat) |
 | 结果 | 伪二维 Vs 深度剖面(section.png/.npz) | 三维 Vs 模型 + 深度切片图 |
-| 附加依赖 | evodcinv(装入 noisepy 环境,INSTALL §2e) | DSurfTomo 编译(INSTALL §4)、GMT 6 |
+| 附加依赖 | 独立 evodcinv 环境(INSTALL §2e) | DSurfTomo 编译(INSTALL §4)、GMT 6 |
 
 两个分支相互独立,互不依赖,也可以对同一批数据都跑。
 
@@ -45,23 +45,8 @@
 | 03 | `scripts/03_stack_qc.py`、`03b_stack_panels.py` | noisepy | Stack | moveout 图 |
 | 04 | `scripts/04_export_egf.py` | noisepy | Stack | CF `.dat` + stations.txt |
 | 05 | `scripts/05_dispersion.py` | egfanalysispy | CF `.dat` | 频散曲线 `qc_result/` |
-| 06a | `scripts/06a_line_inversion/01_invert.py`、`02_stitch.py` | noisepy + evodcinv | `qc_result/` | 一维模型集 + 伪二维剖面 |
+| 06a | `scripts/06a_line_inversion/01_invert.py`、`02_stitch.py` | evodcinv | `qc_result/` | 一维模型集 + 伪二维剖面 |
 | 06b | `scripts/06b_area_inversion/01_prepare.py`、`02_invert.py`、`03_plot.py` | noisepy + DSurfTomo 可执行文件 + GMT | `qc_result/` | 三维模型 + 切片图 |
-
-### 旧脚本名 → 新入口对照(迁移指南)
-
-| 旧名称 | 新名称 |
-|--------|--------|
-| `scripts/clean_mseed_for_noisepy.py` | `scripts/01_clean.py` |
-| `scripts/local_cc_workflow.py` | `scripts/02_correlation.py` |
-| `scripts/stack_visualization.py` | `scripts/03_stack_qc.py` |
-| `scripts/plot_stack_panels.py` | `scripts/03b_stack_panels.py` |
-| `scripts/export_egfanalysis_input.py` | `scripts/04_export_egf.py` |
-| 手改 `EGFAnalysisPy/config.py` + `python run.py` | `scripts/05_dispersion.py --config configs/05_dispersion.yaml` |
-| `lant_invert.py` / `lant_stitch.py`(本地项目版本) | `scripts/06a_line_inversion/01_invert.py` / `02_stitch.py` |
-| `configs/local_cc_workflow.example.yaml` 等 | `configs/02_correlation.example.yaml` 等(编号对应) |
-
-配置行为不变:旧配置文件内容可直接复制到新的同义文件中使用。
 
 ## 软件包引用
 
@@ -90,8 +75,9 @@
 详细步骤见 [INSTALL.md](INSTALL.md)。摘要:
 
 ```bash
-conda env create -f environments/noisepy.yml        # 01–04、06a、06b 入口
+conda env create -f environments/noisepy.yml        # 01–04、06b 入口
 conda env create -f environments/egfanalysispy.yml  # 05
+conda env create -f environments/evodcinv.yml        # 06a(仅线状反演需要)
 cd DSurfTomo && python configure && cd ..           # 仅 06b 需要
 conda activate noisepy && python tools/check_environment.py
 ```
@@ -300,8 +286,6 @@ dispersion:
 
 入口脚本会把 YAML 渲染成运行时配置(`<result_path>/runtime_config.py`,含来源与时间戳,可追溯),再调用 `EGFAnalysisPy/run_parallel.py`;仓库内的 `EGFAnalysisPy/config.py` 不会被修改。内部流程:频散能量图 → DisperPicker 拾取 → 按群速度加窗时变滤波重算相速度图 → 再拾取 → 质量控制 → 输出。
 
-**高级用法:** 也可以直接 `cd EGFAnalysisPy && python run_parallel.py --config 自定义config.py -w 8`(或编辑 `config.py` 后 `python run.py`),行为与原版一致。
-
 **输出:**
 
 ```
@@ -335,7 +319,7 @@ dispersion:
 
 ```bash
 cp configs/06a_line_inversion/line.example.yaml configs/06a_line_inversion/my_line.yaml
-conda activate noisepy    # 需已安装 evodcinv(INSTALL §2e)
+conda activate evodcinv   # 独立环境(INSTALL §2e)
 python scripts/06a_line_inversion/01_invert.py --config configs/06a_line_inversion/my_line.yaml
 python scripts/06a_line_inversion/02_stitch.py --config configs/06a_line_inversion/my_line.yaml
 ```

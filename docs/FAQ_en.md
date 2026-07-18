@@ -10,7 +10,7 @@ For installation issues (Conda, TensorFlow 1.13, gfortran builds, etc.) also see
 
 ### Do period/velocity parameters have to be consistent across steps?
 
-Yes. The period range and step set in step 05 (`dispersion:` section of `configs/05_dispersion.yaml`) must match `prepare.period_step` in 06b (06a reads the curve files directly and has no such requirement). DisperPicker requires the velocity step `DeltaV` to be exactly 0.005 km/s.
+Roughly, yes. `prepare.period_step` in 06b does not have to equal the step-05 `DeltaT` exactly — the period grid it generates only needs to fall on periods that exist in the step-05 output curves (using `DeltaT` or an integer multiple of it is the safe choice). DisperPicker requires the velocity step `DeltaV` to be exactly 0.005 km/s.
 
 ### How do I choose the stacking method?
 
@@ -41,7 +41,7 @@ Step 05 must run inside the `egfanalysispy` environment: `conda activate egfanal
 
 ### Step 06a says `No module named 'evodcinv'`?
 
-evodcinv is not installed. `conda activate noisepy && pip install evodcinv tqdm` — see [INSTALL_en.md](INSTALL_en.md) §2e.
+The evodcinv environment has not been created or activated. It lives in its own Conda environment: `conda env create -f environments/evodcinv.yml && conda activate evodcinv` — see [INSTALL_en.md](INSTALL_en.md) §2e.
 
 ### How do I quickly self-check the environment?
 
@@ -55,12 +55,3 @@ It checks whatever environment it runs in; FAIL for items irrelevant to the curr
 
 DSurfTomo has not been compiled, or `dsurftomo_bin` in `configs/00_project.yaml` is wrong. Build instructions: [INSTALL_en.md](INSTALL_en.md) §4; the executable lands in `DSurfTomo/bin/DSurfTomo` by default.
 
-## Migration
-
-### I used the old script names (local_cc_workflow.py etc.)?
-
-Functionality and configuration are fully compatible — only names and locations changed. See the "Old script names → new entries" table in [workflow_en.md](workflow_en.md); old config file contents can be copied verbatim into the renamed counterparts.
-
-### I used to edit EGFAnalysisPy/config.py or LineXConfig.py by hand?
-
-Now you only maintain `configs/05_dispersion.yaml` (one copy per line/batch); the entry generates the runtime config automatically and you never enter the EGFAnalysisPy directory. The manual way still works (`run_parallel.py --config your_config.py`).

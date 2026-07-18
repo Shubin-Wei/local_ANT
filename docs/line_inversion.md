@@ -11,11 +11,11 @@
 
 ## 运行环境
 
-noisepy 环境 + evodcinv(安装见 [INSTALL.md](INSTALL.md) §2e):
+独立的 evodcinv Conda 环境(安装见 [INSTALL.md](INSTALL.md) §2e):
 
 ```bash
-conda activate noisepy
-pip install evodcinv tqdm   # 若尚未安装
+conda env create -f environments/evodcinv.yml   # 首次创建
+conda activate evodcinv
 ```
 
 ## 输入

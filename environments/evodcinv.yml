@@ -1,0 +1,25 @@
+# evodcinv environment: step 06a (linear-array inversion).
+# Kept separate from the NoisePy environment on purpose.
+# Official install guides:
+#   evodcinv: https://github.com/keurfonluu/evodcinv
+#   disba:    https://github.com/keurfonluu/disba
+#
+# create : conda env create -f environments/evodcinv.yml
+# enable : conda activate evodcinv
+#
+# evodcinv pulls in disba automatically; both are listed explicitly for
+# clarity. disba 0.6.1 was verified on the original project machine;
+# the evodcinv version is still to be confirmed.
+name: evodcinv
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - evodcinv
+      - disba
+      - pyyaml
+      - matplotlib
+      - scipy
+      - tqdm
