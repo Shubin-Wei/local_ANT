@@ -1,5 +1,5 @@
 '''
-This software is used for extract group and phase velocity dispersion curves from surface wave empirical Green’s function (EGF) or cross-correlation function (CF) from ambient noise.	
+This software is used for extract group and phase velocity dispersion curves from surface wave empirical Green's function (EGF) or cross-correlation function (CF) from ambient noise.	
 '''
 
 import numpy as np
@@ -38,6 +38,15 @@ console_handler.setLevel('INFO')
 file_handler.setLevel('DEBUG')
 
 
+# cache of FIR filters, keyed by (numtaps, LowF, HighF, KaiserPara).
+# The phase-velocity narrow-band filters depend only on the period band and
+# sampling rate (not on the waveform), so they are identical across the no/obs
+# passes and across files with the same sampling rate. Building a ~16k-tap
+# firwin filter is as expensive as the convolution itself, so caching avoids
+# rebuilding the same filter ~1.5M times over a full run.
+_FIR_CACHE = {}
+
+
 class gfcn_analysis:
     class GreenFcnObjectsType(Enum):
         A_to_B = 1,
@@ -50,6 +59,7 @@ class gfcn_analysis:
                  GreenFcnObjects=GreenFcnObjectsType.A_add_B,
                  WinAlpha=0.1,  NoiseTime=150,
                  MinSNR=5.0,
+                 MinWavelengthRatio=2.0,
                  ):
         '''
         FilePath: path of the data file
@@ -60,7 +70,7 @@ class gfcn_analysis:
         StartV: start velocity of the analysis
         EndV: end velocity of the analysis
         DeltaV: velocity interval of the analysis
-        GreenFcnObjectsType: the type of Green’s function objects
+        GreenFcnObjectsType: the type of Green's function objects
         WinAlpha: the proportion of cosine part to the whole window
         NoiseTime: the time of noise sampling
         '''
@@ -73,6 +83,7 @@ class gfcn_analysis:
         self.DeltaV = DeltaV
         self.GreenFcnObjects = GreenFcnObjects
         self.MinSNR = MinSNR
+        self.minlamdaRatio = MinWavelengthRatio
         try:
             with open(DataFileName, 'r') as f:
                 # read the first line
@@ -174,7 +185,10 @@ class gfcn_analysis:
             logger.warning(
                 f'Noise window length of {self.NoiseWinWave.shape[0]}, not long enough')
 
-        self.WaveClipPt = min((self.EndWin + TaperLen), self.PtNum)
+        # EndWin is used as an inclusive sample index in GroupVelocityImgCalculate.
+        # Keep that sample in the clipped waveform, otherwise very short station
+        # distances with TaperLen == 0 produce x/y length mismatches in interp1d.
+        self.WaveClipPt = min((self.EndWin + TaperLen + 1), self.PtNum)
         self.WinWaveClip = WinWave[:self.WaveClipPt]
 
     def GroupVelocityImgCalculate(self):
@@ -261,10 +275,12 @@ class gfcn_analysis:
 
         plt.show()
 
-    def AutoGroupDisperPick(self,minlamdaRatio=2):
+    def AutoGroupDisperPick(self, minlamdaRatio=None):
         '''
         function for automatic pick of group velocity dispersion curve
         '''
+        if minlamdaRatio is None:
+            minlamdaRatio = self.minlamdaRatio
         self.minlamdaRatio = minlamdaRatio
         dc = self.DeltaV
         dT = self.DeltaT
@@ -441,7 +457,7 @@ class gfcn_analysis:
             CtrF = (2 / self.SampleF) / CtrT
             LowF = (2 / self.SampleF) / (CtrT + 0.5 * BandWidth)
             HighF = (2 / self.SampleF) / (CtrT - 0.5 * BandWidth)
-            filter_data = signal.firwin(filter_length + 1, [LowF, HighF], pass_zero=False,window=('kaiser', FilterKaiserPara))
+            filter_data = self.GetFIRFilter(filter_length + 1, LowF, HighF, FilterKaiserPara)
             if TimeVariableFilter == self.TimeVariableFilterType.obs:
                 winpt = np.round(np.maximum(WinPeriodNum * CtrT,WinMinTime)*self.SampleF)
                 # to ensure winpt is even number
@@ -456,14 +472,14 @@ class gfcn_analysis:
                 tmpWave[int(grouppt+winpt//2):] = 0
                 NewWinWave = np.zeros(self.WaveClipPt + HalfFilterNum);
                 NewWinWave[:self.WaveClipPt] = tmpWave[int(winpt):int(winpt+self.WaveClipPt)]
-                FilteredWave = signal.lfilter(filter_data , 1, NewWinWave)
+                FilteredWave = self.FIRFilter(filter_data, NewWinWave)
             else:
                 # filtering
-                FilteredWave = signal.lfilter(filter_data, 1, WinWave)
+                FilteredWave = self.FIRFilter(filter_data, WinWave)
             # inverse order
             FilteredWave = FilteredWave[::-1]
             # filtering
-            FilteredWave = signal.lfilter(filter_data, 1, FilteredWave)
+            FilteredWave = self.FIRFilter(filter_data, FilteredWave)
             # inverse order
             FilteredWave = FilteredWave[::-1]
             # clip
@@ -515,11 +531,13 @@ class gfcn_analysis:
 
         plt.show()
 
-    def AutoPhaseDisperPick(self):
+    def AutoPhaseDisperPick(self, minlamdaRatio=None):
         '''
         function for automatic pick of phase velocity dispersion curve
         '''
-        minlamdaRatio = 2
+        if minlamdaRatio is None:
+            minlamdaRatio = self.minlamdaRatio
+        self.minlamdaRatio = minlamdaRatio
 
         dc = self.DeltaV
         dT = self.DeltaT
@@ -695,6 +713,34 @@ class gfcn_analysis:
                     f.write(
                         f'{self.TPoint[i]:.1f}    {self.PhaseDisperCurve[i]:.3f}    {0:.3f}    {0:d}\n')
 
+
+    @staticmethod
+    def GetFIRFilter(numtaps, LowF, HighF, KaiserPara):
+        '''
+        Return a band-pass FIR filter, cached by its defining parameters.
+        Numerically identical to calling signal.firwin directly, but reused
+        across periods/passes/files instead of being rebuilt every time.
+        '''
+        key = (numtaps, LowF, HighF, KaiserPara)
+        f = _FIR_CACHE.get(key)
+        if f is None:
+            f = signal.firwin(numtaps, [LowF, HighF], pass_zero=False,
+                              window=('kaiser', KaiserPara))
+            _FIR_CACHE[key] = f
+        return f
+
+    @staticmethod
+    def FIRFilter(b, x):
+        '''
+        Apply an FIR filter to x, numerically equivalent to
+        signal.lfilter(b, 1, x) but computed via FFT convolution.
+
+        For a long FIR filter (here up to 2**MaxFilterLengthLog taps) this is
+        orders of magnitude faster than the time-domain signal.lfilter, while
+        returning the same causal output (first len(x) samples of the full
+        convolution).
+        '''
+        return signal.fftconvolve(x, b)[:len(x)]
 
     @staticmethod
     def GenerateSignalWindow(StartWin, EndWin, PtNum, Alpha=0.1):

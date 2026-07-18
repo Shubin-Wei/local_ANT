@@ -79,8 +79,9 @@ class Config(object):
     def __init__(self):
         # =========    EGFAnalysisTimeFreq config    ========= #
 
-        self.root = os.getcwd()
-        # self.root = '/home/yang/Projects/EGFAnalysisTimeFreq_py/Feidong_test'
+        # Resolve bundled model/data paths relative to this config file so the
+        # program behaves the same regardless of the launch directory.
+        self.root = os.path.dirname(os.path.abspath(__file__))
         self.waveform_path = self.root + '/CFs'           # CF/EGF input directory
         # self.waveform_path = self.root + '/AllCFs'
         self.result_path = self.root + '/DisperPicker/result'
@@ -88,6 +89,9 @@ class Config(object):
         self.StartV = 0.5
         self.EndV = 3.5
         self.MinStaDist = 0.5
+        # Minimum wavelength-to-distance ratio used by dispersion picking QC
+        # (was hard-coded in run.py; tune per dataset).
+        self.MinWavelengthRatio = 2.0
         self.StartT = 0.4
         self.EndT = 3.0
         self.DeltaT = 0.02
