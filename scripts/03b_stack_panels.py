@@ -9,9 +9,9 @@ Generates a 2×N figure (N = number of stack methods):
 Supports CLI arguments and YAML configuration.
 
 Usage:
-    python plot_stack_panels.py --stack-dir ./my_stack
-    python plot_stack_panels.py --config config.yaml --methods linear pws robust
-    python plot_stack_panels.py --stack-dir ./my_stack --bottom-style symmetric
+    python scripts/03b_stack_panels.py --stack-dir ./my_stack
+    python scripts/03b_stack_panels.py --config config.yaml --methods linear pws robust
+    python scripts/03b_stack_panels.py --stack-dir ./my_stack --bottom-style symmetric
 """
 
 import argparse

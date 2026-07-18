@@ -1,4 +1,5 @@
 import argparse
+import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
@@ -10,6 +11,37 @@ from tqdm import tqdm
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_OUTPUT_ROOT = SCRIPT_DIR / "egfanalysis_input"
 DEFAULT_COMPONENT = "ZZ"
+
+
+def _apply_yaml_config_defaults(parser, argv):
+    """Seed parser defaults from a --config YAML file; explicit CLI flags win.
+
+    YAML keys use the same spelling as the long options (with or without
+    dashes). Unknown keys are reported and ignored.
+    """
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--config")
+    known, _ = pre.parse_known_args(argv)
+    if not known.config:
+        return
+    import yaml
+    with open(known.config, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    actions = {a.dest: a for a in parser._actions}
+    defaults = {}
+    for key, value in data.items():
+        dest = key.replace("-", "_")
+        if dest not in actions:
+            print(f"WARNING: unknown key in {known.config} ignored: {key}")
+            continue
+        if value is None:
+            continue
+        action = actions[dest]
+        if callable(action.type) and isinstance(value, str):
+            value = action.type(value)
+        defaults[dest] = value
+        action.required = False
+    parser.set_defaults(**defaults)
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,6 +85,14 @@ def parse_args() -> argparse.Namespace:
             "Data_noisepy/egfanalysis_input."
         ),
     )
+    parser.add_argument(
+        "--config",
+        help=(
+            "YAML file providing defaults for the options above "
+            "(e.g. configs/04_export_egf.yaml); explicit CLI flags win."
+        ),
+    )
+    _apply_yaml_config_defaults(parser, sys.argv[1:])
     return validate_args(parser.parse_args())
 
 

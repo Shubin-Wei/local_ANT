@@ -13,9 +13,9 @@ Dependencies: h5py, numpy, pyyaml, scipy, matplotlib.
 noisepy is NOT required — it is only used for StackMethod enum if available.
 
 Usage:
-    python stack_visualization.py --stack-dir ./my_stack
-    python stack_visualization.py --config config.yaml --freqmin 0.1 --freqmax 0.5
-    python stack_visualization.py --stack-dir ./my_stack --validate-only
+    python scripts/03_stack_qc.py --stack-dir ./my_stack
+    python scripts/03_stack_qc.py --config config.yaml --freqmin 0.1 --freqmax 0.5
+    python scripts/03_stack_qc.py --stack-dir ./my_stack --validate-only
 """
 
 import argparse
@@ -339,7 +339,7 @@ def validate_args(args: argparse.Namespace) -> argparse.Namespace:
     if args.stack_dir is None:
         raise SystemExit(
             "Error: --stack-dir is required (or set stack_dir in YAML config).\n"
-            "Example: python stack_visualization.py --stack-dir ./my_stack"
+            "Example: python scripts/03_stack_qc.py --stack-dir ./my_stack"
         )
     if not Path(args.stack_dir).is_dir():
         raise SystemExit(f"Error: stack directory does not exist: {args.stack_dir}")

@@ -1,4 +1,4 @@
-# Configuration for plot_stack_panels.py
+# Configuration for scripts/03b_stack_panels.py
 # Paths are relative to this YAML file's directory.
 # CLI flags override values set here.
 

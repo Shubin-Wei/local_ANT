@@ -6,10 +6,10 @@ miniSEED datasets using NoisePy. Supports YAML configuration, per-stage
 execution, and flexible input formats.
 
 Usage:
-    python local_cc_workflow.py --config config.yaml
-    python local_cc_workflow.py --data-dir ./data --station-csv ./station.csv
-    python local_cc_workflow.py --config config.yaml --stage stack
-    python local_cc_workflow.py --config config.yaml --validate-only
+    python scripts/02_correlation.py --config config.yaml
+    python scripts/02_correlation.py --data-dir ./data --station-csv ./station.csv
+    python scripts/02_correlation.py --config config.yaml --stage stack
+    python scripts/02_correlation.py --config config.yaml --validate-only
 """
 
 import argparse
@@ -938,7 +938,7 @@ def build_paths(args: argparse.Namespace) -> DatasetPaths:
     if data_dir is None:
         raise SystemExit(
             "Error: --data-dir is required (or set data_dir in YAML config).\n"
-            "Example: python local_cc_workflow.py --data-dir ./my_data --station-csv ./station.csv"
+            "Example: python scripts/02_correlation.py --data-dir ./my_data --station-csv ./station.csv"
         )
 
     data_dir = Path(data_dir)

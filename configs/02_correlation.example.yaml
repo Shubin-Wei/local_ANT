@@ -1,4 +1,4 @@
-# Configuration for local_cc_workflow.py
+# Configuration for scripts/02_correlation.py
 # Paths are relative to this YAML file's directory.
 # CLI flags override values set here.
 

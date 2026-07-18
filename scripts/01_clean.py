@@ -6,9 +6,9 @@ merges target channel traces, checks completeness, and writes
 qualifying data in NoisePy naming format.
 
 Usage:
-    python clean_mseed_for_noisepy.py --input-root RawData --output-root CleanData
-    python clean_mseed_for_noisepy.py --input-root RawData --output-root CleanData --date-range 260316 260429
-    python clean_mseed_for_noisepy.py --input-root RawData --output-root CleanData --verbose --dry-run
+    python scripts/01_clean.py --input-root RawData --output-root CleanData
+    python scripts/01_clean.py --input-root RawData --output-root CleanData --date-range 260316 260429
+    python scripts/01_clean.py --input-root RawData --output-root CleanData --verbose --dry-run
 """
 
 import argparse
@@ -42,10 +42,44 @@ def log(msg):
         print(f"    {msg}")
 
 
+def _apply_yaml_config_defaults(parser, argv):
+    """Seed parser defaults from a --config YAML file; explicit CLI flags win.
+
+    YAML keys use the same spelling as the long options (with or without
+    dashes). Unknown keys are reported and ignored.
+    """
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--config")
+    known, _ = pre.parse_known_args(argv)
+    if not known.config:
+        return
+    import yaml
+    with open(known.config, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    actions = {a.dest: a for a in parser._actions}
+    defaults = {}
+    for key, value in data.items():
+        dest = key.replace("-", "_")
+        if dest not in actions:
+            print(f"WARNING: unknown key in {known.config} ignored: {key}")
+            continue
+        if value is None:
+            continue
+        action = actions[dest]
+        if callable(action.type) and isinstance(value, str):
+            value = action.type(value)
+        defaults[dest] = value
+        action.required = False
+    parser.set_defaults(**defaults)
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="Clean mseed data and convert to NoisePy format."
     )
+    p.add_argument("--config",
+                    help="YAML file providing defaults for the options below "
+                    "(e.g. configs/01_clean.yaml); explicit CLI flags win.")
     p.add_argument("--input-root", default="local_ANT/TestData/RawData",
                     help="Root directory of raw mseed files (contains station folders).")
     p.add_argument("--output-root", default="local_ANT/TestData/CleanData",
@@ -63,6 +97,7 @@ def parse_args():
                     help="Print actions without writing output.")
     p.add_argument("--verbose", "-v", action="store_true",
                     help="Print detailed per-file messages.")
+    _apply_yaml_config_defaults(p, sys.argv[1:])
     return p.parse_args()
 
 
