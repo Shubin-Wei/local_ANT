@@ -1,6 +1,15 @@
 # Complete Workflow: Ambient Noise Surface Wave Tomography from Local miniSEED Data
 
-This project implements a complete ambient noise surface wave tomography pipeline — from raw miniSEED seismic data to a 3D shear-wave velocity model. The workflow consists of 6 steps, using 3 software packages and several helper scripts. **EGFAnalysisPy** is a pure-Python rewrite of EGFAnalysisTimeFreq with the deep-learning picker DisperPicker (and its pretrained model) bundled in, performing dispersion analysis and curve extraction in a single step — no MATLAB required.
+This project implements a complete ambient noise surface wave tomography pipeline — from raw miniSEED seismic data to a shear-wave velocity model. The workflow consists of 6 steps, using 3 software packages and several helper scripts. **EGFAnalysisPy** is a pure-Python rewrite of EGFAnalysisTimeFreq with the deep-learning picker DisperPicker (and its pretrained model) bundled in, performing dispersion analysis and curve extraction in a single step — no MATLAB required.
+
+Steps 1–5 are shared by every use case: data cleaning → cross-correlation and stacking → dispersion extraction. Step 6 offers **two parallel inversion paths**; pick one based on your array geometry:
+
+| Path | Use when | Product |
+|------|----------|---------|
+| **Step 6A** DSurfTomo | Areal array whose ray coverage can constrain a 2D grid | 3D shear-wave velocity model |
+| **Step 6B** 1D inversion + section stitching | Linear (profile) array, shallow structure | Pseudo-2D shear-wave velocity section |
+
+In a linear array the ray paths are nearly collinear and cannot constrain a 2D grid, so DSurfTomo's tomographic inversion does not apply. Use Step 6B instead: invert each station pair independently in 1D, then stitch the results along the profile.
 
 ## Workflow Overview
 
@@ -19,15 +28,19 @@ Cross-correlation functions (CCF) + stacked results
   ▼ [Step 4] export_egfanalysis_input.py
 EGFAnalysisPy input format (.dat waveforms + stations.txt + EGFfiles.txt)
   │
-  ▼ [Step 5] EGFAnalysisPy (run.py)
+  ▼ [Step 5] EGFAnalysisPy (run.py or run_parallel.py)
 Dispersion analysis + DisperPicker auto-picking + QC → dispersion curves (qc_result/CDisp.*.txt, GDisp.*.txt)
   │
-  ▼ [Step 6] DSurfTomo inversion
-    ├── extractnew.py               → surfdata.dat
-    ├── GenerateIniMOD.py           → MOD (initial model)
-    ├── GenerateDSurfTomoInputFile.py → DSurfTomo.in
-    ├── Run DSurfTomo inversion
-    └── GMT scripts for plotting (depth slices, cross-sections, ray paths, checkerboard tests)
+  ├─▼ [Step 6A] DSurfTomo inversion (areal array → 3D model)
+  │   ├── extractnew.py               → surfdata.dat
+  │   ├── GenerateIniMOD.py           → MOD (initial model)
+  │   ├── GenerateDSurfTomoInputFile.py → DSurfTomo.in
+  │   ├── Run DSurfTomo inversion
+  │   └── GMT scripts for plotting (depth slices, cross-sections, ray paths, checkerboard tests)
+  │
+  └─▼ [Step 6B] 1D inversion + stitching (linear array → pseudo-2D section)
+      ├── lant_invert.py              → per-pair 1D inversion, writes models/
+      └── lant_stitch.py              → stitch along the profile → section.png
 ```
 
 ## Citations
@@ -322,7 +335,7 @@ self.EndV   = 4.0          # end velocity (km/s)
 self.DeltaV = 0.005        # velocity step (fixed at 0.005 km/s)
 ```
 
-> Step 6 (DSurfTomo) reuses the period range and step set here, so note them down. `DeltaV` must be 0.005 km/s (required by DisperPicker).
+> Step 6A (DSurfTomo) reuses the period range and step set here, so note them down. `DeltaV` must be 0.005 km/s (required by DisperPicker).
 
 ### 5b. Run
 
@@ -332,6 +345,25 @@ python run.py
 ```
 
 The program iterates over every `.dat` file under `waveform_path`, processing each pair. The pretrained model ships with the package (`EGFAnalysisPy/DisperPicker/saver/`) — no extra download needed.
+
+**Parallel version (recommended for large station-pair counts):** `run_parallel.py` performs exactly the same per-file work as `run.py`, but distributes files across worker processes:
+
+```bash
+python run_parallel.py                       # min(16, CPU count) workers by default
+NWORKERS=32 python run_parallel.py           # set the worker count
+python run_parallel.py --config Line2Config.py -w 8   # different config, explicit workers
+python run_parallel.py -n 20                 # first 20 files only, for parameter tuning
+```
+
+| Option | Env var | Description |
+|--------|---------|-------------|
+| `-w, --workers` | `NWORKERS` | Worker processes; default `min(16, CPU count)` |
+| `-c, --config` | `CONFIG` | Config file path; defaults to `config.py` alongside the script |
+| `-n, --max-files` | `MAXFILES` | Process only the first N files; 0 means all |
+
+`--config` accepts any file with the same structure as `config.py`, so multiple profiles can each keep their own config (e.g. `Line1Config.py`, `Line2Config.py`) and be run independently.
+
+> Because TensorFlow 1.x sessions are not picklable, each worker builds its own `Pick()` instance in the pool initializer and reuses it; workers start with `spawn` to avoid the TF fork deadlock; and native thread pools are pinned to 1 per process so parallelism comes from processes rather than oversubscribed BLAS threads. The script handles all of this — normal use requires no attention to it.
 
 ### 5c. Output
 
@@ -355,11 +387,13 @@ Each dispersion curve file (first two rows are station coordinates; data columns
 ...
 ```
 
-> This output feeds directly into the Step 6 `extractnew.py` `egfpy` input; station coordinates are embedded in the file header, so no separate station file is needed.
+> This output feeds directly into the Step 6A `extractnew.py` `egfpy` input; station coordinates are embedded in the file header, so no separate station file is needed.
 
 ---
 
-## Step 6: DSurfTomo Surface Wave Tomography Inversion
+## Step 6A: DSurfTomo Surface Wave Tomography Inversion
+
+> **One of two parallel inversion paths**, for **areal arrays**. If your stations lie along a line, skip to [Step 6B](#step-6b-1d-inversion-and-pseudo-2d-section-linear-arrays).
 
 **Goal:** Invert dispersion curve data for a 3D shear-wave velocity model.
 
@@ -480,25 +514,128 @@ python plot_dispersion_period_counts.py --surfdata /path/to/surfdata.dat
 
 ---
 
+## Step 6B: 1D Inversion and Pseudo-2D Section (Linear Arrays)
+
+> **One of two parallel inversion paths**, for the **shallow structure beneath a linear (profile) array**. If your stations are distributed areally, use [Step 6A](#step-6a-dsurftomo-surface-wave-tomography-inversion) instead.
+
+**Goal:** In a linear array the ray paths are nearly collinear and cannot constrain a 2D velocity grid, so DSurfTomo's tomographic inversion does not apply. This path instead **inverts each station pair's dispersion curve independently in 1D**, yielding a set of 1D shear-wave velocity models, which are then stitched into a pseudo-2D section by projecting each pair's midpoint onto the profile.
+
+**Tools:** `scripts/lant_invert.py` (1D inversion) and `scripts/lant_stitch.py` (stitching)
+
+**Dependency:** the inversion uses [evodcinv](https://github.com/keurfonluu/evodcinv) (CPSO evolutionary algorithm)
+
+```bash
+pip install evodcinv
+```
+
+### 6B-a. Write the Config File
+
+Both scripts share one YAML config; every parameter lives there and nothing is hard-coded in the scripts:
+
+```bash
+cp configs/lant.example.yaml configs/my_lant.yaml
+```
+
+Key parameters:
+
+```yaml
+paths:
+  input_dir:   ../TestData/DisperPicker/qc_result   # ← qc_result from Step 5
+  station_csv: ../TestData/station.csv              # ← station file from Step 2
+  output_dir:  ../TestData/Inversion                # output directory
+
+inversion:
+  curve_type: phase    # phase (CDisp) | group (GDisp) | both (joint)
+  workers: 16          # parallel worker processes
+  min_points: 8        # skip curves with fewer valid points
+  zmax: 0.6            # maximum output depth (km)
+  dz: 0.01             # depth step (km)
+  layers:              # layered search space; thickness/vs given as [min, max]
+    - {thickness: [0.01, 0.04], vs: [0.3, 2.5]}
+    ...
+```
+
+> **How to choose `zmax`:** surface-wave depth sensitivity is roughly wavelength/3, i.e. `c*Tmax/3`. For example, a maximum period of 0.5 s with a phase velocity around 2.2 km/s constrains only about 0.4 km, so `zmax: 0.6` is appropriate. Parameterizing much deeper buys no resolution — only unconstrained values. The thickness maxima in `layers` should sum to roughly `zmax`.
+
+### 6B-b. Per-Pair 1D Inversion
+
+```bash
+python scripts/lant_invert.py --config configs/my_lant.yaml
+
+# Common overrides (CLI takes precedence over the config file)
+python scripts/lant_invert.py --config configs/my_lant.yaml \
+    --curve-type both --workers 8 --zmax 0.8 --no-plot
+python scripts/lant_invert.py --config configs/my_lant.yaml -n 10   # try 10 first
+```
+
+**Output:** `output_dir/models/` (one 1D model per station pair), `output_dir/figs/` (fit comparison figures), and `output_dir/summary.txt` (per-pair misfit summary).
+
+Start with `-n 10`, inspect the fits in `figs/` and the misfit distribution in `summary.txt`, tune the `layers` search ranges and `optimizer` settings, then run the full set.
+
+### 6B-c. Stitch into a Pseudo-2D Section
+
+```bash
+python scripts/lant_stitch.py --config configs/my_lant.yaml
+
+# Load models from a different output directory without editing the config
+python scripts/lant_stitch.py --config configs/my_lant.yaml --output-dir /path/to/other
+```
+
+Stitching parameters live under the `stitch:` section of the config:
+
+```yaml
+stitch:
+  topography: true       # follow local terrain at the top (uses station_csv elevations)
+  show_stations: true    # station triangles along the surface
+  misfit_max: 0.2        # drop models with misfit above this (null = keep all)
+  nbins: 120             # number of along-profile distance bins
+  smooth: 1.2            # gaussian smoothing sigma in cells (0 = off)
+  vertical_exaggeration: 2.0
+  cmap: jet_r            # low-Vs warm / high-Vs cool
+  vmax: 4
+  taper_slope: 0.1       # mask into an inverted trapezoid (wide top, narrow bottom):
+                         # trim this many km per side per km of depth, since edges
+                         # get less reliable with depth. 0 = keep the full rectangle
+```
+
+**Output:** `output_dir/section.png` (plus a PDF when `save_pdf: true`).
+
+> The horizontal axis is each pair's midpoint projected onto the profile, so this is a **pseudo-2D, not a true 2D, section**: every column comes from an independent 1D inversion with no lateral coupling between columns. Read it as a visual arrangement of 1D results, and do not over-interpret short-wavelength lateral variation.
+
+### 6B-d. Station Distribution Check (Optional)
+
+```bash
+python scripts/plot_station_distribution_all.py
+```
+
+Plots the map-view distribution of all stations — useful for confirming the array really is linear and for deciding between 6A and 6B.
+
+---
+
 ## Directory Structure
 
 ```
 local_ANT/
 ├── scripts/                            # Helper scripts (glue code between packages)
 │   ├── clean_mseed_for_noisepy.py      # Step 1: Data cleaning
+│   ├── plot_station_distribution_all.py # Step 2: Station distribution check
 │   ├── local_cc_workflow.py            # Step 3: NoisePy cross-correlation workflow
 │   ├── stack_visualization.py          # Step 3c: Stack visualization
 │   ├── plot_stack_panels.py            # Step 3c: Publication-quality multi-panel moveout
-│   └── export_egfanalysis_input.py     # Step 4: Export EGF input
+│   ├── export_egfanalysis_input.py     # Step 4: Export EGF input
+│   ├── lant_invert.py                  # Step 6B: Per-pair 1D inversion
+│   └── lant_stitch.py                  # Step 6B: Stitch into a pseudo-2D section
 ├── configs/                            # Example configuration files
 │   ├── local_cc_workflow.example.yaml
 │   ├── plot_stack_panels.example.yaml
-│   └── stack_visualization.example.yaml
+│   ├── stack_visualization.example.yaml
+│   └── lant.example.yaml               # Step 6B: 1D inversion + stitching
 ├── EGFAnalysisPy/                      # Step 5: Dispersion analysis + CNN picker
 │   ├── run.py                          # One-step dispersion analysis & picking
+│   ├── run_parallel.py                 # Same work, multiprocessing version
 │   ├── config.py / config_test.py      # Parameter configuration
 │   └── DisperPicker/                   # Bundled DisperPicker with pretrained model (saver/)
-├── DSurfTomo/                          # Surface wave tomography inversion
+├── DSurfTomo/                          # Step 6A: Surface wave tomography inversion
 │   ├── bin/                            # Executables
 │   ├── scripts/                        # Data preparation and plotting scripts
 │   └── src/                            # Source code
@@ -514,8 +651,13 @@ local_ANT/
 
 ## FAQ
 
+### Should I use Step 6A (DSurfTomo) or Step 6B (1D inversion)?
+It depends on the array geometry. Use **6A** when stations are distributed areally and the station-pair ray paths cross the study region from several azimuths — this yields a 3D model. Use **6B** when stations lie along a single line: all rays are then nearly collinear, the across-profile direction of a 2D grid has no ray constraint at all, and DSurfTomo would return unreliable results. Running `scripts/plot_station_distribution_all.py` first is an easy way to decide.
+
+Note that 6B produces a **pseudo-2D** section: each column comes from an independent 1D inversion with no lateral coupling, so it must not be interpreted as a true 2D inversion result.
+
 ### Must the period and velocity parameters be consistent across steps?
-Yes. The period range and step set in Step 5 (EGFAnalysisPy `config.py`) must match the period step used in Step 6 (`extractnew.py`). DisperPicker requires a fixed velocity step of 0.005 km/s (`DeltaV`).
+Yes. The period range and step set in Step 5 (EGFAnalysisPy `config.py`) must match the period step used in Step 6A (`extractnew.py`). DisperPicker requires a fixed velocity step of 0.005 km/s (`DeltaV`).
 
 ### How do I choose a stacking method?
 - `linear`: Linear stacking — most commonly used

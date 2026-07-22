@@ -1,6 +1,15 @@
 # 本地 miniSEED 数据背景噪声面波层析成像完整流程
 
-本项目实现了从原始 miniSEED 地震数据到三维横波速度模型的完整背景噪声面波层析成像流程。整个流程分为 6 个步骤，依次使用 3 个软件包和若干辅助脚本完成。
+本项目实现了从原始 miniSEED 地震数据到横波速度模型的完整背景噪声面波层析成像流程。整个流程分为 6 个步骤，依次使用 3 个软件包和若干辅助脚本完成。
+
+Step 1–5 是所有场景共用的：数据清洗 → 互相关叠加 → 频散提取。Step 6 有**两条并列的反演路径**，根据台阵形态二选一：
+
+| 路径 | 适用场景 | 产物 |
+|------|---------|------|
+| **Step 6A** DSurfTomo | 面状台阵，射线覆盖能形成二维网格 | 三维横波速度模型 |
+| **Step 6B** 1D 反演 + 剖面拼接 | 测线型（线状）台阵，浅层结构 | 伪二维横波速度剖面 |
+
+测线型台阵的射线几乎共线，无法约束二维网格，DSurfTomo 的层析反演不适用；此时改用 Step 6B，对每个台站对独立做 1D 反演，再沿测线拼成剖面。
 
 ## 流程概览
 
@@ -19,15 +28,19 @@
   ▼ [Step 4] export_egfanalysis_input.py
 EGFAnalysisPy 输入格式（.dat 波形 + stations.txt + EGFfiles.txt）
   │
-  ▼ [Step 5] EGFAnalysisPy（run.py）
+  ▼ [Step 5] EGFAnalysisPy（run.py 或 run_parallel.py）
 频散分析 + DisperPicker 自动拾取 + 质量控制 → 频散曲线（qc_result/CDisp.*.txt、GDisp.*.txt）
   │
-  ▼ [Step 6] DSurfTomo 反演
-    ├── extractnew.py          → surfdata.dat
-    ├── GenerateIniMOD.py      → MOD 初始模型
-    ├── GenerateDSurfTomoInputFile.py → DSurfTomo.in
-    ├── DSurfTomo 程序执行反演
-    └── GMT 脚本绘图（深度切片、剖面、射线路径、棋盘测试）
+  ├─▼ [Step 6A] DSurfTomo 反演（面状台阵 → 三维模型）
+  │   ├── extractnew.py          → surfdata.dat
+  │   ├── GenerateIniMOD.py      → MOD 初始模型
+  │   ├── GenerateDSurfTomoInputFile.py → DSurfTomo.in
+  │   ├── DSurfTomo 程序执行反演
+  │   └── GMT 脚本绘图（深度切片、剖面、射线路径、棋盘测试）
+  │
+  └─▼ [Step 6B] 1D 反演 + 剖面拼接（测线型台阵 → 伪二维剖面）
+      ├── lant_invert.py         → 逐台站对 1D 反演，输出 models/
+      └── lant_stitch.py         → 沿测线拼接 → section.png
 ```
 
 ## 软件包引用
@@ -322,7 +335,7 @@ self.EndV   = 4.0          # 结束速度 (km/s)
 self.DeltaV = 0.005        # 速度步长（固定 0.005 km/s）
 ```
 
-> 后续 Step 6（DSurfTomo）会用到这里的周期范围与步长，请记下。`DeltaV` 必须为 0.005 km/s（DisperPicker 要求）。
+> 后续 Step 6A（DSurfTomo）会用到这里的周期范围与步长，请记下。`DeltaV` 必须为 0.005 km/s（DisperPicker 要求）。
 
 ### 5b. 运行
 
@@ -332,6 +345,25 @@ python run.py
 ```
 
 程序遍历 `waveform_path` 下所有 `.dat` 文件，逐对处理。预训练模型已随包提供（`EGFAnalysisPy/DisperPicker/saver/`），无需额外下载。
+
+**并行版本（台站对较多时推荐）：** `run_parallel.py` 做的事与 `run.py` 完全相同，但把文件分发到多个进程：
+
+```bash
+python run_parallel.py                       # 默认 min(16, CPU 核数) 个进程
+NWORKERS=32 python run_parallel.py           # 指定进程数
+python run_parallel.py --config Line2Config.py -w 8   # 换配置文件、指定进程数
+python run_parallel.py -n 20                 # 只跑前 20 个文件，用于试参数
+```
+
+| 参数 | 环境变量 | 说明 |
+|------|---------|------|
+| `-w, --workers` | `NWORKERS` | 进程数，默认 `min(16, CPU 核数)` |
+| `-c, --config` | `CONFIG` | 配置文件路径，默认同目录的 `config.py` |
+| `-n, --max-files` | `MAXFILES` | 只处理前 N 个文件，0 表示全部 |
+
+`--config` 接受任何与 `config.py` 结构相同的文件，因此多条测线可以各自建一份配置（如 `Line1Config.py`、`Line2Config.py`）分别运行，互不干扰。
+
+> 由于 TensorFlow 1.x 的会话不可 pickle，每个 worker 在进程池初始化时各自建立一个 `Pick()` 实例并复用；worker 以 `spawn` 方式启动以避开 TF 的 fork 死锁；各进程的原生线程池被固定为 1，确保并行来自进程而非超额订阅的 BLAS 线程。这些细节已在脚本内处理，正常使用无需关心。
 
 ### 5c. 输出
 
@@ -355,11 +387,13 @@ EGFAnalysisPy/DisperPicker/result/
 ...
 ```
 
-> 该输出可直接作为 Step 6 `extractnew.py` 的 `egfpy` 输入，台站坐标已内嵌在文件头，无需额外的 station 文件。
+> 该输出可直接作为 Step 6A `extractnew.py` 的 `egfpy` 输入，台站坐标已内嵌在文件头，无需额外的 station 文件。
 
 ---
 
-## Step 6：DSurfTomo 面波层析成像反演
+## Step 6A：DSurfTomo 面波层析成像反演
+
+> **这是两条并列反演路径之一**，适用于**面状台阵**。若你的台站沿测线呈线状分布，请跳到 [Step 6B](#step-6b1d-反演与伪二维剖面测线型台阵)。
 
 **目的：** 将频散曲线数据反演为三维横波速度模型。
 
@@ -480,25 +514,127 @@ python plot_dispersion_period_counts.py --surfdata /path/to/surfdata.dat
 
 ---
 
+## Step 6B：1D 反演与伪二维剖面（测线型台阵）
+
+> **这是两条并列反演路径之一**，适用于**测线型（线状）台阵的浅层结构**。若你的台站呈面状分布，请用 [Step 6A](#step-6adsurftomo-面波层析成像反演)。
+
+**目的：** 测线型台阵的射线路径几乎共线，无法约束二维速度网格，DSurfTomo 的层析反演不适用。此路径改为对**每个台站对的频散曲线独立做 1D 反演**，得到一系列 1D 横波速度模型，再按台站对中点沿测线拼接成伪二维剖面。
+
+**工具：** `scripts/lant_invert.py`（1D 反演）+ `scripts/lant_stitch.py`（拼接成剖面）
+
+**依赖：** 反演基于 [evodcinv](https://github.com/keurfonluu/evodcinv)（CPSO 进化算法）
+
+```bash
+pip install evodcinv
+```
+
+### 6B-a. 编写配置文件
+
+两个脚本共用一份 YAML 配置，所有参数都在配置里，脚本内不写死任何值：
+
+```bash
+cp configs/lant.example.yaml configs/my_lant.yaml
+```
+
+关键参数：
+
+```yaml
+paths:
+  input_dir:   ../TestData/DisperPicker/qc_result   # ← Step 5 的 qc_result 目录
+  station_csv: ../TestData/station.csv              # ← Step 2 的台站文件
+  output_dir:  ../TestData/Inversion                # 输出目录
+
+inversion:
+  curve_type: phase    # phase(CDisp) | group(GDisp) | both(联合反演)
+  workers: 16          # 并行进程数
+  min_points: 8        # 有效点数少于此值的曲线直接跳过
+  zmax: 0.6            # 输出深度上限 (km)
+  dz: 0.01             # 深度步长 (km)
+  layers:              # 分层搜索空间，thickness/vs 均为 [最小值, 最大值]
+    - {thickness: [0.01, 0.04], vs: [0.3, 2.5]}
+    ...
+```
+
+> **`zmax` 怎么定？** 面波的深度敏感范围约为波长/3，即 `c*Tmax/3`。例如最大周期 0.5 s、相速度约 2.2 km/s，则数据只能约束到约 0.4 km，`zmax` 取 0.6 km 即可。设得比这深得多不会带来分辨率，只会产生不受约束的数值。`layers` 中各层厚度上限之和应与 `zmax` 接近。
+
+### 6B-b. 逐台站对 1D 反演
+
+```bash
+python scripts/lant_invert.py --config configs/my_lant.yaml
+
+# 常用覆盖项（命令行优先于配置文件）
+python scripts/lant_invert.py --config configs/my_lant.yaml \
+    --curve-type both --workers 8 --zmax 0.8 --no-plot
+python scripts/lant_invert.py --config configs/my_lant.yaml -n 10   # 先试 10 条
+```
+
+**输出：** `output_dir/models/`（每个台站对一个 1D 模型）、`output_dir/figs/`（拟合对比图）、`output_dir/summary.txt`（各对的 misfit 汇总）。
+
+建议先用 `-n 10` 跑十来条，看 `figs/` 里的拟合情况和 `summary.txt` 的 misfit 分布，再调 `layers` 搜索范围和 `optimizer` 参数，最后全量运行。
+
+### 6B-c. 拼接为伪二维剖面
+
+```bash
+python scripts/lant_stitch.py --config configs/my_lant.yaml
+
+# 用另一个输出目录里的模型（不改配置文件）
+python scripts/lant_stitch.py --config configs/my_lant.yaml --output-dir /path/to/other
+```
+
+拼接阶段的参数在配置的 `stitch:` 段下：
+
+```yaml
+stitch:
+  topography: true       # 剖面顶部随地形起伏（用 station_csv 的高程）
+  show_stations: true    # 地表标出台站三角符号
+  misfit_max: 0.2        # 丢弃 misfit 高于此值的模型（null = 全部保留）
+  nbins: 120             # 沿测线方向的距离分箱数
+  smooth: 1.2            # 高斯平滑（单位为格数，0 = 关闭）
+  vertical_exaggeration: 2.0
+  cmap: jet_r            # 低速暖色 / 高速冷色
+  vmax: 4
+  taper_slope: 0.1       # 把剖面裁成倒梯形（上宽下窄），每深 1 km 两侧各裁掉
+                         # 这么多 km，因为边缘随深度增加越发不可靠。0 = 保留全矩形
+```
+
+**输出：** `output_dir/section.png`（及 `save_pdf: true` 时的 PDF）。
+
+> 剖面的横坐标是台站对中点沿测线的投影距离，因此**它是伪二维而非真二维**：每一列来自一个独立的 1D 反演，列与列之间没有横向约束。解释时应把它当作一系列 1D 结果的可视化排列，横向的短尺度变化不可轻信。
+
+### 6B-d. 台站分布检查（可选）
+
+```bash
+python scripts/plot_station_distribution_all.py
+```
+
+绘制全部台站的平面分布，用于确认台阵确实呈线状、以及判断该走 6A 还是 6B。
+
+---
+
 ## 目录结构说明
 
 ```
 local_ANT/
 ├── scripts/                            # 辅助脚本（连接各软件包的胶水代码）
 │   ├── clean_mseed_for_noisepy.py      # Step 1: 数据清洗
+│   ├── plot_station_distribution_all.py # Step 2: 台站分布检查
 │   ├── local_cc_workflow.py            # Step 3: NoisePy 互相关工作流
 │   ├── stack_visualization.py          # Step 3c: 叠加结果可视化
 │   ├── plot_stack_panels.py            # Step 3c: 出版级多面板 moveout 图
-│   └── export_egfanalysis_input.py     # Step 4: 导出 EGF 输入
+│   ├── export_egfanalysis_input.py     # Step 4: 导出 EGF 输入
+│   ├── lant_invert.py                  # Step 6B: 逐台站对 1D 反演
+│   └── lant_stitch.py                  # Step 6B: 拼接为伪二维剖面
 ├── configs/                            # 配置文件示例
 │   ├── local_cc_workflow.example.yaml
 │   ├── plot_stack_panels.example.yaml
-│   └── stack_visualization.example.yaml
+│   ├── stack_visualization.example.yaml
+│   └── lant.example.yaml               # Step 6B: 1D 反演 + 拼接
 ├── EGFAnalysisPy/                      # Step 5: 频散分析 + CNN 曲线提取
 │   ├── run.py                          # 一步完成频散分析与拾取
+│   ├── run_parallel.py                 # 同上，多进程并行版
 │   ├── config.py / config_test.py      # 参数配置
 │   └── DisperPicker/                   # 内置 DisperPicker 及预训练模型（saver/）
-├── DSurfTomo/                          # 面波层析成像反演
+├── DSurfTomo/                          # Step 6A: 面波层析成像反演
 │   ├── bin/                            # 可执行文件
 │   ├── scripts/                        # 数据准备和绘图脚本
 │   └── src/                            # 源代码
@@ -514,8 +650,13 @@ local_ANT/
 
 ## 常见问题
 
+### Step 6 该走 6A（DSurfTomo）还是 6B（1D 反演）？
+看台阵形态。台站呈面状分布、台站对的射线能从多个方位穿过研究区时走 **6A**，得到三维模型。台站沿一条线排列时，所有射线几乎共线，二维网格的横向方向没有任何射线约束，DSurfTomo 会得到不可靠的结果 —— 此时走 **6B**：逐台站对做 1D 反演再沿测线拼接。可以先用 `scripts/plot_station_distribution_all.py` 看一下台站分布再决定。
+
+注意 6B 的产物是**伪二维**剖面：每一列都来自独立的 1D 反演，列与列之间没有横向约束，不能当作真二维反演结果解释。
+
 ### 周期和速度参数需要一致吗？
-是的。Step 5（EGFAnalysisPy `config.py`）设置的周期范围、步长必须与 Step 6（`extractnew.py` 的 period step）保持一致。DisperPicker 要求速度步长固定为 0.005 km/s（`DeltaV`）。
+是的。Step 5（EGFAnalysisPy `config.py`）设置的周期范围、步长必须与 Step 6A（`extractnew.py` 的 period step）保持一致。DisperPicker 要求速度步长固定为 0.005 km/s（`DeltaV`）。
 
 ### 如何选择叠加方法？
 - `linear`：线性叠加，最常用
