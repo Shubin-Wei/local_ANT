@@ -1,6 +1,5 @@
-from genericpath import exists
 import os
-import math
+import random
 import numpy as np
 import sys
 sys.path.append('DisperPicker')
@@ -51,7 +50,9 @@ for index in range(file_num):
                                              EndV=config.EndV, DeltaV=config.DeltaV, 
                                              GreenFcnObjects=config.GreenFcnObjects, 
                                              WinAlpha=config.WinAlpha, NoiseTime=config.NoiseTime, 
-                                             MinSNR=config.MinSNR)
+                                             MinSNR=config.MinSNR,
+                                             MinWavelengthRatio=getattr(config, 'MinWavelengthRatio',
+                                                                        getattr(config, 'min_wavelength_ratio', 2.0)))
 
     sta_info = [gfcn.StaDist, gfcn.Longitude_A, gfcn.Latitude_A, gfcn.Longitude_B, gfcn.Latitude_B]
     if gfcn.StaDist < config.MinStaDist:
@@ -91,9 +92,11 @@ for index in range(file_num):
             batch_phase_image[0, config.input_size[0]-phase_image.shape[0]:, :group_image.shape[1]] = phase_image
     print(f'\n  Start picking')
     pick.mean_confidence_G = 0.2
+    min_wavelength_ratio = getattr(config, 'MinWavelengthRatio',
+                                   getattr(config, 'min_wavelength_ratio', 2.0))
     group_velocity, phase_velocity, prob_G, prob_C = pick.pick(group_image=batch_group_image, 
                                                                phase_image=batch_phase_image, sta_info=[sta_info], 
-                                                               snr=[snr], file_list=[file_name], ct=1.5,
+                                                               snr=[snr], file_list=[file_name], ct=min_wavelength_ratio,
                                                                save_result=True, 
                                                                group_velocity_label=batch_group_v if config.test else None, 
                                                                phase_velocity_label=batch_phase_v if config.test else None)
@@ -102,18 +105,21 @@ for index in range(file_num):
     print('\n  Quality control')
     if np.count_nonzero(snr) == 0:  
         snr = np.ones(config.input_size[1])
-    group_velocity = qc.qc(group_velocity[0], snr, v_range=[0.5, 3.5], diff_range=[-0.07, 0.08],
+    group_velocity = qc.qc(group_velocity[0], snr, v_range=[config.StartV, config.EndV], diff_range=[-0.07, 0.08],
                            upward=0.4, each_stage_upward=0.3, min_len=config.min_len, skip=False)
-    phase_velocity = qc.qc(phase_velocity[0], snr, v_range=[0.5, 3.8], diff_range=[-0.1, 0.1],
+    phase_velocity = qc.qc(phase_velocity[0], snr, v_range=[config.StartV, config.EndV], diff_range=[-0.1, 0.1],
                            upward=0, each_stage_upward=0.2, min_len=config.min_len, skip=True)
     all_G.append(group_velocity)
     all_C.append(phase_velocity)
     format_G = np.array([T, group_velocity, snr, prob_G]).T
     format_C = np.array([T, phase_velocity, snr, prob_C]).T
-    if not os.path.exists(f'{config.result_path}/qc_plot'):
-        os.makedirs(f'{config.result_path}/qc_plot')
-    fig_name = '{}/qc_plot/{}'.format(config.result_path, file_name)
-    plot_test(batch_group_image[0], group_velocity, batch_phase_image[0], phase_velocity, fig_name)
+    # sparse plotting: only plot a fraction of files (config.random_plot_ratio)
+    # to avoid the per-file qc figure dominating the runtime.
+    if random.random() <= config.random_plot_ratio:
+        if not os.path.exists(f'{config.result_path}/qc_plot'):
+            os.makedirs(f'{config.result_path}/qc_plot')
+        fig_name = '{}/qc_plot/{}'.format(config.result_path, file_name)
+        plot_test(batch_group_image[0], group_velocity, batch_phase_image[0], phase_velocity, fig_name)
     if not os.path.exists(f'{config.result_path}/qc_result'):
         os.makedirs(f'{config.result_path}/qc_result')
     disp_name = '{}/qc_result/GDisp.{}.txt'.format(config.result_path, file_name)
