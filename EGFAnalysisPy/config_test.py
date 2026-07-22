@@ -12,7 +12,7 @@ class Config(object):
         StartV: Start velocity of the analysis.
         EndV: End velocity of the analysis.
         DeltaV: Velocity interval of the analysis (fixed at 0.005 km/s).
-        GreenFcnObjectsType: the type of Green’s function objects. 
+        GreenFcnObjectsType: the type of Green's function objects. 
                              (e.g., A_to_B, B_to_A, A_add_B).
         WinAlpha: the proportion of cosine part to the whole window. 
         NoiseTime: the time of noise sampling
@@ -22,7 +22,7 @@ class Config(object):
         MaxFilterLengthLog : base 2 logarithm of maximum value of fft point when using freq. domain, too high value will cause slow calculation
     Path:
         root: The path of EGFAnalysisTimeFreq.
-        waveform_path： CF/EGF file path.
+        waveform_path: CF/EGF file path.
         result_path: Dispersion path.
     """
 

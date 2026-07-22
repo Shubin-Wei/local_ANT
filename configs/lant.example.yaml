@@ -1,0 +1,64 @@
+# =====================================================================
+# LANT pipeline configuration
+#   1D dispersion inversion (evodcinv) per station pair -> pseudo-2D section
+#   used by: scripts/lant_invert.py  and  scripts/lant_stitch.py
+# Copy this file, edit the paths and the depth/velocity ranges for your own
+# survey; no parameters are hard-coded in the scripts.
+# =====================================================================
+
+paths:
+  # EGFAnalysisPy output (contains CDisp.<pair>.txt / GDisp.<pair>.txt)
+  input_dir:  ../TestData/DisperPicker/qc_result
+  # station coordinates/elevations used to shape the top of section.png
+  station_csv: ../TestData/station.csv
+  # where models/, figs/, summary.txt and section.png are written
+  output_dir: ../TestData/Inversion
+
+inversion:
+  curve_type: phase     # phase (CDisp) | group (GDisp) | both (joint)
+  workers: 16           # parallel worker processes
+  min_points: 8         # skip a curve with fewer valid (vel>0) points
+  plot: true            # save the per-pair figure
+
+  # Output depth grid (the best model is resampled onto this for stitching).
+  # Set zmax from the depth your data actually constrains: surface-wave depth
+  # sensitivity is roughly wavelength/3 = c*Tmax/3. Parameterizing much deeper
+  # than that produces unconstrained values, not extra resolution.
+  # Example: Tmax ~0.5 s and c ~2.2 km/s gives ~0.4 km, so zmax ~0.6 km.
+  zmax: 0.6            # max depth (km)
+  dz: 0.01             # depth step (km)
+
+  # Layered search space (defines the inversion depth & velocity bounds).
+  # One entry per layer; thickness in km, vs in km/s, given as [min, max].
+  # The sum of the thickness maxima should be close to zmax.
+  layers:
+    - {thickness: [0.01, 0.04], vs: [0.3, 2.5]}
+    - {thickness: [0.02, 0.08], vs: [0.5, 3.0]}
+    - {thickness: [0.03, 0.12], vs: [0.8, 3.2]}
+    - {thickness: [0.04, 0.18], vs: [1.0, 3.5]}
+    - {thickness: [0.05, 0.25], vs: [1.2, 3.8]}
+
+  optimizer:            # evodcinv CPSO settings
+    popsize: 20
+    maxiter: 150
+    maxrun: 1
+
+stitch:
+  topography: true      # shift section columns so the top follows local terrain
+  title: "S-wave Velocity Section"
+  show_stations: true   # station triangles along the terrain surface
+  depth_guides: []      # optional depth-below-ground guide lines (km)
+  vertical_exaggeration: 2.0
+  dpi: 300
+  save_pdf: true
+  misfit_max: 0.2       # drop models with misfit above this (null = keep all)
+  nbins: 120            # number of along-line distance bins
+  smooth: 1.2           # gaussian smoothing sigma in cells (0 = off)
+  contour_step: 0.25    # velocity contour interval km/s (0 = off)
+  cmap: jet_r           # low-Vs warm / high-Vs cool color scheme
+  vmin: null            # auto, 2nd percentile
+  vmax: 4
+  taper_slope: 0.1      # mask the section into an inverted trapezoid (wide top,
+                        # narrow bottom): trim this many km from each side per km
+                        # of depth, since edges get less reliable with depth.
+                        # 0 = keep the full rectangle.

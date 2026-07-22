@@ -23,7 +23,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 class Pick(object):
     """ Pick the dispersion curves.
 
-    DisperPicker configuration：
+    DisperPicker configuration:
     
     Abbreviations:
         G: group velocity
@@ -94,8 +94,8 @@ class Pick(object):
             os.makedirs('{}/plot'.format(self.result_path))
 
         # Picking thresholds
-        self.ref_T = None
-        self.ref_T2 = [] 
+        self.ref_T = self.config.ref_T
+        self.ref_T2 = self.config.ref_T2
         self.confidence_G = self.config.confidence_G 
         self.mean_confidence_C = self.config.mean_confidence_C
         self.confidence_C = self.config.confidence_C
@@ -495,7 +495,7 @@ class Pick(object):
 
         Args:
             map_C: Phase velocity probability image.
-            start_T，end_T: Use these columns to calculate the average probability of C curves.
+            start_T,end_T: Use these columns to calculate the average probability of C curves.
             disp_C: Phase velocity disprsion image.
             name: Figure name.
         
