@@ -190,8 +190,9 @@ gmt begin "$OUTPUT_PREFIX" "$FORMATS"
           MAP_TICK_LENGTH_SECONDARY 0c/0c \
           MAP_ANNOT_OFFSET_PRIMARY 0.06c
 
-  # create a single shared cpt inside the session
-  gmt makecpt -C"$CPT_NAME" -D -T"$CB_RANGE" -H > "$TMP_DIR/shared.cpt"
+  # Create one continuous shared CPT. Without -Z, GMT discretizes the palette
+  # at the -T interval and produces visible color bands in smooth models.
+  gmt makecpt -C"$CPT_NAME" -D -Z -T"$CB_RANGE" -H > "$TMP_DIR/shared.cpt"
 
   gmt subplot begin "${NROWS}x${NCOLS}" \
     -Fs"${SUBPLOT_W}/${SUBPLOT_H}" \
