@@ -1,0 +1,13 @@
+# Configuration of the synthetic example (examples/synthetic/make_synthetic.py).
+# Only the three paths are needed for real data.  The other lines (a) lower thresholds meant for >= 50 stations,
+# because this example has only 16 stations (120 pairs) and 3 days, and (b) make the inversion part fast enough
+# for a first test (periods >= 0.2 s, no extra depth nodes, 6 iterations, one checkerboard and one control).
+project: {name: synthetic, output_dir: output}
+data: {raw_dir: data, station_file: stations.txt}
+stack: {station_day_qc: {min_partners: 5}}
+notch: {raw_nsta: 8, raw_ndays: 3}
+reference: {pass2_min_pairs: 20, fj_threads: 4}
+dispersion: {njack: 3, nproc: 4}
+export: {tmin_s: 0.2}
+inversion: {median_min_pairs: 20, fine_step_km: 0, iterations: 6, threads: 4, njobs: 3}
+checks: {checkerboards: [{name: cb_3km, cell_km: [3.0, 3.0]}], vertical: [], controls: [start_x1.05], iteration_residuals: false}

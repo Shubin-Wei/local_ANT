@@ -1,48 +1,27 @@
+# third-party programs built by tools/install_external.sh
+/external/
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.egg-info/
-dist/
 build/
-*.egg
-
-# Environments
-.env
-.venv
-env/
-venv/
-
-# IDE
+dist/
+# never commit data, results or personal configurations: keep them outside the repository
+*.mseed
+*.ms
+*.miniseed
+*.sac
+*.SAC
+*.h5
+*.nc
+/output*/
+/my_*.yaml
+/examples/synthetic/data/
+/examples/synthetic/output/
+# editors, OS
 .vscode/
 .idea/
 *.swp
-*.swo
-*~
-
-# OS
 .DS_Store
-Thumbs.db
-
-# Data (too large for GitHub — download or generate per workflow)
-TestData/
-
-# DisperPicker neural-net datasets (~190 MB — download or regenerate per workflow)
-EGFAnalysisPy/DisperPicker/data/TrainingData/
-EGFAnalysisPy/DisperPicker/data/ValidationData/
-
-# DSurfTomo build artifacts
-DSurfTomo/bin/
-DSurfTomo/src/*.o
-DSurfTomo/src/*.mod
-
-# EGFAnalysisPy runtime outputs (Step 5)
-EGFAnalysisPy/DisperPicker/result/qc_result/
-EGFAnalysisPy/DisperPicker/result/qc_plot/
-EGFAnalysisPy/DisperPicker/result/test_result/
-EGFAnalysisPy/DisperPicker/result/validation_result/
-EGFAnalysisPy/DisperPicker/result/*.png
-EGFAnalysisPy/EGFAnalysisTimeFreq.log
-
-# Claude Code
-.claude/
+/examples/synthetic/stations.txt
+/examples/synthetic/true_*.txt

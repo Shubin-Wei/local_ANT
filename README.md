@@ -1,222 +1,102 @@
-<h1 align="center">local_ANT</h1>
+# local_ANT
 
-<p align="center">
-  Ambient Noise Surface Wave Tomography — Full Pipeline from Local miniSEED Data
-</p>
+**密集台阵高频背景噪声面波成像：从任意组织、任意格式的原始记录到三维横波速度模型**
+**High-frequency ambient-noise surface-wave tomography for dense (nodal) arrays: from raw records of any layout and format to a 3-D shear-wave velocity model**
 
-<p align="center">
-  <a href="#中文">🇨🇳 中文</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#english">🇬🇧 English</a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/python-3.10%20%7C%203.6-blue" alt="Python">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-</p>
+[中文](#中文) | [English](#english)
 
 ---
 
-<!-- ==================== 中文 ==================== -->
-
-<a name="中文"></a>
-
 ## 中文
 
-<p align="right"><a href="#english">Switch to English ↗</a></p>
+### 能做什么
 
-### 简介
+对密集台阵（节点仪或宽频带，台间距几百米到十几千米）的垂直分量连续记录，完成 0.5–10 Hz（0.1–2 s）Rayleigh 波相速度测量和浅部（约 0–3 km）三维 Vs 反演。面状台阵直接三维反演，线状台阵沿测线反演。方法和参数来自密集节点台阵（面阵和测线）的实际研究，每个处理步骤都有文献或开源程序依据，没有文献取值的参数在文档里如实标出。
 
-本项目实现了从原始 miniSEED 地震数据到横波速度模型的 **完整背景噪声面波层析成像流程**，支持面状台阵的三维层析反演和测线型台阵的伪二维剖面反演两条路径。
+| 步骤 | 内容 |
+|---|---|
+| clean | 原始数据识别与清洗：任意目录结构和文件名，miniSEED、SAC、GSE2 等 ObsPy 能读的格式；记录头读台站和时间，自动认垂直分量、识别台站表并对应名字、由数据推出参数；统一采样网格、去重复、处理重叠，写出统一的日文件 |
+| cc | 逐小时互相干（1 分钟窗、谱归一），去 1 s 授时脉冲干扰、剔除瞬态窗 |
+| stack | 叠加；面阵按台站日、线状按台站小时剔除异常时段 |
+| notch | 按规则找持续工业谱线并陷波 |
+| reference | 第一遍参考曲线（本台阵 F-J 谱，或借用其他台阵） |
+| disp1 / disp2 | 两遍两台法频散测量：相速度、群速度，刀切误差，逐频点质控，按实测周期导出、每对只留一段 |
+| inversion / run | 平均曲线、深度节点、一维起始模型，DSurfTomo（或并行版 pDSurfTomo）三维反演 |
+| evaluate | 正演残差、水平和垂向棋盘、正则化和起始模型对照 |
+| figures | 台站图、互相关、频散、起始模型、深度切片、剖面、棋盘、残差（地图和剖面用 GMT） |
 
-整个流程集成了 3 个第三方软件包（NoisePy、EGFAnalysisPy、DSurfTomo），并提供了一组辅助脚本将它们串联起来，形成端到端的自动化工作流。其中 **EGFAnalysisPy** 是 EGFAnalysisTimeFreq 的纯 Python 重写，并内置了基于深度学习的频散曲线提取工具 DisperPicker（含预训练模型），在一步内完成频散分析与曲线拾取，无需 MATLAB。
+另有一套 **AI 协作流程**（[docs/ai_workflow.md](docs/ai_workflow.md)、[AGENTS.md](AGENTS.md)）：在仓库里启动 Claude Code、Codex 等 AI 工具，把数据位置告诉它，它会按规则检查数据、由数据推出参数、逐步运行和检查，必须由你决定的事先问你，全部记录留在你的输出目录。
 
-### 流程概览
+### 安装
 
+```bash
+git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
+conda env create -f environment.yml && conda activate lant
+pip install -e .
+bash tools/install_external.sh       # 下载并编译 DSurfTomo、pDSurfTomo、CC-FJpy（固定版本）
+lant check                           # 检查安装
 ```
-原始 miniSEED 数据
-  │
-  ▼  Step 1 — 数据清洗（clean_mseed_for_noisepy.py）
-  ▼  Step 2 — 准备台站文件（station.csv）
-  ▼  Step 3 — 互相关计算与叠加（local_cc_workflow.py → NoisePy）
-  ▼  Step 4 — 导出 EGF 输入数据（export_egfanalysis_input.py）
-  ▼  Step 5 — 频散分析 + 曲线提取（EGFAnalysisPy/run.py 或 run_parallel.py）
-  │
-  ├──▼  Step 6A — 面波层析反演（DSurfTomo）        → 三维横波速度模型
-  │       面状台阵，射线覆盖能形成二维网格
-  │
-  └──▼  Step 6B — 1D 反演 + 剖面拼接（lant_invert.py / lant_stitch.py）
-          测线型台阵、浅层结构              → 伪二维横波速度剖面
-```
-
-Step 6 的两条路径按台阵形态二选一：测线型台阵的射线几乎共线，无法约束二维网格，DSurfTomo 不适用，此时走 Step 6B。
 
 ### 快速开始
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/your-username/local_ANT.git
-cd local_ANT
+# 1. 先跑合成算例（已知答案）
+python examples/synthetic/make_synthetic.py
+cd examples/synthetic && lant run all -c synthetic.yaml && cd ../..
 
-# 2. 安装环境（详见 docs/INSTALL.md）
-conda create -n noisepy -y python=3.10 pip
-conda activate noisepy
-pip install noisepy-seis obspy numpy pandas scipy matplotlib pyyaml datetimerange h5py
-
-# 3. 编译 DSurfTomo
-cd DSurfTomo && python configure && cd ..
-
-# 4. 按照 docs/workflow.md 逐步执行
+# 2. 用自己的数据：只填原始数据目录、台站文件、输出目录三个路径
+lant init surface -o my_project.yaml
+lant validate -c my_project.yaml
+lant run all -c my_project.yaml            # 或逐步：lant run clean -c ...，每步后 lant inspect <步骤>
 ```
 
-### 项目结构
-
-```
-local_ANT/
-├── scripts/                 # 辅助脚本（连接各软件包）
-│   ├── clean_mseed_for_noisepy.py
-│   ├── plot_station_distribution_all.py
-│   ├── local_cc_workflow.py
-│   ├── stack_visualization.py
-│   ├── plot_stack_panels.py
-│   ├── export_egfanalysis_input.py
-│   ├── lant_invert.py       # Step 6B：逐台站对 1D 反演
-│   └── lant_stitch.py       # Step 6B：拼接为伪二维剖面
-├── configs/                 # 配置文件示例
-├── docs/                    # 文档
-│   ├── workflow.md          # 完整流程（中文）
-│   ├── workflow_en.md       # 完整流程（English）
-│   ├── INSTALL.md           # 安装指南（中文）
-│   └── INSTALL_en.md        # 安装指南（English）
-├── EGFAnalysisPy/           # 频散分析 + CNN 曲线提取（内置 DisperPicker）
-│   ├── run.py               # 一步完成频散分析与拾取
-│   ├── run_parallel.py      # 同上，多进程并行版
-│   └── DisperPicker/        # 内置 DisperPicker 及预训练模型（saver/）
-├── DSurfTomo/               # Step 6A：面波层析反演
-│   └── scripts/             # 反演数据准备与绘图
-└── LICENSE
-```
+**只需要指出原始数据目录和台站文件**，其余由程序识别：原始数据的目录结构、文件名、格式（miniSEED、SAC 等可混用）、垂直分量、台站名与台站表的对应、采样率、野外切文件的时区都从数据里读出；台站表的写法（有无表头、中英文列名、分隔符、Excel、度分秒）自动识别；台阵类型（面状 / 线状）、频带、时延、网格、棋盘等按书面规则由数据推出，每个值和依据记在输出目录的 `records/auto_parameters.json`，写进配置的值优先。结果、图和全部记录都在 `output_dir` 里。
 
 ### 文档
 
-| 文档 | 说明 |
-|------|------|
-| [安装指南](docs/INSTALL.md) | 从零安装全部环境 |
-| [完整流程](docs/workflow.md) | 6 个步骤的详细操作说明 |
+| 文档 | 内容 |
+|---|---|
+| [docs/tutorial.md](docs/tutorial.md) | 详细教程：安装、数据准备、配置、每一步做什么、输出、怎样判断正常、绘图、线状台阵、常见问题 |
+| [docs/parameters.md](docs/parameters.md) | 全部参数：含义、单位、默认值、依据、什么时候改、设置不当的后果 |
+| [docs/ai_workflow.md](docs/ai_workflow.md) | 让 AI 协助完成全流程：怎样开始、AI 能自己定什么、必须问什么、各阶段判据 |
+| [docs/history.md](docs/history.md) | 本仓库的整理记录 |
 
 ### 引用
 
-本项目集成了以下开源软件包：
+方法与参数见 [docs/parameters.md](docs/parameters.md) 的参考文献。使用的开源程序：DSurfTomo（Fang et al. 2015, GJI 201:1251）、pDSurfTomo（Zhu et al. 2026, arXiv:2604.11920）、CC-FJpy（Li et al. 2021, SRL 92:3179）、ObsPy、GMT。
 
-> **NoisePy** — Jiang, C., & Denolle, M. A. (2020). NoisePy: A New High-Performance Python Tool for Ambient-Noise Seismology. *Seismological Research Letters*, 91(3), 1853–1866. [DOI](https://doi.org/10.1785/0220190364)
+### 许可
 
-> **EGFAnalysisPy** (基于 EGFAnalysisTimeFreq 的 Python 重写) — Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. [DOI](https://doi.org/10.1111/j.1365-246X.2006.03028.x)
-
-> **DisperPicker** — Yang, S., Zhang, H., Gu, N., et al. (2022). Automatically Extracting Surface Wave Group and Phase Velocity Dispersion Curves from Dispersion Spectrograms Using a Convolutional Neural Network. *Seismological Research Letters*. [DOI](https://doi.org/10.1785/0220210280)
-
-> **DSurfTomo** — Fang, H., Yao, H., Zhang, H., et al. (2015). Direct inversion of surface wave dispersion for three-dimensional shallow crustal structure based on ray tracing: methodology and application. *Geophysical Journal International*, 201(3), 1251–1263. [DOI](https://doi.org/10.1093/gji/ggv069)
+MIT（见 [LICENSE](LICENSE)）。第三方程序由安装脚本从各自的官方仓库下载，保留各自的许可（DSurfTomo MIT、pDSurfTomo GPL-3、CC-FJpy LGPL-3），不包含在本仓库中。
 
 ---
-
-<!-- ==================== English ==================== -->
-
-<a name="english"></a>
 
 ## English
 
-<p align="right"><a href="#中文">切换到中文 ↗</a></p>
+### What it does
 
-### Overview
+Rayleigh-wave phase velocities at 0.5–10 Hz (0.1–2 s) and shallow (about 0–3 km) 3-D Vs from continuous vertical-component records of dense arrays (nodal or broadband, station spacing from a few hundred metres to a few kilometres): direct 3-D inversion for areal arrays, narrow-strip inversion along linear arrays. The method and its parameters come from a study of a dense nodal array (an areal array and lines); every step is based on published methods or open-source programs, and parameters without a published value are marked as such in the documentation.
 
-This project implements a **complete ambient noise surface wave tomography pipeline** — from raw miniSEED seismic data to a shear-wave velocity model, supporting both 3D tomographic inversion for areal arrays and pseudo-2D section inversion for linear arrays.
+You only point to the raw-data directory and the station file: file layout and names, formats (miniSEED, SAC, ... mixed), vertical component, station-name matching, sampling rate, field time zone, the form of the station table, array type, frequency band, lag window, grid and checkerboard sizes are recognised or derived from the data by written rules (recorded with their reasons in the output directory).
 
-The workflow integrates 3 third-party packages (NoisePy, EGFAnalysisPy, DSurfTomo) and provides a set of helper scripts that glue them together into an end-to-end automated workflow. **EGFAnalysisPy** is a pure-Python rewrite of EGFAnalysisTimeFreq with the deep-learning picker DisperPicker (and its pretrained model) bundled in, performing dispersion analysis and curve extraction in a single step — no MATLAB required.
+Steps: **clean** (raw data of any layout and any ObsPy-readable format → recognition, name matching, derived parameters, a uniform day archive), **cc** (hourly cross-coherence), **stack** (station-day / station-hour screening), **notch** (spectral lines by rule), **reference** (F-J curve of the array, or a borrowed one), **disp1/disp2** (two-pass two-station phase and group velocities with jackknife errors and per-frequency QC, exported on the measured periods, one segment per pair), **inversion/run** (average curve, depth nodes, 1-D starting model, DSurfTomo or pDSurfTomo), **evaluate** (forward residuals, horizontal and vertical checkerboards, regularisation and starting-model controls), **figures** (GMT maps and sections, matplotlib figures).
 
-### Pipeline
+An **AI-assisted workflow** ([docs/ai_workflow.md](docs/ai_workflow.md), [AGENTS.md](AGENTS.md)) lets an AI coding assistant (Claude Code, Codex, ...) run the whole chain on your data: it derives parameters from the data by written rules, checks every step, asks you where a decision is yours, and keeps every record in your output directory.
 
-```
-Raw miniSEED data
-  │
-  ▼  Step 1 — Data cleaning (clean_mseed_for_noisepy.py)
-  ▼  Step 2 — Prepare station file (station.csv)
-  ▼  Step 3 — Cross-correlation & stacking (local_cc_workflow.py → NoisePy)
-  ▼  Step 4 — Export EGF input (export_egfanalysis_input.py)
-  ▼  Step 5 — Dispersion analysis + curve extraction (EGFAnalysisPy/run.py or run_parallel.py)
-  │
-  ├──▼  Step 6A — Surface wave tomography (DSurfTomo)      → 3D shear-wave velocity model
-  │       Areal array whose ray coverage constrains a 2D grid
-  │
-  └──▼  Step 6B — 1D inversion + stitching (lant_invert.py / lant_stitch.py)
-          Linear array, shallow structure          → pseudo-2D velocity section
-```
-
-Choose between the two Step 6 paths by array geometry: in a linear array the ray paths are nearly collinear and cannot constrain a 2D grid, so DSurfTomo does not apply — use Step 6B instead.
-
-### Quick Start
+### Install and quick start
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/local_ANT.git
-cd local_ANT
-
-# 2. Set up the environment (see docs/INSTALL_en.md for details)
-conda create -n noisepy -y python=3.10 pip
-conda activate noisepy
-pip install noisepy-seis obspy numpy pandas scipy matplotlib pyyaml datetimerange h5py
-
-# 3. Compile DSurfTomo
-cd DSurfTomo && python configure && cd ..
-
-# 4. Follow docs/workflow_en.md step by step
+git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
+conda env create -f environment.yml && conda activate lant && pip install -e .
+bash tools/install_external.sh            # DSurfTomo, pDSurfTomo, CC-FJpy at fixed versions
+lant check
+python examples/synthetic/make_synthetic.py && (cd examples/synthetic && lant run all -c synthetic.yaml)
+lant init surface -o my_project.yaml      # only output_dir, raw_dir and station_file are needed
+lant run all -c my_project.yaml
 ```
 
-### Project Structure
+The detailed documentation ([tutorial](docs/tutorial.md), [parameters](docs/parameters.md), [AI workflow](docs/ai_workflow.md)) is in Chinese; code, configuration keys and figure labels are in English.
 
-```
-local_ANT/
-├── scripts/                 # Helper scripts (glue between packages)
-│   ├── clean_mseed_for_noisepy.py
-│   ├── plot_station_distribution_all.py
-│   ├── local_cc_workflow.py
-│   ├── stack_visualization.py
-│   ├── plot_stack_panels.py
-│   ├── export_egfanalysis_input.py
-│   ├── lant_invert.py       # Step 6B: per-pair 1D inversion
-│   └── lant_stitch.py       # Step 6B: stitch into a pseudo-2D section
-├── configs/                 # Example configuration files
-├── docs/                    # Documentation
-│   ├── workflow.md          # Full workflow (Chinese)
-│   ├── workflow_en.md       # Full workflow (English)
-│   ├── INSTALL.md           # Installation guide (Chinese)
-│   └── INSTALL_en.md        # Installation guide (English)
-├── EGFAnalysisPy/           # Dispersion analysis + CNN picker (DisperPicker bundled)
-│   ├── run.py               # One-step dispersion analysis & picking
-│   ├── run_parallel.py      # Same work, multiprocessing version
-│   └── DisperPicker/        # Bundled DisperPicker with pretrained model (saver/)
-├── DSurfTomo/               # Step 6A: Surface wave tomography inversion
-│   └── scripts/             # Inversion data preparation & plotting
-└── LICENSE
-```
+### License
 
-### Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Installation Guide](docs/INSTALL_en.md) | Install all dependencies from scratch |
-| [Full Workflow](docs/workflow_en.md) | Detailed step-by-step instructions |
-
-### Citations
-
-This project integrates the following open-source packages:
-
-> **NoisePy** — Jiang, C., & Denolle, M. A. (2020). NoisePy: A New High-Performance Python Tool for Ambient-Noise Seismology. *Seismological Research Letters*, 91(3), 1853–1866. [DOI](https://doi.org/10.1785/0220190364)
-
-> **EGFAnalysisPy** (基于 EGFAnalysisTimeFreq 的 Python 重写) — Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis—I. Phase velocity maps. *Geophysical Journal International*, 166(2), 732–744. [DOI](https://doi.org/10.1111/j.1365-246X.2006.03028.x)
-
-> **DisperPicker** — Yang, S., Zhang, H., Gu, N., et al. (2022). Automatically Extracting Surface Wave Group and Phase Velocity Dispersion Curves from Dispersion Spectrograms Using a Convolutional Neural Network. *Seismological Research Letters*. [DOI](https://doi.org/10.1785/0220210280)
-
-> **DSurfTomo** — Fang, H., Yao, H., Zhang, H., et al. (2015). Direct inversion of surface wave dispersion for three-dimensional shallow crustal structure based on ray tracing: methodology and application. *Geophysical Journal International*, 201(3), 1251–1263. [DOI](https://doi.org/10.1093/gji/ggv069)
-
----
-
-## License
-
-This project is licensed under the [MIT License](LICENSE). Third-party components (DSurfTomo, EGFAnalysisPy, and the DisperPicker bundled within it) retain their original licenses.
+MIT. Third-party programs are downloaded from their own repositories by `tools/install_external.sh` and keep their licenses (DSurfTomo MIT, pDSurfTomo GPL-3, CC-FJpy LGPL-3); none of them is included here.

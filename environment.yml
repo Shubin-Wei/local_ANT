@@ -1,0 +1,22 @@
+# conda env create -f environment.yml && conda activate lant && pip install -e .
+name: lant
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy
+  - scipy
+  - h5py
+  - obspy
+  - matplotlib
+  - pyyaml
+  - openpyxl          # Excel station tables
+  - gmt>=6.1          # maps and sections
+  - ghostscript
+  - fftw              # CC-FJpy (F-J reference curve)
+  - cython
+  - compilers         # gfortran, gcc, g++ for DSurfTomo, pDSurfTomo, CC-FJpy
+  - make
+  - git
+  - pytest
+  - pip

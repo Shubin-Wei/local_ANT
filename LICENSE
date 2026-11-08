@@ -22,13 +22,11 @@ SOFTWARE.
 
 ---
 
-Third-party components included in this repository are distributed under
-their own licenses:
+No third-party code is included in this repository.  tools/install_external.sh downloads and builds, from their
+own repositories, programs that keep their own licenses:
 
-- DSurfTomo: MIT License (see DSurfTomo/Licence.txt)
-  Copyright (c) 2017 Hongjian Fang
+- DSurfTomo (https://github.com/HongjianFang/DSurfTomo): MIT License, Copyright (c) 2017 Hongjian Fang
+- pDSurfTomo (https://github.com/zshang825/pDSurfTomo): GNU General Public License v3
+- CC-FJpy (https://github.com/ColinLii/CC-FJpy): GNU Lesser General Public License v3
 
-- DisperPicker: See DisperPicker/LICENSE
-  Copyright (c) 2020 Shaobo Yang
-
-- EGFAnalysisTimeFreq: Distributed by Huajian Yao (USTC)
+fortran/fwd1d.f90 is linked against the DSurfTomo sources at build time.

@@ -1,0 +1,24 @@
+# local_ANT project configuration for one linear array (one line per project).
+# As for areal arrays only the three paths are needed; a line is recognised from the station layout
+# (array_type: line is written here only to make the intention explicit).  The settings that differ for lines are
+# listed in docs/parameters.md, section 12.
+
+project:
+  array_type: line
+  output_dir: ./output_line1
+
+data:
+  raw_dir: /path/to/line1_raw       # the records of this line only (any layout and format)
+  station_file: /path/to/line1_stations.csv
+
+# ---- optional ---------------------------------------------------------------------------------------------------
+# A line has a narrow F-J band and the noise is often off-line: if an areal array (or another line) was recorded in
+# the same area, borrowing its final reference curve and its 1-D starting model is usually better
+# (docs/tutorial.md, section 5):
+# reference:
+#   source: file
+#   file: /path/to/surface_output/05_reference/reference.npz
+# inversion:
+#   start_model:
+#     source: file
+#     file: /path/to/surface_output/07_inversion/vs1d.txt

@@ -1,0 +1,16 @@
+diff --git a/src_pDSurfTomo/CalSurfG_parallel.f90 b/src_pDSurfTomo/CalSurfG_parallel.f90
+index 64f231b..6f1d1c5 100644
+--- a/src_pDSurfTomo/CalSurfG_parallel.f90
++++ b/src_pDSurfTomo/CalSurfG_parallel.f90
+@@ -1424,7 +1424,10 @@ subroutine CalSurfG_parallel(nx, ny, nz, nparpi, vels, iw, rw, col, dsurf, &
+             srcnum_list(loop_total_Num) = srcnum
+ 
+             all_count1(loop_total_Num) = nrc1(srcnum, knumi)
+-            all_row_size(loop_total_Num) = NINT(nrc1(srcnum, knumi) * nparpi * 0.25)
++            ! local_ANT: initial room per travel time 0.05 * nparpi instead of 0.25 * nparpi (rows of a dense-array grid hold
++            ! at most 4 % of nparpi; 0.25 took 0.21 MB per travel time); a fuller row is enlarged by
++            ! jagged_array_set_value and only the filled entries are copied out, so the results do not change
++            all_row_size(loop_total_Num) = NINT(nrc1(srcnum, knumi) * nparpi * 0.05)
+             single_G_row_size(loop_total_Num) = nrc1(srcnum, knumi)
+         end do
+     end do
