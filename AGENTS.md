@@ -1,22 +1,27 @@
-# AGENTS.md — 给 AI 助手的说明
+# AGENTS.md — instructions for AI assistants
 
-本仓库是密集台阵高频背景噪声面波成像的完整流程（原始数据 → 清洗 → 逐小时互相干 → 筛选 → 陷波 → 参考曲线 → 两台法相速度与质控 → DSurfTomo 三维 Vs → 检验和出图），命令行入口是 `lant`。
+[中文](AGENTS.zh.md) | English
 
-## 使用者让你处理数据时
+This repository is a complete workflow for high-frequency ambient-noise surface-wave tomography with dense arrays (raw records → cleaning → hourly cross-coherence → stack and station diagnosis → reference curve → two-station phase velocities with quality control → 3-D Vs with DSurfTomo → checks and figures). The command line is `lant`.
 
-严格按 [docs/ai_workflow.md](docs/ai_workflow.md) 做。要点：
+## When the user asks you to process data
 
-1. 先 `lant check`；缺的程序按提示安装（`bash tools/install_external.sh`）。
-2. 用 `lant init` 建配置，所有结果写到使用者指定的输出目录；**不在仓库里写结果，不改原始数据，不改 `lant/` 源码**。
-3. 逐步运行（`lant run <步骤>`），每步后 `lant inspect <步骤>`、看列出的图，按 ai_workflow.md 第 4 节的判据检查。
-4. 参数按 ai_workflow.md 的规则由数据推出，依据写进 `<输出目录>/records/decisions.md`；第 3 节“必须确认”的事项先问使用者。
-5. 不为了多出点或结果好看而放宽质控、反选参数；汇报只给数字和图，注明没有验证或受限的部分。
+Follow [docs/ai_workflow.md](docs/ai_workflow.md). In short:
 
-参数的含义和依据：[docs/parameters.md](docs/parameters.md)；操作细节：[docs/tutorial.md](docs/tutorial.md)。
+1. `lant check` first; install what it lists as missing (`bash tools/install_external.sh`).
+2. Start with `lant run all --raw DIR --stations FILE --out DIR` (or `lant init -o CONFIG` and `lant run all -c CONFIG`). All results go to the user's output directory. **Do not write results into the repository, do not change the raw data, do not edit `lant/`.**
+3. After every stop run `lant status -c CONFIG --json`: it gives the state of each step, the reason, and the next command. Read `OUT/records/steps/<step>.md` and the files it lists before going on.
+4. Where the chain stops for a judgement, show the user the items under "FOR YOU TO JUDGE" with the figures, and **let the user decide: never run `lant confirm` on your own.** Record the user's decision and reason in `OUT/records/decisions.md`.
+5. Do not loosen quality control or tune parameters to get more points or a nicer picture. Report numbers and figures, and say what was not checked or is limited.
 
-## 修改本项目代码时
+Meaning and basis of every parameter: [docs/parameters.md](docs/parameters.md). Details of every step: [docs/tutorial.md](docs/tutorial.md); principles and sources: [docs/methods.md](docs/methods.md); output files: [docs/outputs.md](docs/outputs.md); known problems and remedies: [docs/troubleshooting.md](docs/troubleshooting.md).
 
-- 结构：`lant/`（`clean` `cc` `stack` `notch` `reference` `disp` `qc` `export` 按步骤一个模块，`pipeline.py` 串起来，`inversion/`、`plotting/`），`config/`（配置模板），`docs/`，`tools/install_external.sh`（第三方程序），`examples/synthetic/`（合成算例），`tests/`。
-- 默认参数只在 `lant/config.py`；改了默认值或方法要同步 `docs/parameters.md`、`docs/tutorial.md`。
-- 代码、配置、图中文字用英文；文档用中文。
-- 改动后运行 `python -m pytest tests`，并用合成算例（`examples/synthetic`）跑通受影响的步骤。
+## When you change the code of this project
+
+- Layout: `lant/` (one module per step: `clean` `cc` `stack` `reference` `disp` `qc` `export`; `pipeline.py` runs them; `manifest.py` keeps the record of what stands; `auto.py` the rules; `confirm.py` the judgements; `report.py` the step reports; `params.py` the meaning and basis of every key; `response.py`, `stations.py` (station tables), `station_match.py` (records to stations), `pulse.py` (1-s timing pulse), `fj.py` (F-J spectrum and ridge), `inversion/`, `plotting/`), `config/example.yaml` (written by `lant init`), `docs/`, `tools/install_external.sh` (third-party programs), `examples/synthetic/` (data with a known answer), `tests/` (one file per module, helpers in `tests/util.py`).
+- Defaults live only in `lant/config.py`; every key needs an entry in `lant/params.py` (a test checks it). After changing a default or a method, update `docs/parameters.md` (`python tools/make_parameter_doc.py`), `docs/tutorial.md` and `docs/methods.md` in both languages, and add the change to `docs/history.md`.
+- Code, configuration and text in figures are English. Every document exists in English (`x.md`) and Chinese (`x.zh.md`); keep the two in step, section by section.
+- One clear responsibility per module, with a name that says it. About 500 lines is the point to check whether a module holds several (split it when it does; tables of defaults are exempt); below 200 lines do not split just to have small files.
+- Run `python -m pytest tests`, and the synthetic example for the steps you touched.
+- DSurfTomo and pDSurfTomo are not modified (only the memory-reserve patch for pDSurfTomo in the install script).
+- A method or a default needs a source: literature, theory, or an explicit label "empirical". Do not invent thresholds.

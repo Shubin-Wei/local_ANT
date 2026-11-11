@@ -1,102 +1,80 @@
 # local_ANT
 
-**密集台阵高频背景噪声面波成像：从任意组织、任意格式的原始记录到三维横波速度模型**
-**High-frequency ambient-noise surface-wave tomography for dense (nodal) arrays: from raw records of any layout and format to a 3-D shear-wave velocity model**
+[中文](README.zh.md) | English
 
-[中文](#中文) | [English](#english)
+High-frequency ambient-noise surface-wave tomography for dense (nodal) arrays, from raw records to a 3-D shear-velocity model. One command line, `lant`; one configuration file; every step writes a report that says what it did, with which values, and what is left for you to judge.
 
----
+```
+raw records ─ clean ─ cc ─ stack ─ reference ─ disp ─ inversion ─ run ─ evaluate ─ figures
+```
 
-## 中文
+| Step | What it does | Method |
+|---|---|---|
+| `clean` | reads any directory layout and any format ObsPy reads, matches the station table to the records, cuts processing days, removes instrument responses when response files are given, tests for a 1-s timing pulse | Bensen et al. (2007); Takagi et al. (2015) |
+| `cc` | hourly cross-coherence of the vertical components | Xu et al. (2021) |
+| `stack` | stack and sub-stacks; station diagnosis (leave-one-out correlation and time shift) | Stehly et al. (2007); Sens-Schönfelder (2008) |
+| `reference` | reference phase-velocity curve of the array from its frequency-Bessel spectrum | Wang et al. (2019) |
+| `disp` | two-station phase velocities with a phase-matched filter, jackknife errors, quality control | Yao et al. (2006); Levshin & Ritzwoller (2001); Bensen et al. (2007) |
+| `inversion`, `run` | 1-D starting model, direct inversion of the travel times for 3-D Vs with DSurfTomo (or pDSurfTomo) | Fang et al. (2015) |
+| `evaluate`, `figures` | residuals, checkerboard recovery, control inversions; maps, sections and the other figures | Lévêque et al. (1993); Rawlinson & Spakman (2016) |
 
-### 能做什么
+## What you give, what the program decides
 
-对密集台阵（节点仪或宽频带，台间距几百米到十几千米）的垂直分量连续记录，完成 0.5–10 Hz（0.1–2 s）Rayleigh 波相速度测量和浅部（约 0–3 km）三维 Vs 反演。面状台阵直接三维反演，线状台阵沿测线反演。方法和参数来自密集节点台阵（面阵和测线）的实际研究，每个处理步骤都有文献或开源程序依据，没有文献取值的参数在文档里如实标出。
+You give three paths: the raw data, the station table, the output directory. Everything else has a default or is derived from your data by a written rule, and the step reports show each derivation with your numbers. The program stops only where a scientific judgement is yours (for example: is the picked ridge the fundamental mode?) and tells you what to look at and which command continues.
 
-| 步骤 | 内容 |
-|---|---|
-| clean | 原始数据识别与清洗：任意目录结构和文件名，miniSEED、SAC、GSE2 等 ObsPy 能读的格式；记录头读台站和时间，自动认垂直分量、识别台站表并对应名字、由数据推出参数；统一采样网格、去重复、处理重叠，写出统一的日文件 |
-| cc | 逐小时互相干（1 分钟窗、谱归一），去 1 s 授时脉冲干扰、剔除瞬态窗 |
-| stack | 叠加；面阵按台站日、线状按台站小时剔除异常时段 |
-| notch | 按规则找持续工业谱线并陷波 |
-| reference | 第一遍参考曲线（本台阵 F-J 谱，或借用其他台阵） |
-| disp1 / disp2 | 两遍两台法频散测量：相速度、群速度，刀切误差，逐频点质控，按实测周期导出、每对只留一段 |
-| inversion / run | 平均曲线、深度节点、一维起始模型，DSurfTomo（或并行版 pDSurfTomo）三维反演 |
-| evaluate | 正演残差、水平和垂向棋盘、正则化和起始模型对照 |
-| figures | 台站图、互相关、频散、起始模型、深度切片、剖面、棋盘、残差（地图和剖面用 GMT） |
+## Scope and limits
 
-另有一套 **AI 协作流程**（[docs/ai_workflow.md](docs/ai_workflow.md)、[AGENTS.md](AGENTS.md)）：在仓库里启动 Claude Code、Codex 等 AI 工具，把数据位置告诉它，它会按规则检查数据、由数据推出参数、逐步运行和检查，必须由你决定的事先问你，全部记录留在你的输出目录。
+- Vertical components only (ZZ, fundamental-mode Rayleigh waves). Areal arrays and line arrays (one project per line).
+- The noise field is assumed to be close to isotropic; the bias from directional noise is not tested.
+- Linux. Station coordinates in longitude and latitude (no projected coordinates). Arrays across the date line or beyond 80° latitude are refused.
+- DSurfTomo accepts at most 60 periods (pDSurfTomo 80); station pairs closer than about 200 m carry distance errors from its single-precision coordinates.
+- Without response files every station must be the same instrument model. Sensors of one model still differ within their tolerance, which leaves random phase errors of the order of 0.1–1 % of the travel time.
+- Numbers from the synthetic tests are in [docs/validation.md](docs/validation.md).
 
-### 安装
+## Install
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant
+conda env create -f environment.yml && conda activate lant     # Python, ObsPy, GMT 6, gfortran
 pip install -e .
-bash tools/install_external.sh       # 下载并编译 DSurfTomo、pDSurfTomo、CC-FJpy（固定版本）
-lant check                           # 检查安装
+bash tools/install_external.sh                                  # DSurfTomo and pDSurfTomo, fixed versions
+lant check                                                      # says what is missing and how to install it
 ```
 
-### 快速开始
+## Quick start
 
 ```bash
-# 1. 先跑合成算例（已知答案）
-python examples/synthetic/make_synthetic.py
-cd examples/synthetic && lant run all -c synthetic.yaml && cd ../..
-
-# 2. 用自己的数据：只填原始数据目录、台站文件、输出目录三个路径
-lant init surface -o my_project.yaml
-lant validate -c my_project.yaml
-lant run all -c my_project.yaml            # 或逐步：lant run clean -c ...，每步后 lant inspect <步骤>
+lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
 ```
 
-**只需要指出原始数据目录和台站文件**，其余由程序识别：原始数据的目录结构、文件名、格式（miniSEED、SAC 等可混用）、垂直分量、台站名与台站表的对应、采样率、野外切文件的时区都从数据里读出；台站表的写法（有无表头、中英文列名、分隔符、Excel、度分秒）自动识别；台阵类型（面状 / 线状）、频带、时延、网格、棋盘等按书面规则由数据推出，每个值和依据记在输出目录的 `records/auto_parameters.json`，写进配置的值优先。结果、图和全部记录都在 `output_dir` 里。
+writes `/data/result/config.yaml` and runs the chain. When it stops it prints what to look at and the next command, for example
 
-### 文档
+```bash
+lant confirm reference -c /data/result/config.yaml
+lant run all -c /data/result/config.yaml          # continues from the first step that does not stand
+```
 
-| 文档 | 内容 |
+`lant status -c CONFIG` shows the state of every step and the next command; `lant plan -c CONFIG` shows what every step will do before it runs. To try the chain on data with a known answer first: [docs/quickstart.md](docs/quickstart.md) (about half an hour, installation included).
+
+## Documents
+
+| | |
 |---|---|
-| [docs/tutorial.md](docs/tutorial.md) | 详细教程：安装、数据准备、配置、每一步做什么、输出、怎样判断正常、绘图、线状台阵、常见问题 |
-| [docs/parameters.md](docs/parameters.md) | 全部参数：含义、单位、默认值、依据、什么时候改、设置不当的后果 |
-| [docs/ai_workflow.md](docs/ai_workflow.md) | 让 AI 协助完成全流程：怎样开始、AI 能自己定什么、必须问什么、各阶段判据 |
-| [docs/history.md](docs/history.md) | 本仓库的整理记录 |
+| [docs/quickstart.md](docs/quickstart.md) | quick start: installation, a complete run on synthetic data, then your own data |
+| [docs/tutorial.md](docs/tutorial.md) | tutorial: data preparation, every step: purpose, procedure, parameters, what to look at |
+| [docs/methods.md](docs/methods.md) | methods: principles, formulas, sources and conditions of validity of every step |
+| [docs/outputs.md](docs/outputs.md) | what every output file holds and when to look at it |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | common problems and remedies, step by step |
+| [docs/parameters.md](docs/parameters.md) | every configuration key: default, meaning, what the default rests on |
+| [docs/ai_workflow.md](docs/ai_workflow.md) | running the chain with an AI assistant |
+| [docs/validation.md](docs/validation.md) | synthetic tests and their numbers |
+| [docs/history.md](docs/history.md) | changes between versions |
+| [AGENTS.md](AGENTS.md) | instructions for AI assistants working in this repository |
 
-### 引用
+## Citation
 
-方法与参数见 [docs/parameters.md](docs/parameters.md) 的参考文献。使用的开源程序：DSurfTomo（Fang et al. 2015, GJI 201:1251）、pDSurfTomo（Zhu et al. 2026, arXiv:2604.11920）、CC-FJpy（Li et al. 2021, SRL 92:3179）、ObsPy、GMT。
+If you use this workflow, please cite the methods it rests on (table above; full references in [docs/parameters.md](docs/parameters.md)) and the third-party programs DSurfTomo (Fang et al. 2015, GJI 201:1251) and, when used, pDSurfTomo (Zhu et al. 2026, arXiv:2604.11920), as well as ObsPy and GMT.
 
-### 许可
+## License
 
-MIT（见 [LICENSE](LICENSE)）。第三方程序由安装脚本从各自的官方仓库下载，保留各自的许可（DSurfTomo MIT、pDSurfTomo GPL-3、CC-FJpy LGPL-3），不包含在本仓库中。
-
----
-
-## English
-
-### What it does
-
-Rayleigh-wave phase velocities at 0.5–10 Hz (0.1–2 s) and shallow (about 0–3 km) 3-D Vs from continuous vertical-component records of dense arrays (nodal or broadband, station spacing from a few hundred metres to a few kilometres): direct 3-D inversion for areal arrays, narrow-strip inversion along linear arrays. The method and its parameters come from a study of a dense nodal array (an areal array and lines); every step is based on published methods or open-source programs, and parameters without a published value are marked as such in the documentation.
-
-You only point to the raw-data directory and the station file: file layout and names, formats (miniSEED, SAC, ... mixed), vertical component, station-name matching, sampling rate, field time zone, the form of the station table, array type, frequency band, lag window, grid and checkerboard sizes are recognised or derived from the data by written rules (recorded with their reasons in the output directory).
-
-Steps: **clean** (raw data of any layout and any ObsPy-readable format → recognition, name matching, derived parameters, a uniform day archive), **cc** (hourly cross-coherence), **stack** (station-day / station-hour screening), **notch** (spectral lines by rule), **reference** (F-J curve of the array, or a borrowed one), **disp1/disp2** (two-pass two-station phase and group velocities with jackknife errors and per-frequency QC, exported on the measured periods, one segment per pair), **inversion/run** (average curve, depth nodes, 1-D starting model, DSurfTomo or pDSurfTomo), **evaluate** (forward residuals, horizontal and vertical checkerboards, regularisation and starting-model controls), **figures** (GMT maps and sections, matplotlib figures).
-
-An **AI-assisted workflow** ([docs/ai_workflow.md](docs/ai_workflow.md), [AGENTS.md](AGENTS.md)) lets an AI coding assistant (Claude Code, Codex, ...) run the whole chain on your data: it derives parameters from the data by written rules, checks every step, asks you where a decision is yours, and keeps every record in your output directory.
-
-### Install and quick start
-
-```bash
-git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant && pip install -e .
-bash tools/install_external.sh            # DSurfTomo, pDSurfTomo, CC-FJpy at fixed versions
-lant check
-python examples/synthetic/make_synthetic.py && (cd examples/synthetic && lant run all -c synthetic.yaml)
-lant init surface -o my_project.yaml      # only output_dir, raw_dir and station_file are needed
-lant run all -c my_project.yaml
-```
-
-The detailed documentation ([tutorial](docs/tutorial.md), [parameters](docs/parameters.md), [AI workflow](docs/ai_workflow.md)) is in Chinese; code, configuration keys and figure labels are in English.
-
-### License
-
-MIT. Third-party programs are downloaded from their own repositories by `tools/install_external.sh` and keep their licenses (DSurfTomo MIT, pDSurfTomo GPL-3, CC-FJpy LGPL-3); none of them is included here.
+MIT (see `LICENSE`). The third-party programs are downloaded by `tools/install_external.sh` under their own licences (DSurfTomo MIT, pDSurfTomo GPL-3) and are not part of this repository.
