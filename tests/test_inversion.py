@@ -103,3 +103,24 @@ def test_observed_iteration_handles_missing_and_buffered_logs(tmp_path):
     assert observed_iteration(str(tmp_path)) is None
     log.write_text("1st iteration...\nresiduals\n 2th iteration...\n")
     assert observed_iteration(str(tmp_path)) == 2
+
+
+def test_solver_run_captures_output_and_reports_observed_iteration(tmp_path):
+    import io
+    import sys
+    from lant.inversion.run import run_one
+    from lant.progress import Progress
+
+    (tmp_path / "DSurfTomo.in").write_text("inputs")
+    binary = tmp_path / "fake_solver"
+    binary.write_text("#!%s\n" % sys.executable +
+                      "from pathlib import Path\nimport time\n"
+                      "Path('DSurfTomo.in.log').write_text('1st iteration...\\n')\n"
+                      "print('solver output', flush=True)\ntime.sleep(1.2)\n"
+                      "Path('DSurfTomo.inMeasure.dat').write_text('100 30 0 2.5\\n')\n"
+                      "with open('DSurfTomo.in.log', 'a') as f: f.write('Program finishes successfully\\n')\n")
+    binary.chmod(0o755)
+    with Progress("run", stream=io.StringIO(), interval=100) as progress:
+        _, result = run_one(str(tmp_path), str(binary), 1)
+        assert "observed iteration 1" in progress.detail
+    assert result == "ok" and "solver output" in (tmp_path / "run.log").read_text()
