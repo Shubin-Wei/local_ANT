@@ -253,7 +253,7 @@ def recovery_radius(cfg):
     from . import auto
     nn = auto.load(cfg).get("geometry", {}).get("median_nearest_km")
     if not nn:
-        raise RuntimeError("records/auto_parameters.json has no geometry: run `lant run clean` first")
+        raise RuntimeError(".lant/auto_parameters.json has no geometry: run `lant run clean` first")
     return round(2 * float(nn), 3)
 
 
@@ -328,13 +328,18 @@ def run_step(cfg, name, **kw):
             dropped = name in confirm.VALUE_KEYS and name not in cfg.get("_confirmed", {})
             rcfg = report.resolved(cfg, without=name if dropped else None)
             items = confirm.judgements(rcfg, name, s) if name in confirm.CONFIRM_STEPS else []
+            from .delivery import publish
+            if not st.failed:
+                publish(rcfg, name)
             rec = manifest.record(
                 cfg, name, "partial" if st.failed else "done", seconds=round(time.time() - t0, 1),
                 params=report.used_params(rcfg, name), to_confirm=items, basis=confirm.basis(rcfg, name, items),
                 error="%d items failed, e.g. %s" % (len(st.failed), "; ".join(st.failed[:3])) if st.failed else None,
                 code=code, inputs=inputs)
             try:
+                from .delivery import write_report
                 report.write_step_report(rcfg, name, s, rec)
+                write_report(rcfg)
             except Exception as exc:
                 records.log(cfg, step=name, event="report_failed", error=str(exc))
                 import sys

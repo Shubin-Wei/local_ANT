@@ -70,7 +70,7 @@ def _quick_config(a):
         else:
             os.makedirs(d, exist_ok=True)
             with open(path, "w") as fh:
-                fh.write(params.template(os.path.abspath(a.raw), os.path.abspath(a.stations), d, line))
+                fh.write(params.template(os.path.abspath(a.raw), os.path.abspath(a.stations), ".", line))
             print("[lant] wrote the configuration %s" % path)
         paths_.append(path)
     return paths_
@@ -217,7 +217,7 @@ def cmd_run(a):
         except Exception as exc:
             if a.debug:
                 raise
-            sys.exit("step %s failed: %s\n(details: %s/records/run_log.jsonl; the traceback: add --debug)"
+            sys.exit("step %s failed: %s\n(details: %s/.lant/run_log.jsonl; the traceback: add --debug)"
                      % (s, exc, cfg["project"]["output_dir"]))
     if chain:
         rc = report.resolved(cfg)

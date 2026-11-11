@@ -29,10 +29,10 @@ The chain stops where a scientific judgement is needed and prints the files to l
 
 | Stops at | Question to answer | Look at | On the synthetic data |
 |---|---|---|---|
-| clean | without response files: are all stations of the same instrument model? | `01_clean/report.txt` | yes: `lant confirm clean -c …` |
-| stack (when there are candidates) | remove the station sub-stacks listed? | `03_stack/station_qc/station_qc.png` | there are no faulty stations, keep them: `lant confirm stack -c …` |
-| reference | do the F-J picks follow the fundamental-mode ridge? | `04_reference/fj.png` | yes: `lant confirm reference -c …` |
-| inversion | are the 1-D starting model and its fit to the average curve reasonable? | `figures/4_start_model.png` | yes: `lant confirm inversion -c …` |
+| clean | without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | yes: `lant confirm clean -c …` |
+| stack (when there are candidates) | remove the station sub-stacks listed? | `work/03_stack/station_qc/station_qc.png` | there are no faulty stations, keep them: `lant confirm stack -c …` |
+| reference | do the F-J picks follow the fundamental-mode ridge? | `work/04_reference/fj.png` | yes: `lant confirm reference -c …` |
+| inversion | are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | yes: `lant confirm inversion -c …` |
 
 After each confirmation run `lant run all -c ~/lant_quick/synthetic.yaml` again; it continues where it stopped. At any time
 
@@ -70,8 +70,8 @@ Then `lant run all -c /data/result/config.yaml`. The stops are the same as in th
 
 | File | Why |
 |---|---|
-| `records/steps/<step>.md` | what each step did, which parameters it used (value and source), what is left for your judgement |
-| `01_clean/coverage.png` | how much data each station has |
-| `04_reference/fj.png` | whether the reference curve follows the fundamental mode |
-| `figures/3_dispersion_curves.png` | all dispersion curves and the reference |
-| `figures/5_depth_slices.png`, `5_slices_3d.png` (lines: `5_sections.png`), `6_checkerboard_*.png` | the model and the scales it can resolve (look at them together) |
+| `.lant/steps/<step>.md` | what each step did, which parameters it used (value and source), what is left for your judgement |
+| `work/01_clean/coverage.png` | how much data each station has |
+| `work/04_reference/fj.png` | whether the reference curve follows the fundamental mode |
+| `results/figures/3_dispersion_curves.png` | all dispersion curves and the reference |
+| `results/figures/5_depth_slices.png`, `5_slices_3d.png` (lines: `5_sections.png`), `6_checkerboard_*.png` | the model and the scales it can resolve (look at them together) |

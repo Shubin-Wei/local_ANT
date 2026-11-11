@@ -25,7 +25,7 @@ def test_clean_mixed_formats(tmp_path):
     assert s["totals"]["duplicates_or_identical_overlaps"] == 1
     assert s["totals"]["shifted"] == 3          # 0.03 sample off the grid: start moved (A01 twice, A02)
     assert s["totals"]["interpolated"] == 1     # 0.4 sample off the grid: Lanczos interpolation (A03)
-    assert os.path.exists(tmp_path / "out" / "01_clean" / "archive" / "ZZ.A02" / "ZZ.A02..HHZ.2024001.mseed")
+    assert os.path.exists(tmp_path / "out" / "work" / "01_clean" / "archive" / "ZZ.A02" / "ZZ.A02..HHZ.2024001.mseed")
     cfg = auto.apply(cfg)
     assert cfg["data"]["day_start_utc_hour"] == 0 and cfg["stack"]["block_hours"] == 1   # 3 h of record
     assert cfg["correlation"]["fs"] == 50.0     # from the velocity range and the rates (fs_max 50)
@@ -114,7 +114,7 @@ def test_segy_input(tmp_path):
     p = write_cfg(tmp_path, "project: {output_dir: out}\ndata: {raw_dir: raw, station_file: sta.csv, %s}\nclean: {nproc: 1}" % REQ)
     s = pipeline.run_step(config.load(p), "clean")
     assert s["formats"] == {"SEGY": 75} and s["stations"] == 3 and s["station_hours"] == 6.0
-    rep = open(tmp_path / "out" / "01_clean" / "report.txt").read()
+    rep = open(tmp_path / "out" / "work" / "01_clean" / "report.txt").read()
     assert "72 records without a station code in the header: named" in rep and "1 files hold several records" in rep
     # without the archive the later steps read the raw files with the code of the file (empty), not the table's
     import json
@@ -122,7 +122,7 @@ def test_segy_input(tmp_path):
     p2 = write_cfg(tmp_path, "project: {output_dir: out2}\ndata: {raw_dir: raw, station_file: sta.csv, %s}\n"
                              "clean: {nproc: 1, write_archive: false}" % REQ)
     pipeline.run_step(config.load(p2), "clean")
-    idx = json.load(open(tmp_path / "out2" / "01_clean" / "archive_index.json"))["traces"]
+    idx = json.load(open(tmp_path / "out2" / "work" / "01_clean" / "archive_index.json"))["traces"]
     rows = [t for t in idx if t["station"] == "XX.S02"]
     x, ok = D.read_day(rows, t0.timestamp, 50.0)
     assert len(rows) == 24 and x is not None and ok.sum() > 0.95 * 2 * 3600 * 50 - 200

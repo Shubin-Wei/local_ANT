@@ -1,7 +1,7 @@
 """Step reports and the plan: what a step did (in order, with counts), the key numbers, every parameter it used
 with its value, what the value rests on (lant.params) and where it comes from (written by the user, confirmed,
 derived by a rule with the numbers of the present data, or the default), what to look at, what is left for the user
-to judge, and what to change - printed after the step and kept in <output>/records/steps/<step>.md.
+to judge, and what to change - printed after the step and kept in <output>/.lant/steps/<step>.md.
 `lant plan` shows the same parameter table for every step before anything runs.
 
 Nothing here changes a result.
@@ -11,7 +11,7 @@ import os
 
 from . import auto
 from . import config as C
-from . import records
+from . import records, paths
 
 # The configuration each step reads (sections or single keys).  A change in any of them makes the step and every
 # later step out of date.
@@ -90,7 +90,7 @@ def _flatten(prefix, v, out):
 
 def resolved(cfg, without=None):
     """The configuration as it now stands in its file, with every "auto" value resolved (confirmed values, then the
-    rules' values of records/auto_parameters.json): the same view for the recorded and the present parameters.
+    rules' values of .lant/auto_parameters.json): the same view for the recorded and the present parameters.
     without: a step whose confirmation is left out (lant.pipeline.run_step)."""
     try:
         new = C.load(cfg["_config_file"])
@@ -111,7 +111,20 @@ def used_params(cfg, step):
     for k, setting in auto.DERIVED_LATER.get(step, {}).items():
         if k in out:
             out[k] = setting(cfg)
-    return json.loads(json.dumps(records.strict(out), default=str))
+    root = cfg["project"]["output_dir"]
+    def portable(value):
+        if isinstance(value, str) and os.path.isabs(value):
+            try:
+                if os.path.commonpath([root, value]) == root:
+                    return "@project/" + os.path.relpath(value, root)
+            except ValueError:
+                pass
+        if isinstance(value, list):
+            return [portable(v) for v in value]
+        if isinstance(value, dict):
+            return {k: portable(v) for k, v in value.items()}
+        return value
+    return portable(json.loads(json.dumps(records.strict(out), default=str)))
 
 
 def source(cfg, key):
@@ -415,25 +428,25 @@ def _param_lines(rows):
 
 
 def step_report(cfg, step, summary, rec=None):
-    """Text of the report of one step; printed and written to records/steps/<step>.md."""
+    """Text of the report of one step; printed and written to .lant/steps/<step>.md."""
     out_dir = cfg["project"]["output_dir"]
     cf = cfg.get("_config_file", "CONFIG")
-    L = ["", "=" * 100, "step %s: report  (records/steps/%s.md)" % (step, step), "-" * 100]
+    L = ["", "=" * 100, "step %s: report  (.lant/steps/%s.md)" % (step, step), "-" * 100]
     done = did(cfg, step, summary)
     if done:
         L.append("WHAT THIS STEP DID")
         L += ["  %d. %s" % (i + 1, t) for i, t in enumerate(done)]
     nums = _numbers(summary)
     if nums:
-        L.append("KEY NUMBERS (all of them: records/summary/%s.json)" % step)
+        L.append("KEY NUMBERS (all of them: .lant/summary/%s.json)" % step)
         L += ["  %-46s %s" % (k, _short(v)) for k, v in nums]
     keys = list(used_params(cfg, step))
     L.append("PARAMETERS THIS STEP USED  (value; [what it rests on] meaning; where the value comes from)")
     L += _param_lines(param_rows(cfg, keys))
-    look = [f for f in LOOK_AT.get(step, []) if os.path.exists(os.path.join(out_dir, f.rstrip("/")))]
+    look = [f for f in LOOK_AT.get(step, []) if os.path.exists(paths.P(cfg, *f.rstrip("/").split("/")))]
     if look:
         L.append("LOOK AT")
-        L += ["  " + os.path.join(out_dir, f) for f in look]
+        L += ["  " + paths.P(cfg, *f.rstrip("/").split("/")) for f in look]
     items = (rec or {}).get("to_confirm") or []
     if items:
         from . import confirm as CF
@@ -476,7 +489,7 @@ def plan(cfg):
     L = ["plan for %s  (array type %s, output %s)" % (cfg.get("_config_file", "CONFIG"), cfg["project"]["array_type"],
                                                     cfg["project"]["output_dir"]),
          "values marked 'not derived yet' are decided from the data by a step of the chain; every "
-         "step writes its report to records/steps/<step>.md", ""]
+         "step writes its report to .lant/steps/<step>.md", ""]
     for i, step in enumerate(STEPS):
         L.append("%d. %s - %s" % (i + 1, step, STEP_DOC[step]))
         if step in CF.CONFIRM_STEPS:

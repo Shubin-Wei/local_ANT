@@ -26,7 +26,7 @@ def test_manifest_gate_confirm(tmp_path):
     st = manifest.status(rc)
     assert st["clean"]["state"] == "done" and st["cc"]["state"] == "not run"   # names matched: nothing to judge
     manifest.gate(rc, "cc")
-    txt = open(tmp_path / "out" / "records" / "steps" / "clean.md").read()
+    txt = open(tmp_path / "out" / ".lant" / "steps" / "clean.md").read()
     assert "WHAT THIS STEP DID" in txt and "1 interpolated" in txt and "derived: " in txt and "[rule]" in txt
     assert "nothing; the chain goes on" in txt
     with pytest.raises(RuntimeError, match="nothing to confirm"):

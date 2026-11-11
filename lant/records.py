@@ -1,12 +1,12 @@
 """Records kept in the user's output directory (never in the source tree):
 
-    <output>/records/config.yaml            the full configuration of the latest run (defaults filled in)
-    <output>/records/config_history/        earlier versions, kept whenever the configuration changed
-    <output>/records/run_log.jsonl          one line per step: start, end, status, duration, outputs, messages
-    <output>/records/summary/<step>.json    the key numbers of each step (what `lant inspect` reports)
-    <output>/records/decisions.md           parameter choices and their reasons (written by the user or the AI)
-    <output>/records/provenance/<id>.json   code version and environment of the runs (lant/provenance.py)
-    <output>/records/lock                   the process writing to the output directory
+    <output>/.lant/config.yaml            the full configuration of the latest run (defaults filled in)
+    <output>/.lant/config_history/        earlier versions, kept whenever the configuration changed
+    <output>/.lant/run_log.jsonl          one line per step: start, end, status, duration, outputs, messages
+    <output>/.lant/summary/<step>.json    the key numbers of each step (what `lant inspect` reports)
+    <output>/.lant/decisions.md           parameter choices and their reasons (written by the user or the AI)
+    <output>/.lant/provenance/<id>.json   code version and environment of the runs (lant/provenance.py)
+    <output>/.lant/lock                   the process writing to the output directory
 """
 import datetime as _dt
 import json
@@ -27,9 +27,10 @@ the alternatives were, and who decided (user / AI).  Keep earlier entries; add a
 """
 
 
-def rec_dir(cfg):
-    d = os.path.join(cfg["project"]["output_dir"], "records")
-    os.makedirs(os.path.join(d, "summary"), exist_ok=True)
+def rec_dir(cfg, create=False):
+    d = os.path.join(cfg["project"]["output_dir"], ".lant")
+    if create:
+        os.makedirs(os.path.join(d, "summary"), exist_ok=True)
     return d
 
 
@@ -38,7 +39,7 @@ def _now():
 
 
 def save_config(cfg):
-    d = rec_dir(cfg)
+    d = rec_dir(cfg, create=True)
     cur = os.path.join(d, "config.yaml")
     tmp = cur + ".tmp"
     C.dump(cfg, tmp)
@@ -56,15 +57,12 @@ def save_config(cfg):
             k += 1
         shutil.move(cur, dst)
     os.replace(tmp, cur)
-    dec = os.path.join(d, "decisions.md")
-    if not os.path.exists(dec):
-        open(dec, "w").write(DECISIONS_TEMPLATE)
     return cur
 
 
 def log(cfg, **entry):
     entry.setdefault("time", _now())
-    with open(os.path.join(rec_dir(cfg), "run_log.jsonl"), "a") as fh:
+    with open(os.path.join(rec_dir(cfg, create=True), "run_log.jsonl"), "a") as fh:
         fh.write(json.dumps(strict(entry), default=str, ensure_ascii=False, allow_nan=False) + "\n")
 
 
@@ -88,7 +86,7 @@ def strict(o):
 
 
 def write_summary(cfg, step, data):
-    p = os.path.join(rec_dir(cfg), "summary", "%s.json" % step)
+    p = os.path.join(rec_dir(cfg, create=True), "summary", "%s.json" % step)
     with open(p + ".tmp", "w") as fh:
         json.dump(strict(data), fh, indent=1, default=str, ensure_ascii=False, allow_nan=False)
     os.replace(p + ".tmp", p)
@@ -130,7 +128,9 @@ class Step:
         from .provenance import Lock, record
         self.context = contextlib.ExitStack()
         try:
-            self.context.enter_context(Lock(rec_dir(self.cfg)))
+            self.context.enter_context(Lock(rec_dir(self.cfg, create=True)))
+            from .delivery import initialize
+            initialize(self.cfg)
             save_config(self.cfg)
             self.t = time.time()
             log(self.cfg, step=self.name, event="start", config=self.cfg.get("_config_file"),

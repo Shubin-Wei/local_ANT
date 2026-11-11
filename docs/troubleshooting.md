@@ -54,7 +54,7 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 | Symptom | Cause and remedy |
 |---|---|
 | `the F-J ridge could be followed over only N frequencies` | no continuous fundamental ridge was found in the F-J spectrum of the line. Look at `fj.png`: if you can see the fundamental mode, name the band where it is clear in `reference.track_start_band_hz`; if the ridge lies outside your velocity range, change `data.velocity_range_kms`; if neither works, borrow the curve of a nearby array (`reference.source: file`) |
-| `only N clear picks that follow each other` (areal array) | too few pairs, or weak surface-wave energy in the band. Check `figures/2_ccf_moveout_*.png` for wave trains that move out with distance |
+| `only N clear picks that follow each other` (areal array) | too few pairs, or weak surface-wave energy in the band. Check `results/figures/2_ccf_moveout_*.png` for wave trains that move out with distance |
 | a higher mode was picked | a curve that is fast overall and rises at high frequencies is probably a higher mode. On areal arrays use `reference.fj_mode: track_fundamental`, narrow the velocity range, or borrow a curve |
 | the lower end of the measured band is higher than expected | it follows from the longest pair being `dispersion.qc.lam_c` reference wavelengths; this is the valid range of the two-station method, not an error |
 
@@ -62,10 +62,10 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 
 | Symptom | Cause and remedy |
 |---|---|
-| few accepted points | `records/steps/disp.md` counts the rejected points by reason. Mostly snr: stacking time too short, or no energy in the band; mostly wavelength / path_short: distances too short relative to the wavelength; mostly off_band: the frequency is outside the band excited by the noise sources |
+| few accepted points | `.lant/steps/disp.md` counts the rejected points by reason. Mostly snr: stacking time too short, or no energy in the band; mostly wavelength / path_short: distances too short relative to the wavelength; mostly off_band: the frequency is outside the band excited by the noise sources |
 | `median_vs_reference.txt` shows a systematic offset | the reference curve may be wrong (higher mode, cycle skip); go back to reference and check `fj.png` |
 | line: the reference covers only a small part of the measured band, and the medians at high frequencies change with the velocity range | beyond the picks of the reference, the cycle count relies on continuation along frequency and the group pick is not guided by the reference, so a fast population can enter. On one real line, with the default range 0.1–5 km/s the reference covered only 1.7–2.8 Hz, and the medians at 3–13 Hz were 4–9 % higher than with the range of the area, 1–4 km/s; the extra points were 8–16 % faster than the points accepted in both runs and did not agree with the F-J ridge. On a line, always give the velocity range of the area, and check in `fj.png` that the picks follow the ridge up to the aliasing line |
-| you want to loosen quality control for more points | not recommended. If it is really needed, write the reason in `records/decisions.md` and state it in your report |
+| you want to loosen quality control for more points | not recommended. If it is really needed, write the reason in `.lant/decisions.md` and state it in your report |
 
 ## inversion and run
 
@@ -73,8 +73,8 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 |---|---|
 | `periods ... more than DSurfTomo allows` | DSurfTomo takes at most 60 periods (pDSurfTomo 80). Reduce `dispersion.per_octave` as suggested, or shorten the exported period range |
 | `inversion.sparsity = ... reserves too little` | the sparse reserve given by hand is too small and DSurfTomo would end with a segmentation fault. Use `auto` |
-| DSurfTomo `segmentation fault` | look at the end of `06_inversion/main/run.log`. Common causes: sparse reserve too small (`inversion.sparsity: auto` estimates it from the grid and the paths), not enough memory (increase `grid_spacing_deg` or reduce `grid_refine`), stack size too small |
-| a project is marked invalid by the precheck | under the starting model the rejection rule of DSurfTomo would remove more than half of the data, or the residuals are systematically offset. The starting model does not match the data; check the reference curve and the 1-D fit (`figures/4_start_model.png`) |
+| DSurfTomo `segmentation fault` | look at the end of `work/06_inversion/main/run.log`. Common causes: sparse reserve too small (`inversion.sparsity: auto` estimates it from the grid and the paths), not enough memory (increase `grid_spacing_deg` or reduce `grid_refine`), stack size too small |
+| a project is marked invalid by the precheck | under the starting model the rejection rule of DSurfTomo would remove more than half of the data, or the residuals are systematically offset. The starting model does not match the data; check the reference curve and the 1-D fit (`results/figures/4_start_model.png`) |
 | the main project runs very long | the time grows with grid nodes, periods and stations. Use `inversion.solver: pdsurftomo` (parallel), or a larger grid spacing |
 
 ## evaluate

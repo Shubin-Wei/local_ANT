@@ -1,4 +1,4 @@
-"""records/manifest.json: the one record of what each step produced, from what, and whether it still stands.
+""".lant/manifest.json: the one record of what each step produced, from what, and whether it still stands.
 
 Per step (its latest run):
     state       done | partial (some inputs failed) | failed
@@ -7,7 +7,7 @@ Per step (its latest run):
     params      the configuration values the step read (after the "auto" values were resolved)
     upstream    {earlier step: its run counter when this step ran}
     inputs      clean only: fingerprint of the raw directory listing and of the station table
-    code        id of records/provenance/<id>.json (code version, packages, third-party programs)
+    code        id of .lant/provenance/<id>.json (code version, packages, third-party programs)
     to_confirm  the scientific judgements the step leaves to the user (empty: nothing to confirm)
     basis       fingerprint of the results those judgements are about; `lant confirm` writes it into the
                 configuration, so a confirmation holds exactly as long as the results stay the same
@@ -55,6 +55,7 @@ def load(cfg):
 
 def _save(cfg, m):
     p = path(cfg)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p + ".tmp", "w") as fh:
         json.dump(records.strict(m), fh, indent=1, default=str, ensure_ascii=False, allow_nan=False)
     os.replace(p + ".tmp", p)
@@ -170,7 +171,7 @@ def next_action(cfg, st):
             continue
         if e["state"] == "to confirm":
             return ("lant confirm %s -c %s" % (s, c),
-                    "step %s leaves judgements to you: read records/steps/%s.md first" % (s, s))
+                    "step %s leaves judgements to you: read .lant/steps/%s.md first" % (s, s))
         if e["state"] == "partial":
             return ("lant run all -c %s" % c, "step %s is incomplete (%s): repair or exclude what failed, then run "
                                                "again" % (s, e.get("reason", "")))
@@ -197,7 +198,7 @@ def gate(cfg, step, st=None):
             continue
         if e["state"] == "to confirm":
             raise NeedsConfirmation(
-                "step %s waits for your confirmation of %s:\n  - %s\nread records/steps/%s.md, then\n"
+                "step %s waits for your confirmation of %s:\n  - %s\nread .lant/steps/%s.md, then\n"
                 "  lant confirm %s -c %s\n  lant run all -c %s" % (step, s, e["reason"].replace("; ", "\n  - "), s, s, c, c))
         raise NotCurrent("step %s cannot run: step %s is %s%s.  Run\n  lant run all -c %s\n(it continues from the "
                          "first step that does not stand)" % (step, s, e["state"],

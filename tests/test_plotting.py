@@ -73,7 +73,7 @@ def test_checkerboard_noise_from_the_main_fit(tmp_path, monkeypatch):
     from lant import pipeline
     cfg = config.defaults()
     cfg["project"]["output_dir"] = str(tmp_path)
-    main = tmp_path / "06_inversion" / "main"
+    main = tmp_path / "work" / "06_inversion" / "main"
     main.mkdir(parents=True)
     (main / "DSurfTomo.inMeasure.dat").write_text("model")
     obs = np.array([1.0, 2.0, 1.0, 4.0])

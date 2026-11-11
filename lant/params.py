@@ -11,7 +11,7 @@ DOC[key] = (kind, text).  kind says what the default (or the rule behind "auto")
     choice      a choice of the user without a right value (what to draw, what to leave out, where to write)
     technical   speed, memory or file handling only; the results do not depend on it
 The derivation of an "auto" value with the numbers of the present data is written by the rule itself
-(records/auto_parameters.json) and shown in the step reports.
+(.lant/auto_parameters.json) and shown in the step reports.
 """
 
 DOC = {

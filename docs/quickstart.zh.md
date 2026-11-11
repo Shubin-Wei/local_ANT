@@ -29,10 +29,10 @@ lant run all -c ~/lant_quick/synthetic.yaml
 
 | 停在 | 要回答的问题 | 看什么 | 合成数据上 |
 |---|---|---|---|
-| clean | 没有响应文件，全部台站是不是同一型号？ | `01_clean/report.txt` | 是：`lant confirm clean -c …` |
-| stack（有候选时） | 列出的台站子叠加要不要剔除？ | `03_stack/station_qc/station_qc.png` | 合成数据没有坏台站，保留：`lant confirm stack -c …` |
-| reference | F-J 拾取是不是基阶脊线？ | `04_reference/fj.png` | 是：`lant confirm reference -c …` |
-| inversion | 一维起始模型和它对平均曲线的拟合是否合理？ | `figures/4_start_model.png` | 是：`lant confirm inversion -c …` |
+| clean | 没有响应文件，全部台站是不是同一型号？ | `work/01_clean/report.txt` | 是：`lant confirm clean -c …` |
+| stack（有候选时） | 列出的台站子叠加要不要剔除？ | `work/03_stack/station_qc/station_qc.png` | 合成数据没有坏台站，保留：`lant confirm stack -c …` |
+| reference | F-J 拾取是不是基阶脊线？ | `work/04_reference/fj.png` | 是：`lant confirm reference -c …` |
+| inversion | 一维起始模型和它对平均曲线的拟合是否合理？ | `results/figures/4_start_model.png` | 是：`lant confirm inversion -c …` |
 
 每次确认后再运行一次 `lant run all -c ~/lant_quick/synthetic.yaml`，它会从停下的地方接着跑。任何时候都可以用
 
@@ -70,8 +70,8 @@ lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
 
 | 文件 | 为什么 |
 |---|---|
-| `records/steps/<步骤>.md` | 每一步做了什么、用了哪些参数（值和依据）、留给你判断的事项 |
-| `01_clean/coverage.png` | 每个台站有多少数据 |
-| `04_reference/fj.png` | 参考曲线是否沿基阶 |
-| `figures/3_dispersion_curves.png` | 全部频散曲线与参考曲线 |
-| `figures/5_depth_slices.png`、`5_slices_3d.png`（线阵看 `5_sections.png`）、`6_checkerboard_*.png` | 模型及其可分辨的尺度（两者一起看） |
+| `.lant/steps/<步骤>.md` | 每一步做了什么、用了哪些参数（值和依据）、留给你判断的事项 |
+| `work/01_clean/coverage.png` | 每个台站有多少数据 |
+| `work/04_reference/fj.png` | 参考曲线是否沿基阶 |
+| `results/figures/3_dispersion_curves.png` | 全部频散曲线与参考曲线 |
+| `results/figures/5_depth_slices.png`、`5_slices_3d.png`（线阵看 `5_sections.png`）、`6_checkerboard_*.png` | 模型及其可分辨的尺度（两者一起看） |

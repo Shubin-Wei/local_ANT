@@ -1,11 +1,11 @@
 """What produced a result: code version, environment, third-party programs; a lock so that one output directory has
 one writer at a time.
 
-  <output>/records/provenance/<id>.json   written once per distinct (code, environment); every entry of run_log.jsonl
+  <output>/.lant/provenance/<id>.json   written once per distinct (code, environment); every entry of run_log.jsonl
                                           names its id.  Code: git commit, whether the working tree differs from it
                                           and a fingerprint (sha1) of that difference and of untracked source files;
                                           Python and package versions; platform; sha1 of the third-party programs.
-  <output>/records/lock                   the process that is writing to the output directory (PID, host, start).
+  <output>/.lant/lock                   the process that is writing to the output directory (PID, host, start).
 """
 import datetime as _dt
 import hashlib
@@ -67,7 +67,7 @@ def environment():
 
 
 def record(rec_dir):
-    """Write records/provenance/<id>.json (once) and return the id."""
+    """Write .lant/provenance/<id>.json (once) and return the id."""
     info = dict(code=code_version(), environment=environment())
     pid = hashlib.sha1(json.dumps(info, sort_keys=True).encode()).hexdigest()[:12]
     d = os.path.join(rec_dir, "provenance")
@@ -82,7 +82,7 @@ def record(rec_dir):
 
 
 class Lock:
-    """records/lock: one writing process per output directory, held with an exclusive flock (released by the
+    """.lant/lock: one writing process per output directory, held with an exclusive flock (released by the
     system when the process ends, also when it is killed).  The file says which process holds it.  A nested step
     of the same process passes."""
     _held = {}

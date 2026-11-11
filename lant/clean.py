@@ -11,7 +11,7 @@
    models can be used together); without it the records are used as they are, which is exact when every station
    has the same model - an instrument column of the station table that names several models is refused;
    the "auto" parameters follow from the station geometry, the records and data.velocity_range_kms (lant/auto.py,
-   records/auto_parameters.json);
+   .lant/auto_parameters.json);
 4. per station and processing day (data.day_start_utc_hour), the records are
      - placed on the UTC sample grid of their rate (start shifted when the offset is <= 0.05 sample, Lanczos
        interpolation when larger; both counted),
@@ -73,6 +73,8 @@ def _clean_station_day(task):
     try:                                             # done by an earlier run with the same inputs and settings?
         old = json.load(open(fn + ".done.json"))
         if old["key"] == key and (not old["rows"] or os.path.exists(fn)):
+            for row in old["rows"]:
+                row["file"] = fn
             return name, old["rows"], dict(old["stat"], reused=1)
     except (OSError, ValueError, KeyError):
         pass
@@ -304,7 +306,7 @@ def run(cfg):
     auto.reset(cfg, auto.REFERENCE_KEYS)          # measured again by the reference step on the new data
     auto.write(cfg, decisions, geom)
     cfg = auto.apply(cfg)
-    rep.append("  parameters from the data (records/auto_parameters.json):")
+    rep.append("  parameters from the data (.lant/auto_parameters.json):")
     for k, v in decisions.items():
         if v["reason"] != "given in the configuration":
             rep.append("    %s = %s  (%s)" % (k, json.dumps(v["value"]) if not isinstance(v["value"], str) else v["value"], v["reason"]))
@@ -416,6 +418,8 @@ def run(cfg):
                      " (%s; up to %.2g %% of the variance)" % (", ".join(pulse["stations"][:10]) + (
                          " ..." if len(pulse["stations"]) > 10 else ""), 100 * pulse["max_power"])
                      if pulse["stations"] else "")))
+    for row in new_rows:
+        row["file"] = os.path.relpath(row["file"], cfg["project"]["output_dir"])
     json.dump(dict(source="archive", traces=new_rows, pulse_1s=pulse["stations"]),
               open(os.path.join(out, "archive_index.json"), "w"))
     open(os.path.join(out, "report.txt"), "w").write("\n".join(rep) + "\n")

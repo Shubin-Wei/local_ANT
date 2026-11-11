@@ -168,7 +168,7 @@ def run(cfg):
     r = cfg["reference"]
     geom = auto.load(cfg).get("geometry")
     if not geom:
-        raise RuntimeError("records/auto_parameters.json has no geometry: run `lant run clean` first")
+        raise RuntimeError(".lant/auto_parameters.json has no geometry: run `lant run clean` first")
     auto.reset(cfg, auto.REFERENCE_KEYS)
     cfg = auto.restore(cfg, auto.REFERENCE_KEYS)
     if r["source"] == "file":

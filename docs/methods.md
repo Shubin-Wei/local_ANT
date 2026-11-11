@@ -50,7 +50,7 @@ For each station and each processing day (24 hours from `data.day_start_utc_hour
 
    has expectation 1 without a signal and is compared with the 0.1 % quantile of the F distribution with (ν, ν(M − 1)) degrees of freedom. For white noise ν = p − 1; in real noise neighbouring samples are correlated and there are fewer independent values, so the effective number of degrees of freedom ν = (p − 1) / Σₖ ρ(k)² is used, with ρ the autocorrelation within one second (the effective degrees of freedom of a sum of squares of correlated variables). Without this correction red and band-limited noise sampled at 250 Hz give false detections in 7–15 % of the records (nominal 0.1 %); with it, 200 trials of each noise type gave no false detection, and a pulse of 0.5 σ once per second was detected in all 200 trials ([validation.md](validation.md), section 8). When the signal is detected on more than half of the processing days of a station, the cc step subtracts the folded waveform hour by hour from that station.
 
-The cleaned day files are written to `01_clean/archive` (not when `clean.write_archive: false`; the later steps then read the raw files). Each station-day records a fingerprint of its input files and settings; on a later run, station-days whose inputs and settings are unchanged are reused.
+The cleaned day files are written to `work/01_clean/archive` (not when `clean.write_archive: false`; the later steps then read the raw files). Each station-day records a fingerprint of its input files and settings; on a later run, station-days whose inputs and settings are unchanged are reused.
 
 ---
 
@@ -171,7 +171,7 @@ It reflects only the repeatability of the measurement in time; it does not inclu
 
 ### 7.6 Quality control
 
-A point is rejected as soon as one criterion fails; the reasons are recorded as a bit mask (`reason` in `05_dispersion/disp.h5`) and counted in the report.
+A point is rejected as soon as one criterion fails; the reasons are recorded as a bit mask (`reason` in `work/05_dispersion/disp.h5`) and counted in the report.
 
 | Criterion | Meaning | Default | Source |
 |---|---|---|---|

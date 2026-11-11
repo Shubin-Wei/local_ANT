@@ -18,10 +18,10 @@ If you know them, add: the rough range of surface-wave velocities, whether there
 
 1. **Use only the commands of the project** (`lant …`). Do not write processing code of your own and do not edit `lant/` to suit the data; when you find a defect in the program, stop and tell the user.
 2. **Do not change the raw data; do not write results into the repository.** All output goes to the user's output directory.
-3. **Judgements belong to the user.** When `lant run all` stops for a judgement (exit code 3), give the user the items under "FOR YOU TO JUDGE" in `records/steps/<step>.md` and the figures to look at, and wait. **Never run `lant confirm` on your own**, unless the user explicitly said "confirm this step if you find nothing wrong".
+3. **Judgements belong to the user.** When `lant run all` stops for a judgement (exit code 3), give the user the items under "FOR YOU TO JUDGE" in `.lant/steps/<step>.md` and the figures to look at, and wait. **Never run `lant confirm` on your own**, unless the user explicitly said "confirm this step if you find nothing wrong".
 4. **Do not guess what only the user knows**: instrument models, what happened to a station in the field, the time zone, whose reference curve to borrow.
 5. **Do not tune for a nicer result**: no looser quality control for more points, no regularisation chosen by checkerboard or residual, no removal of stations that "look bad".
-6. Every parameter that differs from its default needs a basis (data statistics, a figure, literature), recorded in `records/decisions.md`.
+6. Every parameter that differs from its default needs a basis (data statistics, a figure, literature), recorded in `.lant/decisions.md`.
 7. **Report numbers and figures only**, without words such as "stable", "reliable", "passed"; say what was not checked and what the data limit.
 
 ## 3. Who decides what
@@ -45,7 +45,7 @@ lant status -c OUT/config.yaml --json                        # 2. after every st
 `lant status --json` is the only interface you need to parse: per step the state (stands, stale, waiting for confirmation, not run, failed), the reason, and the `next` command. The loop:
 
 1. Run the command given as `next`.
-2. After the stop read `OUT/records/steps/<step>.md` and the files under "LOOK AT" (look at the figures if you can read images; otherwise ask the user to).
+2. After the stop read `OUT/.lant/steps/<step>.md` and the files under "LOOK AT" (look at the figures if you can read images; otherwise ask the user to).
 3. Check by the table below; report numbers, figure locations and the items to judge.
 4. When the user has decided, carry it out (`lant confirm …` or a change of the configuration) and add a line to `decisions.md`.
 5. Back to 1, until `figures` stands.
@@ -63,14 +63,14 @@ lant status -c OUT/config.yaml --json                        # 2. after every st
 
 ## 5. Records
 
-One line per decision in `OUT/records/decisions.md`:
+One line per decision in `OUT/.lant/decisions.md`:
 
 ```
 | date | step | key or item | decision | basis | who |
-| 2026-11-09 | stack | 3 candidate station sub-stacks | kept | correlation just below the limit, shifts inside the limit (03_stack/candidates.txt) | user |
+| 2026-11-09 | stack | 3 candidate station sub-stacks | kept | correlation just below the limit, shifts inside the limit (work/03_stack/candidates.txt) | user |
 ```
 
-Confirmations are written by `lant confirm` into the `confirmed:` section at the end of the configuration; the other files in `records/` are written by the program and are not edited by hand.
+Confirmations are written by `lant confirm` into the `confirmed:` section at the end of the configuration; the other files in `.lant/` are written by the program and are not edited by hand.
 
 ## 6. When something goes wrong
 

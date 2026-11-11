@@ -77,7 +77,7 @@ CSV, text separated by blanks or tabs (with or without header), Excel, StationXM
 | serial, start, end | moved nodes: when one instrument stood at several sites, its records are given to the sites by serial number and time span. Times may be dates only (e.g. `260913` or `2026-09-13`): a whole day in the time zone of `data.day_label`. Without a serial column the station name is the instrument code |
 | line | several lines in one table: `data.line` picks one; `lant run all --raw …` makes one project per line |
 
-Names are matched by: network and station equal; station equal; "network + station" written together; equal after dropping leading letters or zero padding. Ambiguous names are not used and are listed. The result is `01_clean/stations.csv`; from then on stations are named `NET.STA`.
+Names are matched by: network and station equal; station equal; "network + station" written together; equal after dropping leading letters or zero padding. Ambiguous names are not used and are listed. The result is `work/01_clean/stations.csv`; from then on stations are named `NET.STA`.
 
 **Check the coordinates station by station**: one wrong coordinate makes every travel time of that station wrong, without any error message. Where SAC headers hold coordinates, stations more than 50 m from the table are listed. Arrays across the date line, beyond 80° latitude, or with two stations closer than 1 m are refused or pointed out.
 
@@ -119,7 +119,7 @@ lant confirm STEP -c CONFIG     # after you looked at the report and the figures
 lant run all -c CONFIG --from disp     # run again from a step after changing a parameter
 ```
 
-Every step prints a report and stores it in `records/steps/<step>.md`: what it did, key numbers, every parameter it used (value, basis, source), files to look at, items left for you. `records/manifest.json` records on which inputs and parameters every step stands; when one of them changes, the step and those after it become stale and confirmations lapse. A step with nothing to judge does not stop.
+Every step prints a report and stores it in `.lant/steps/<step>.md`: what it did, key numbers, every parameter it used (value, basis, source), files to look at, items left for you. `.lant/manifest.json` records on which inputs and parameters every step stands; when one of them changes, the step and those after it become stale and confirmations lapse. A step with nothing to judge does not stop.
 
 ### 4.1 clean: cleaning (`01_clean`)
 
@@ -159,21 +159,21 @@ Every step prints a report and stores it in `records/steps/<step>.md`: what it d
 5. Quality control: every rejected sample carries its reasons (bit mask), counted in the report. Criteria include signal-to-noise ratio, jackknife error, a path of at least 2 of the sample's own wavelengths (Luo et al. 2015), run length, agreement of group and phase velocity, and the band edge (frequencies where the amplitude spectrum of the coherent signal, i.e. of the signal window minus the incoherent noise of late lags, over all pairs, is below half its mean inside the filter band are not measured); the basis of every threshold is in parameters.md, and those labelled "empirical" have no literature value.
 6. Export: per pair only the longest continuous segment, written as DSurfTomo input.
 
-**Look at**: `figures/3_dispersion_curves.png` (all curves and the reference), `pair_figures/` (single pairs: velocity spectrum, picks, reasons), `median_vs_reference.txt`.
+**Look at**: `results/figures/3_dispersion_curves.png` (all curves and the reference), `pair_results/figures/` (single pairs: velocity spectrum, picks, reasons), `median_vs_reference.txt`.
 
-**Do not loosen the quality control to get more points.** A changed threshold needs its reason in `records/decisions.md`.
+**Do not loosen the quality control to get more points.** A changed threshold needs its reason in `.lant/decisions.md`.
 
 ### 4.6 inversion: building the projects (`06_inversion`)
 
 **What**: 1-D inversion of the array's average curve for the starting model (damped least squares, smoothness applied to the model itself, Constable et al. 1987); depth nodes in steps of max(shortest wavelength / 4, depth / 4) down to half the longest wavelength (rule of thumb, Foti et al. 2018); grid spacing about half the median nearest-station distance; the main project, checkerboard projects (Lévêque et al. 1993) and by default one control project with another starting model (`start_grad0.05`; regularisation controls can be added in `checks.controls`; Rawlinson & Spakman 2016). The sparse-matrix reserve of DSurfTomo is estimated from the paths (`inversion.sparsity: auto`). DSurfTomo takes at most 60 periods (pDSurfTomo 80); with more, the step stops and names the `dispersion.per_octave` that fits.
 
-**Look at**: `figures/4_start_model.png`, `4_kernels.png` (depth sensitivity of the periods). **Left to you**: whether starting model, deepest node and velocity bounds are reasonable.
+**Look at**: `results/figures/4_start_model.png`, `4_kernels.png` (depth sensitivity of the periods). **Left to you**: whether starting model, deepest node and velocity bounds are reasonable.
 
 ### 4.7 run, evaluate, figures
 
-- **run**: DSurfTomo (Fang et al. 2015: direct inversion of the travel times for 3-D Vs, rays updated with the model). Before it runs, the share of data its rejection rule keeps in the first iteration is checked (`checks.precheck`); an invalid main project stops the chain. The main project and the controls run side by side; the checkerboards follow when the main project has finished, since their noise is the relative misfit of the main model (`inversion.noise: auto`; the value is in the run report and in `06_inversion/checkerboard_noise.json`). A number in `inversion.noise` lets all projects run together.
-- **evaluate**: numbers and figures only, no verdicts. Travel-time residuals (starting and final model, share kept), checkerboard recovery (correlation and regression slope by depth), differences between control models and the main model together with the residual history of each control (a control whose residual has not come down to that of the main project is not converged). Written to `06_inversion/evaluation/`.
-- **figures**: in `figures/` (list in outputs.md): station map over relief, correlation moveouts per band, three single pairs (stack time and dispersion), dispersion curves, starting model and kernels, depth slices and a 3-D view (areal arrays), sections, checkerboards, residuals. Scales, distances, lag windows and velocity ranges follow the data of the project; the relief is SRTM, loaded automatically from the GMT data server (`plots.topography`). The model of a line is a narrow strip along it: no depth slices or 3-D view, and the checkerboards are drawn as input and recovered sections along the line. A section of your own that leaves the model is cut to the model, and the note says by how much.
+- **run**: DSurfTomo (Fang et al. 2015: direct inversion of the travel times for 3-D Vs, rays updated with the model). Before it runs, the share of data its rejection rule keeps in the first iteration is checked (`checks.precheck`); an invalid main project stops the chain. The main project and the controls run side by side; the checkerboards follow when the main project has finished, since their noise is the relative misfit of the main model (`inversion.noise: auto`; the value is in the run report and in `work/06_inversion/checkerboard_noise.json`). A number in `inversion.noise` lets all projects run together.
+- **evaluate**: numbers and figures only, no verdicts. Travel-time residuals (starting and final model, share kept), checkerboard recovery (correlation and regression slope by depth), differences between control models and the main model together with the residual history of each control (a control whose residual has not come down to that of the main project is not converged). Written to `work/06_inversion/evaluation/`.
+- **figures**: in `results/figures/` (list in outputs.md): station map over relief, correlation moveouts per band, three single pairs (stack time and dispersion), dispersion curves, starting model and kernels, depth slices and a 3-D view (areal arrays), sections, checkerboards, residuals. Scales, distances, lag windows and velocity ranges follow the data of the project; the relief is SRTM, loaded automatically from the GMT data server (`plots.topography`). The model of a line is a narrow strip along it: no depth slices or 3-D view, and the checkerboards are drawn as input and recovered sections along the line. A section of your own that leaves the model is cut to the model, and the note says by how much.
 
 ## 5. Line arrays
 
@@ -195,7 +195,7 @@ One project per line. The defaults that differ are listed at the end of paramete
 
 ## 7. Records and reproduction
 
-`OUT/records/`: `config.yaml` (full configuration of the last run), `config_history/`, `manifest.json` (what every step stands on), `run_log.jsonl` (start, end and duration of every step), `summary/<step>.json` (key numbers), `steps/<step>.md` (reports), `auto_parameters.json` (derived values and derivations), `provenance/` (code version, package versions, fingerprints of the third-party programs), `decisions.md` (your decisions and reasons). The `confirmed:` section at the end of the configuration records each confirmation with the fingerprint of the result it rests on. To reproduce: run the same configuration into a new output directory. The synthetic noise of the checkerboard tests has no fixed random seed; repeated checkerboards differ within the noise level.
+`OUT/.lant/`: `config.yaml` (full configuration of the last run), `config_history/`, `manifest.json` (what every step stands on), `run_log.jsonl` (start, end and duration of every step), `summary/<step>.json` (key numbers), `steps/<step>.md` (reports), `auto_parameters.json` (derived values and derivations), `provenance/` (code version, package versions, fingerprints of the third-party programs), `decisions.md` (your decisions and reasons). The `confirmed:` section at the end of the configuration records each confirmation with the fingerprint of the result it rests on. To reproduce: run the same configuration into a new output directory. The synthetic noise of the checkerboard tests has no fixed random seed; repeated checkerboards differ within the noise level.
 
 ## 8. Problems
 

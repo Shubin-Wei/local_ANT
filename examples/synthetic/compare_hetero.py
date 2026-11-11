@@ -32,7 +32,7 @@ def main():
     a = p.parse_args()
     T = np.load(a.truth)
     amp, cell = float(T["hetero"]), float(T["cell"])
-    with h5py.File(os.path.join(a.output, "05_dispersion", "disp.h5"), "r") as h:
+    with h5py.File(os.path.join(a.output, "work", "05_dispersion", "disp.h5"), "r") as h:
         f, vc, ok = h["freqs"][:], h["vc"][:], h["ok_c"][:]
         pairs = h["pairs"][:].astype("U")
     order = {q: i for i, q in enumerate(T["pairs"].astype("U"))}
@@ -56,8 +56,8 @@ def main():
     print("  path anomaly (relative to the uniform background): true sd %.3f %%, measured sd %.3f %%, correlation %.3f, "
           "slope %.3f" % (100 * at.std(), 100 * am.std(), np.corrcoef(am, at)[0, 1], np.dot(am - am.mean(), at - at.mean())
                           / np.dot(at - at.mean(), at - at.mean())))
-    lon, lat, dep, v = read_model(a.model or os.path.join(a.output, "06_inversion", "main", "DSurfTomo.inMeasure.dat"))
-    st = np.genfromtxt(os.path.join(a.output, "01_clean", "stations.csv"), delimiter=",", names=True, dtype=None, encoding=None)
+    lon, lat, dep, v = read_model(a.model or os.path.join(a.output, "work", "06_inversion", "main", "DSurfTomo.inMeasure.dat"))
+    st = np.genfromtxt(os.path.join(a.output, "work", "01_clean", "stations.csv"), delimiter=",", names=True, dtype=None, encoding=None)
     G = np.meshgrid(lon, lat, indexing="ij")
     x, y = local_xy_km(G[0].ravel(), G[1].ravel(), float(T["lat0"]), float(T["lon0"]))
     sx, sy = local_xy_km(st["longitude"], st["latitude"], float(T["lat0"]), float(T["lon0"]))

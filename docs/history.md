@@ -135,3 +135,7 @@ Many parameters of v1.0 were still the values of the author's one array. Changes
 - Third-party programs are not in the repository; `tools/install_external.sh` downloads fixed versions and builds them; the lower memory reserve of pDSurfTomo is a patch.
 - The memory queue for a shared server became the two parameters `inversion.njobs` and `threads`.
 - The user gives only the raw-data directory and the station file; format, layout, vertical component, table form and name matching are recognised by the program, and the remaining parameters follow from the data by written rules (`records/auto_parameters.json`).
+
+## Productization (unreleased)
+
+New projects use `work/`, `results/` and `.lant/`, with README and total report entry points. Solver inputs, models and checks are retained separately from working caches. Internal archive paths and configuration snapshots are portable. Progress uses stderr and bounded detail logs; inspect/status no longer write inspection snapshots. No measurement or solver method changes.

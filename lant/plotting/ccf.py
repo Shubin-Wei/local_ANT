@@ -13,6 +13,8 @@
 import glob
 import os
 
+from .. import paths
+
 import h5py
 import numpy as np
 from scipy.signal import butter, detrend, sosfiltfilt
@@ -151,7 +153,7 @@ def moveout(cfg, stack_path, out, band=None, maxlag=None, vref=None, dmax=None):
 def _hourly(cfg, pair, bad_days):
     s1, s2 = pair.split("_")
     X, W, lab = [], [], []
-    for f in sorted(glob.glob(os.path.join(cfg["project"]["output_dir"], "02_ccf", "day_*.h5"))):
+    for f in sorted(glob.glob(paths.P(cfg, paths.CCF, "day_*.h5"))):
         day = os.path.basename(f)[4:11]
         if (s1, day) in bad_days or (s2, day) in bad_days:
             continue

@@ -30,7 +30,7 @@ def main():
     out = a.output or os.path.join(a.dir, "output")
     td = np.loadtxt(os.path.join(a.dir, "true_dispersion.txt"))
     tm = np.loadtxt(os.path.join(a.dir, "true_model.txt"))
-    curves = read_curves(os.path.join(out, "05_dispersion", "curves"), "C")
+    curves = read_curves(os.path.join(out, "work", "05_dispersion", "curves"), "C")
     acc = {}
     for c in curves:
         for t, v in zip(c["T"], c["v"]):
@@ -46,12 +46,12 @@ def main():
         print("  %6.2f   %5d   %.3f  %.3f  %+5.1f %%" % (f[k], n[k], med[k], true_c[k], 100 * (med[k] / true_c[k] - 1)))
     rel = 100 * (med / true_c - 1)
     print("  all frequencies: median difference %+.2f %%, max |difference| %.2f %%" % (np.median(rel), np.abs(rel).max()))
-    model = os.path.join(out, "06_inversion", "main", "DSurfTomo.inMeasure.dat")
+    model = os.path.join(out, "work", "06_inversion", "main", "DSurfTomo.inMeasure.dat")
     if not os.path.exists(model):
         print("\nno inverted model yet (%s): run the chain to the end (lant run all) for the Vs comparison" % model)
         return
-    vs1d = np.loadtxt(os.path.join(out, "06_inversion", "vs1d.txt"))
-    lon, lat, dep, v = read_model(os.path.join(out, "06_inversion", "main", "DSurfTomo.inMeasure.dat"))
+    vs1d = np.loadtxt(os.path.join(out, "work", "06_inversion", "vs1d.txt"))
+    lon, lat, dep, v = read_model(os.path.join(out, "work", "06_inversion", "main", "DSurfTomo.inMeasure.dat"))
     mean = np.nanmean(v, axis=(0, 1))
     std = np.nanstd(v, axis=(0, 1))
     true_v = np.interp(dep, tm[:, 0], tm[:, 1])
@@ -83,7 +83,7 @@ def main():
     axs[1].set_ylabel("Depth (km)")
     axs[1].legend(frameon=False, loc="lower left")
     fig.tight_layout()
-    p = os.path.join(out, "figures", "truth_comparison.png")
+    p = os.path.join(out, "results", "figures", "truth_comparison.png")
     os.makedirs(os.path.dirname(p), exist_ok=True)
     fig.savefig(p, dpi=150)
     print("\nwrote", p)

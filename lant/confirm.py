@@ -8,7 +8,7 @@ configuration file then holds every decision: a rerun with the same results does
 results change the basis no longer matches and the step has to be confirmed again.
 
 What is judged at each point (parameters that follow mechanically from the data are not confirmed; they are
-listed with their derivation in records/steps/<step>.md):
+listed with their derivation in .lant/steps/<step>.md):
   clean      station names that could not be matched one to one, coordinates differing from the record headers,
              channels whose orientation the names do not tell, stations with several sensors
   stack      the candidate station-days / station-hours, when there are any; nothing is removed unless confirmed

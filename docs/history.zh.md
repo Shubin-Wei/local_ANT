@@ -135,3 +135,7 @@ v1.0 里不少参数仍是作者那一个台阵的取值（频带上限、窗长
 - 第三方程序（DSurfTomo、pDSurfTomo、CC-FJpy）不放进仓库，由 `tools/install_external.sh` 下载固定版本编译；pDSurfTomo 降低内存预留的改动做成补丁。
 - 原脚本针对共享服务器的内存排队改为 `inversion.njobs`、`threads` 两个参数。
 - 使用者只需给原始数据目录和台站文件：格式、目录组织、垂直分量、台站表写法、台站名对应由程序识别；台阵类型、处理日起点、降采样率、频带、时延、网格、棋盘、剖面按书面规则由数据推出（`records/auto_parameters.json`）。
+
+## 产品化（尚未发布）
+
+新工程采用 `work/`、`results/`、`.lant/`，以 README 和总报告为入口。求解器输入、模型和检查与工作缓存分别保留。归档内部路径和配置快照支持移动。进度使用 stderr，详细日志限制大小；inspect/status 不再写检查快照。不改变测量或求解方法。

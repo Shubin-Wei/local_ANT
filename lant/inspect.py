@@ -2,7 +2,7 @@
 
 Topics: data (station geometry, record length, sampling), auto (the parameters derived from the data and their
 reasons), and every step name (its summary
-plus derived quantities).  The output is JSON (printed, and written to records/summary/inspect_<topic>.json), with
+plus derived quantities).  The output is JSON (printed, and written to .lant/summary/inspect_<topic>.json), with
 the files and figures of the step to look at.  Nothing here changes a result.
 """
 import json
@@ -106,14 +106,11 @@ def inspect(cfg, topic):
         cfg = auto.apply(cfg)
         s = records.read_summary(cfg, topic)
         if s is None:
-            out = {"status": "step %s has no summary yet (not run, or it failed: see records/run_log.jsonl)" % topic}
+            out = {"status": "step %s has no summary yet (not run, or it failed: see .lant/run_log.jsonl)" % topic}
         else:
             out = {"stack": stack, "disp": disp}.get(topic, lambda c, x: x)(cfg, s)
-    files = [os.path.join(cfg["project"]["output_dir"], f) for f in FIGURES.get(topic, [])]
+    files = [paths.P(cfg, *f.rstrip("/").split("/")) for f in FIGURES.get(topic, [])]
     out = {"topic": topic, "result": out, "look_at": [f for f in files if os.path.exists(f.rstrip("/"))]}
-    p = os.path.join(records.rec_dir(cfg), "summary", "inspect_%s.json" % topic)
-    with open(p, "w") as fh:
-        json.dump(out, fh, indent=1, default=records._json_default, ensure_ascii=False)
     return out
 
 

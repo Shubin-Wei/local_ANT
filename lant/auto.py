@@ -1,6 +1,6 @@
 """Parameters given as "auto": proposed by written rules, confirmed by the user.
 
-The values and the numbers they came from are written to <output>/records/auto_parameters.json.  At the four
+The values and the numbers they came from are written to <output>/.lant/auto_parameters.json.  At the four
 confirmation points (after clean, stack, reference and inversion) `lant confirm <step>` writes the accepted values
 into the `confirmed:` block of the configuration file; a later step does not run before that.  Order of precedence:
 a value written in the configuration, then a confirmed value, then the rule.  docs/parameters.md gives the reasons.
@@ -46,7 +46,7 @@ FILTER_EDGE = math.log(2.0)                # the Gaussian filter of the band-edg
 
 
 def path(cfg):
-    return os.path.join(cfg["project"]["output_dir"], "records", "auto_parameters.json")
+    return os.path.join(cfg["project"]["output_dir"], ".lant", "auto_parameters.json")
 
 
 def geometry(stations):
@@ -288,7 +288,7 @@ def from_reference(cfg, freqs, c, u, picked_hz, geom):
 
 
 def write(cfg, decisions, geom, extra=None):
-    """Write (or update) records/auto_parameters.json: parameters merged, geometry and extra blocks replaced."""
+    """Write (or update) .lant/auto_parameters.json: parameters merged, geometry and extra blocks replaced."""
     p = path(cfg)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     old = json.load(open(p)) if os.path.exists(p) else {}
@@ -322,7 +322,7 @@ def load(cfg):
 def apply(cfg):
     """The configuration with the "auto" values resolved: a value written by the user stays; else the confirmed
     value while its confirmation holds (lant.confirm.valid_values); else the rule's value from
-    records/auto_parameters.json."""
+    .lant/auto_parameters.json."""
     from .confirm import valid_values
     dec = load(cfg).get("parameters", {})
     conf = valid_values(cfg)
@@ -372,7 +372,7 @@ def vertical_tests(cfg, depths):
     zmax = float(depths[-2])
     ap = load(cfg).get("geometry", {}).get("aperture_km")
     if ap is None:
-        raise RuntimeError("records/auto_parameters.json has no geometry: run `lant run clean` first")
+        raise RuntimeError(".lant/auto_parameters.json has no geometry: run `lant run clean` first")
     cell = float("%.2g" % ((0.34 if cfg["project"]["array_type"] == "line" else 0.18) * ap))
     rev = [round(f * zmax, 3) for f in (0.21, 0.46, 0.71)]
     across = 0.0 if cfg["project"]["array_type"] == "line" else cell

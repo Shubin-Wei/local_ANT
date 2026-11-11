@@ -77,7 +77,7 @@ CSV、空格或制表符分隔的文本（有无表头均可）、Excel、Statio
 | 序列号（serial）、开始、结束（start、end） | 节点搬站：同一台仪器先后放在不同点位时，按序列号和时间段把记录分给各点位。时间可以只写日期（如 `260913`、`2026-09-13`），按 `data.day_label` 的时区取整天。没有序列号列时以台站名为仪器代码 |
 | 测线（line） | 多条测线在一个表里时，`data.line` 选一条；`lant run all --raw … ` 会给每条测线建一个项目 |
 
-名字的对应规则：台网和台站都相同；台站号相同；“台网 + 台站”连写；去掉前导字母或补零后相同。有歧义的不用，列在报告里。对应结果写成 `01_clean/stations.csv`，此后台站名都是 `NET.STA`。
+名字的对应规则：台网和台站都相同；台站号相同；“台网 + 台站”连写；去掉前导字母或补零后相同。有歧义的不用，列在报告里。对应结果写成 `work/01_clean/stations.csv`，此后台站名都是 `NET.STA`。
 
 **坐标要逐台核对**：一个台的坐标错了，它所有台对的走时都错，而且不会报错。SAC 头里有坐标时，与台站表相差 50 m 以上的台会列出来。跨日期变更线、纬度超过 80°、两台相距不到 1 m 的台阵会被拒绝或指出。
 
@@ -119,7 +119,7 @@ lant confirm STEP -c CONFIG     # 看过报告和图之后确认
 lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 ```
 
-每一步跑完在屏幕上打印报告并存到 `records/steps/<步骤>.md`：做了什么、关键数字、用到的每个参数（值、依据、来源）、要看的文件、留给你判断的事项。`records/manifest.json` 记录每一步依据哪些输入和参数成立；输入或参数变了，这一步及其后的步骤自动标为过时，已做的确认失效。没有需要判断的事项时流程不停。
+每一步跑完在屏幕上打印报告并存到 `.lant/steps/<步骤>.md`：做了什么、关键数字、用到的每个参数（值、依据、来源）、要看的文件、留给你判断的事项。`.lant/manifest.json` 记录每一步依据哪些输入和参数成立；输入或参数变了，这一步及其后的步骤自动标为过时，已做的确认失效。没有需要判断的事项时流程不停。
 
 ### 4.1 clean：清洗（`01_clean`）
 
@@ -159,21 +159,21 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 5. 质控：每个被拒的点记录原因（位掩码），报告按原因统计。判据包括信噪比、刀切误差、路径不短于 2 个自身波长（Luo et al. 2015）、连续段长度、群速度与相速度的一致性、频带边缘（相干信号——信号窗减去后段时延的非相干噪声、全部台对合并——的振幅谱低于滤波带内均值一半的频率不测）等；每个门限的依据见 parameters.zh.md，标“经验值”的没有文献取值。
 6. 导出：每个台对只留最长的一段连续曲线，写成 DSurfTomo 的输入。
 
-**看什么**：`figures/3_dispersion_curves.png`（全部曲线与参考）、`pair_figures/`（单台对：速度谱、拾取、被拒原因）、`median_vs_reference.txt`。
+**看什么**：`results/figures/3_dispersion_curves.png`（全部曲线与参考）、`pair_results/figures/`（单台对：速度谱、拾取、被拒原因）、`median_vs_reference.txt`。
 
-**不要为了多出点放宽质控。** 门限改了要在 `records/decisions.md` 里写明理由。
+**不要为了多出点放宽质控。** 门限改了要在 `.lant/decisions.md` 里写明理由。
 
 ### 4.6 inversion：建反演工程（`06_inversion`）
 
 **做什么**：台阵平均曲线做一维反演得到起始模型（阻尼最小二乘，平滑约束模型本身，Constable et al. 1987）；深度节点步长取 max(最短波长 / 4, 深度 / 4)，到最长波长的一半（经验法则，Foti et al. 2018）；网格间距约为台站最近邻距离中位数的一半；建主工程、棋盘工程（Lévêque et al. 1993）和默认一个换起始模型的对照工程（`start_grad0.05`；正则化对照可在 `checks.controls` 中加；Rawlinson & Spakman 2016）。DSurfTomo 的稀疏矩阵预留按路径估计（`inversion.sparsity: auto`）。DSurfTomo 最多 60 个周期（pDSurfTomo 80），超出时这一步停下，并给出合适的 `dispersion.per_octave`。
 
-**看什么**：`figures/4_start_model.png`、`4_kernels.png`（各周期的敏感深度）。**留给你判断的**：起始模型、最深节点、速度上下限是否合理。
+**看什么**：`results/figures/4_start_model.png`、`4_kernels.png`（各周期的敏感深度）。**留给你判断的**：起始模型、最深节点、速度上下限是否合理。
 
 ### 4.7 run、evaluate、figures
 
-- **run**：运行 DSurfTomo（Fang et al. 2015：直接由走时反演三维 Vs，射线随模型更新）。运行前检查主工程第一轮被剔除规则保留的数据比例（`checks.precheck`）；主工程无效时停下。主工程和对照工程同时运行；棋盘在主工程结束后再运行，因为它们的噪声取主模型的相对拟合残差（`inversion.noise: auto`；数值写在 run 报告和 `06_inversion/checkerboard_noise.json` 里）。`inversion.noise` 写成数字时，所有工程同时运行。
-- **evaluate**：只给数字和图，不下结论。走时残差（起始模型、最终模型、保留比例）、棋盘恢复（各深度的相关系数和回归斜率）、对照模型与主模型的差及各对照工程的残差历程（残差未降到主工程水平的对照尚未收敛）。写在 `06_inversion/evaluation/`。
-- **figures**：`figures/` 下（清单见 outputs.zh.md）：带地形的台站图、分频带的互相关走时图、三个台对的叠加时长图和频散图、频散曲线、起始模型和核函数、深度切片和三维图（面阵）、剖面、棋盘、残差。比例、距离、时延窗和速度范围都随本项目的数据而定；地形用 SRTM，自动从 GMT 数据服务器取（`plots.topography`）。线阵的模型是沿测线的窄条，不画深度切片和三维图，棋盘画成沿测线的输入剖面和恢复剖面。自定义剖面超出模型范围时按模型范围截断并说明截掉多少。
+- **run**：运行 DSurfTomo（Fang et al. 2015：直接由走时反演三维 Vs，射线随模型更新）。运行前检查主工程第一轮被剔除规则保留的数据比例（`checks.precheck`）；主工程无效时停下。主工程和对照工程同时运行；棋盘在主工程结束后再运行，因为它们的噪声取主模型的相对拟合残差（`inversion.noise: auto`；数值写在 run 报告和 `work/06_inversion/checkerboard_noise.json` 里）。`inversion.noise` 写成数字时，所有工程同时运行。
+- **evaluate**：只给数字和图，不下结论。走时残差（起始模型、最终模型、保留比例）、棋盘恢复（各深度的相关系数和回归斜率）、对照模型与主模型的差及各对照工程的残差历程（残差未降到主工程水平的对照尚未收敛）。写在 `work/06_inversion/evaluation/`。
+- **figures**：`results/figures/` 下（清单见 outputs.zh.md）：带地形的台站图、分频带的互相关走时图、三个台对的叠加时长图和频散图、频散曲线、起始模型和核函数、深度切片和三维图（面阵）、剖面、棋盘、残差。比例、距离、时延窗和速度范围都随本项目的数据而定；地形用 SRTM，自动从 GMT 数据服务器取（`plots.topography`）。线阵的模型是沿测线的窄条，不画深度切片和三维图，棋盘画成沿测线的输入剖面和恢复剖面。自定义剖面超出模型范围时按模型范围截断并说明截掉多少。
 
 ## 5. 线状台阵
 
@@ -195,7 +195,7 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 
 ## 7. 记录与复现
 
-`输出目录/records/`：`config.yaml`（最近一次运行的完整配置）、`config_history/`、`manifest.json`（每步依据什么成立）、`run_log.jsonl`（每步起止、耗时）、`summary/<步骤>.json`（关键数字）、`steps/<步骤>.md`（报告）、`auto_parameters.json`（规则推出的值及推导）、`provenance/`（代码版本、依赖版本、第三方程序指纹）、`decisions.md`（你的决定和理由）。配置文件末尾的 `confirmed:` 段记录每次确认及其依据的结果指纹。复现：用同一份配置在新的输出目录重跑。棋盘检验的合成噪声不固定随机种子，重跑的棋盘结果在噪声水平内不同。
+`输出目录/.lant/`：`config.yaml`（最近一次运行的完整配置）、`config_history/`、`manifest.json`（每步依据什么成立）、`run_log.jsonl`（每步起止、耗时）、`summary/<步骤>.json`（关键数字）、`steps/<步骤>.md`（报告）、`auto_parameters.json`（规则推出的值及推导）、`provenance/`（代码版本、依赖版本、第三方程序指纹）、`decisions.md`（你的决定和理由）。配置文件末尾的 `confirmed:` 段记录每次确认及其依据的结果指纹。复现：用同一份配置在新的输出目录重跑。棋盘检验的合成噪声不固定随机种子，重跑的棋盘结果在噪声水平内不同。
 
 ## 8. 遇到问题
 

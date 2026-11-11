@@ -53,7 +53,7 @@ def read_stations(path):
 
 
 def canonical_table(out_dir):
-    return os.path.join(out_dir, "01_clean", "stations.csv")
+    return os.path.join(out_dir, "work", "01_clean", "stations.csv")
 
 
 def write_table(path, coords):
@@ -160,7 +160,7 @@ def build_index(cfg, nproc=4):
     if not files:
         raise DataError("no candidate files under %s" % d["raw_dir"])
     # headers read by an earlier run are used again for the files that have not changed (path, size, time)
-    cache_path = os.path.join(cfg["project"]["output_dir"], "01_clean", "header_cache.json")
+    cache_path = os.path.join(cfg["project"]["output_dir"], "work", "01_clean", "header_cache.json")
     cache, sig = {}, {}
     try:
         c = json.load(open(cache_path))
@@ -330,10 +330,15 @@ def day_windows(traces, cfg):
 
 def processing_rows(cfg):
     """Trace rows of the cleaned archive (or of the raw files when clean.write_archive is false)."""
-    p = os.path.join(cfg["project"]["output_dir"], "01_clean", "archive_index.json")
+    p = os.path.join(cfg["project"]["output_dir"], "work", "01_clean", "archive_index.json")
     if not os.path.exists(p):
         raise DataError("%s not found: run `lant run clean` first" % p)
-    return json.load(open(p))["traces"]
+    rows = json.load(open(p))["traces"]
+    root = cfg["project"]["output_dir"]
+    for row in rows:
+        if not os.path.isabs(row["file"]):
+            row["file"] = os.path.join(root, row["file"])
+    return rows
 
 
 def station_rows(traces, stations):

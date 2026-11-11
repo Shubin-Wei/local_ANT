@@ -2,7 +2,7 @@
 
 [中文](parameters.zh.md) | English
 
-Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` writes the same information into the configuration file, and the step reports (`OUT/records/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
+Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` writes the same information into the configuration file, and the step reports (`OUT/.lant/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
 
 ## 1. How to read the tables
 
@@ -140,7 +140,7 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `qc.band_edge` | `0.5` | choice | a frequency is not measured where the amplitude spectrum of the coherent signal (all pairs together; signal window minus the later lags, so that the noise level does not matter) is below this fraction of its mean over the filter band (0.5 = -6 dB, the usual definition of a band edge): beyond the band the noise excites, the filter passes only energy of other frequencies (0 = not applied) |
 | `qc.snr_g` | `4.0` | empirical | first gate: the largest SNR of a frequency must reach this |
 
-## 9. export: curves passed to the inversion (`05_dispersion/curves`)
+## 9. export: curves passed to the inversion (`work/05_dispersion/curves`)
 
 | key | default | basis | meaning |
 |---|---|---|---|

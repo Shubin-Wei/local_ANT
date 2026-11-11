@@ -4,7 +4,12 @@
 
 All results are written under `project.output_dir` of the configuration; the raw data are never changed. The tables below list, directory by directory, what each file holds, which step writes it and when you need it. Files marked ★ are worth a look after every run.
 
-## records/: the run record
+## Project entry points
+
+Open `REPORT.md` first. `README.md` explains ownership and operating rules. `notes.md` holds appended notes and decisions. `results/model/` retains the solver inputs and model; `results/validation/` retains checks and evaluation; `results/reproduce/` holds the effective configuration and station geometry. Scientific products remain available independently of working caches. `work/` is not disposable as a whole.
+
+
+## .lant/: the run record
 
 | File | Content |
 |---|---|
@@ -15,10 +20,10 @@ All results are written under `project.output_dir` of the configuration; the raw
 | `config.yaml`, `config_history/` | the complete configuration of the latest run (all defaults included) and the earlier ones |
 | `run_log.jsonl` | start, end, duration and outcome of every step |
 | `provenance/` | code version (with a fingerprint of uncommitted changes), versions of dependencies, fingerprints of third-party programs |
-| `decisions.md` | your judgements and reasons (written by hand, or by an AI assistant from your words) |
+| `../notes.md` | your judgements and reasons (written by hand, or by an AI assistant from your words) |
 | `lock` | run lock; only one `lant` process can write to an output directory at a time |
 
-## 01_clean/: preparing the raw records
+## work/01_clean/: preparing the raw records
 
 | File | Content |
 |---|---|
@@ -33,11 +38,11 @@ All results are written under `project.output_dir` of the configuration; the raw
 | `archive_index.json` | index of the records read by the later steps |
 | `header_cache.json` | cache of the header scan (files that did not change are not read again) |
 
-## 02_ccf/: hourly cross-coherence
+## work/02_ccf/: hourly cross-coherence
 
 One `day_YYYYDDD.h5` per processing day: `hourly [24, pairs, lags]`, the number of valid segments per hour `count`, pair names, settings and input fingerprints. This is by far the largest directory. Once the stack is done and no hours need to be removed any more it can be deleted, but then changing any parameter before cc requires the correlations to be computed again.
 
-## 03_stack/: stack and station diagnosis
+## work/03_stack/: stack and station diagnosis
 
 | File | Content |
 |---|---|
@@ -47,7 +52,7 @@ One `day_YYYYDDD.h5` per processing day: `hourly [24, pairs, lags]`, the number 
 | `candidates.txt` | list of candidates (in the format used when confirming their removal) |
 | `removed.txt` | station-days and station-hours actually removed |
 
-## 04_reference/: reference curve
+## work/04_reference/: reference curve
 
 | File | Content |
 |---|---|
@@ -57,7 +62,7 @@ One `day_YYYYDDD.h5` per processing day: `hourly [24, pairs, lags]`, the number 
 | `reference.npz` | the reference curve cut to the measured band (read by the disp step) |
 | `zones.npz`, `zones.png` | zone references (only with `reference.zone_km`) |
 
-## 05_dispersion/: dispersion measurement
+## work/05_dispersion/: dispersion measurement
 
 | File | Content |
 |---|---|
@@ -65,11 +70,11 @@ One `day_YYYYDDD.h5` per processing day: `hourly [24, pairs, lags]`, the number 
 | ★ `median_vs_reference.txt` | per frequency, median of the accepted points minus the reference; a systematic offset points to a problem with the reference curve or the number of cycles |
 | `logf/CDisp.<pair>.txt` | accepted points of each pair: frequency, period, phase velocity, signal-to-noise ratio, error |
 | `curves/CDisp.<pair>.txt` | the curve passed to the inversion (one run per pair) |
-| `pair_figures/` | single-pair figures (`export.curve_figures` pairs spread evenly over distance, plus the pairs with most rejected points and with the largest departure from the median): velocity–frequency image, picks, rejection reasons |
+| `pair_results/figures/` | single-pair figures (`export.curve_figures` pairs spread evenly over distance, plus the pairs with most rejected points and with the largest departure from the median): velocity–frequency image, picks, rejection reasons |
 
 Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group velocity off the reference, 16 path too short, 32 side lobe, 64 number of cycles undetermined, 128 cycle skip, 512 jackknife error, 4096 group and phase velocities inconsistent, 8192 run too short, 16384 wavelength rule, 32768 no reference curve, 65536 band edge.
 
-## 06_inversion/: inversion projects
+## work/06_inversion/: inversion projects
 
 | File | Content |
 |---|---|
@@ -85,7 +90,7 @@ Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group
 
 `DSurfTomo.inMeasure.dat` has four columns: longitude, latitude, depth (km), Vs (km/s).
 
-## figures/: result figures
+## results/figures/: result figures
 
 | Figure | Content | Arrays |
 |---|---|---|
