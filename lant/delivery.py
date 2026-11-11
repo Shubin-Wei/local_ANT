@@ -51,15 +51,32 @@ def initialize(cfg: dict) -> None:
         atomic_text(marker, json.dumps({"version": LAYOUT_VERSION}) + "\n")
     readme = root / "README.md"
     if not readme.exists():
-        atomic_text(
-            readme,
-            "# lant project\n\nStart with [REPORT.md](REPORT.md).\n\n"
-            "- `results/`: retained models, dispersion, figures, validation and reproduction inputs.\n"
-            "- `work/`: processing files. Only explicitly selected registered caches may be cleaned.\n"
-            "- `.lant/`: state, step reports, configuration history, provenance and rotating logs.\n"
-            "- `notes.md`: optional append-only notes and scientific decisions.\n\n"
-            "## Operating rules\n\n" + "\n".join("- " + r for r in RULES) + "\n",
-        )
+        atomic_text(readme, PROJECT_README + "\n".join("- " + r for r in RULES) + "\n")
+
+
+PROJECT_README = """# lant project
+
+Start with [REPORT.md](REPORT.md): state of every step, key numbers, what is left for you to judge, the main
+figures and links to everything below.
+
+| Directory | Content |
+|---|---|
+| `results/model/` | `vs_model.csv`: the 3-D shear-velocity model |
+| `results/dispersion/` | `curves.csv` (phase velocities with QC and inversion flags), `disp.h5` (all measurements and diagnostics), `median_vs_reference.txt` |
+| `results/figures/` | maps, sections, dispersion, checks |
+| `results/validation/` | `evaluation.json` (residuals, checkerboard recovery, control inversions), travel-time residual tables |
+| `results/reproduce/` | effective configuration, station table, starting model and the solver input and output files |
+| `work/` | processing files of every step; caches can be removed with `lant clean-work` |
+| `.lant/` | state, step reports, configuration history, provenance and logs (written by lant only) |
+| `notes.md` | your notes and decisions (`lant note "text" -c CONFIG`) |
+
+`vs_model.csv` columns: `longitude_deg`, `latitude_deg` (WGS84), `depth_km` (below the surface of the model),
+`vs_km_s`.  The values are those DSurfTomo wrote (`reproduce/DSurfTomo.inMeasure.dat`), sorted by depth, latitude
+and longitude.  Nodes far from the ray paths keep the starting model: read the model with the checkerboard figures.
+
+## Operating rules
+
+"""
 
 
 def _swap(cfg, target, fill):
@@ -97,10 +114,6 @@ def _swap(cfg, target, fill):
         shutil.rmtree(str(staging))
 
 
-def _copy_into(source, new):
-    shutil.copytree(str(source), str(new), dirs_exist_ok=True)
-
-
 def _mark(cfg, target, step):
     """Which run of which step a retained tree belongs to (manifest.record gives the run this number next)."""
     from . import manifest
@@ -121,7 +134,13 @@ def publish(cfg, step):
     dest = Path(cfg["project"]["output_dir"]) / "results"
     inv = Path(paths.P(cfg, paths.INV))
     if step == "disp":
-        _swap(cfg, dest / "dispersion", lambda new: _copy_into(paths.P(cfg, paths.DISP), new))
+
+        def dispersion(new):  # the per-pair diagnostic figures stay in work/05_dispersion/pair_figures
+            for name in ("curves.csv", "disp.h5", "median_vs_reference.txt"):
+                if os.path.exists(paths.P(cfg, paths.DISP, name)):
+                    shutil.copy2(paths.P(cfg, paths.DISP, name), str(new / name))
+
+        _swap(cfg, dest / "dispersion", dispersion)
         _mark(cfg, "results/dispersion", step)
         return
     if step != "evaluate":
@@ -129,17 +148,19 @@ def publish(cfg, step):
     if RUN.status(str(inv / "main")) != "done":
         raise RuntimeError("the main model has not finished; the retained model is kept")
 
-    def validation(new):
-        for name in ("checkerboards", "controls"):
-            for project in sorted((inv / name).iterdir()) if (inv / name).is_dir() else []:
-                if project.is_dir() and RUN.status(str(project)) == "done":  # unrun checks are not results
-                    _copy_into(project, new / name / project.name)
-        _copy_into(inv / "evaluation", new / "evaluation")
+    def model(new):
+        write_model_table(inv / "main" / "DSurfTomo.inMeasure.dat", new / "vs_model.csv")
+
+    def validation(new):  # the numbers of the checks; their recovered models are in the figures and in work/
+        for p in sorted((inv / "evaluation").iterdir()):
+            shutil.copy2(str(p), str(new / p.name))
 
     def reproduce(new):
         for p in inv.iterdir():
             if p.is_file():
                 shutil.copy2(str(p), str(new / p.name))
+        for name in ("DSurfTomo.in", "surfdata.dat", "MOD", "DSurfTomo.inMeasure.dat"):
+            shutil.copy2(str(inv / "main" / name), str(new / name))
         stations = Path(paths.P(cfg, "01_clean", "stations.csv"))
         if stations.exists():
             shutil.copy2(str(stations), str(new / "stations.csv"))
@@ -148,29 +169,59 @@ def publish(cfg, step):
         # Small and useful without the raw files; relative paths as seen from its final place.
         config.dump(cfg, str(new / "effective.yaml"), base=str(dest / "reproduce"))
 
-    for name, fill in (
-        ("model", lambda new: _copy_into(inv / "main", new)),
-        ("validation", validation),
-        ("reproduce", reproduce),
-    ):
+    for name, fill in (("model", model), ("validation", validation), ("reproduce", reproduce)):
         _swap(cfg, dest / name, fill)
         _mark(cfg, "results/" + name, step)  # each tree is labelled as soon as it is in place
+
+
+MODEL_COLUMNS = ("longitude_deg", "latitude_deg", "depth_km", "vs_km_s")
+
+
+def write_model_table(model, target):
+    """DSurfTomo's "lon lat depth vs" rows with a header, sorted by depth, latitude, longitude.  The numbers are
+    copied as DSurfTomo wrote them (no conversion, no rounding)."""
+    rows = [line.split() for line in Path(model).read_text().splitlines() if line.strip()]
+    if any(len(r) != 4 for r in rows):
+        raise RuntimeError("%s: expected four columns (lon lat depth vs)" % model)
+    rows.sort(key=lambda r: (float(r[2]), float(r[1]), float(r[0])))
+    Path(target).write_text(",".join(MODEL_COLUMNS) + "\n" + "".join(",".join(r) + "\n" for r in rows))
 
 
 def write_report(cfg: dict) -> None:
     from . import manifest, report
 
     root = Path(cfg["project"]["output_dir"])
-    state = manifest.status(report.resolved(cfg), check_inputs=False)
-    lines = [
-        "# Run report",
-        "",
-        "State belongs to the latest recorded run; retained files may be from an earlier complete run.",
-        "Use `lant status -c CONFIG --json` to recheck current inputs and configuration.",
-        "",
-        "| Step | State | Detail |",
-        "|---|---|---|",
+    resolved = report.resolved(cfg)
+    state = manifest.status(resolved, check_inputs=False)
+    command, why = manifest.next_action(resolved, state)
+    lines = ["# Run report", "", "**%s.**" % (why[0].upper() + why[1:].rstrip(".")) if why else ""]
+    if command:
+        who = " (your decision: read the items below first)" if command.startswith("lant confirm") else ""
+        lines += ["", "Next%s: `%s`" % (who, command)]
+    lines += ["", "*The state of the latest recorded run; `lant status -c CONFIG` also rechecks the raw inputs.*"]
+    numbers = key_numbers(cfg)
+    if numbers:
+        lines += ["", "## Key numbers", ""] + ["- " + n for n in numbers]
+    recorded = manifest.load(cfg)["steps"]
+    waiting = [
+        (s, recorded.get(s, {}).get("to_confirm") or []) for s, info in state.items() if info["state"] == "to confirm"
     ]
+    if waiting:
+        lines += ["", "## For you to judge", ""]
+        for step, items in waiting:
+            lines += [
+                "Step **%s** (details and figures: [.lant/steps/%s.md](.lant/steps/%s.md)):" % (step, step, step),
+                "",
+            ]
+            lines += ["- " + item for item in items] + [""]
+        lines.append('Decide, then record it: `lant confirm STEP -c CONFIG --reason "your decision and its evidence"`.')
+    figures = main_figures(root)
+    if figures:
+        lines += ["", "## Main figures", ""]
+        for f, caption in figures:
+            rel = f.relative_to(root).as_posix()
+            lines += ["**%s** (`%s`)" % (caption, f.name), "", "![%s](%s)" % (f.stem, rel), ""]
+    lines += ["", "## Steps", "", "| Step | State | Detail |", "|---|---|---|"]
     for step, info in state.items():
         detail = ("Caches cleaned; rebuilding needs upstream work. " if info.get("cache_cleaned") else "") + info.get(
             "reason", ""
@@ -179,7 +230,7 @@ def write_report(cfg: dict) -> None:
         link = ".lant/steps/%s.md" % step
         label = "[%s](%s)" % (step, link) if (root / link).exists() else step
         lines.append("| %s | %s | %s |" % (label, info["state"], detail))
-    lines += ["", "## Retained deliverables", ""]
+    lines += ["", "## Retained results", ""]
     marks_path = Path(records.rec_dir(cfg)) / "published.json"
     marks = json.loads(marks_path.read_text()) if marks_path.exists() else {}
     trees = [p for p in (root / "results").iterdir() if p.is_dir()] if (root / "results").is_dir() else []
@@ -209,9 +260,9 @@ def write_report(cfg: dict) -> None:
             lines.append("  - ... %d more files in the directory" % (len(files) - len(shown)))
     lines += [
         "",
-        "## Judgements and limits",
+        "## Limits",
         "",
-        "Read the linked step reports for key numbers, parameters, diagnostic figures and scientific judgements.",
+        "Every parameter, its value and what it rests on are in the linked step reports.",
         "Jackknife uncertainty is conditional, not a calibrated total error. Review checkerboards with the model.",
         "Directional-noise and higher-mode limitations remain those of the documented method.",
     ]
@@ -229,6 +280,27 @@ def write_report(cfg: dict) -> None:
                 )
             )
     atomic_text(root / "REPORT.md", "\n".join(lines) + "\n")
+
+
+FIGURES = (
+    ("1_stations", "Stations"),
+    ("3_dispersion_curves", "Phase-velocity curves used by the inversion"),
+    ("4_start_model", "1-D starting model and its fit"),
+    ("5_depth_slices", "Vs at depth"),
+    ("5_sections", "Vs sections"),
+    ("6_checkerboard_*", "Checkerboard test (the first; all are in results/figures)"),
+    ("6_recovery", "Checkerboard recovery with depth"),
+    ("6_residuals", "Travel-time residuals of the starting and final model"),
+)
+
+
+def main_figures(root):
+    """(figure, caption) a reader looks at first, in reading order (the first checkerboard stands for all)."""
+    folder = Path(root) / "results" / "figures"
+    found = []
+    for name, caption in FIGURES:
+        found += [(f, caption) for f in sorted(folder.glob(name + ".png"))[:1]]
+    return found
 
 
 def key_numbers(cfg):

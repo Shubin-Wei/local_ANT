@@ -20,7 +20,21 @@ def test_status_does_not_initialize_output(tmp_path):
     assert not Path(cfg["project"]["output_dir"]).exists()
 
 
-def test_publish_model_and_validation_survive_work_removal(tmp_path, monkeypatch):
+MODEL_1 = "  99.97642  30.10929   0.50000   2.48578\n  99.97642  30.10929   0.00000   2.28578\n"
+
+
+def _main(inv, model, tag):
+    """A main project as DSurfTomo leaves it (inputs and the final model)."""
+    main = inv / "main"
+    main.mkdir(parents=True, exist_ok=True)
+    for name in ("DSurfTomo.in", "surfdata.dat", "MOD"):
+        (main / name).write_text("%s %s\n" % (name, tag))
+    if model:
+        (main / "DSurfTomo.inMeasure.dat").write_text(model)
+    return main
+
+
+def test_results_hold_readable_products_without_solver_projects(tmp_path, monkeypatch):
     import shutil
 
     from lant.inversion import run as RUN
@@ -28,22 +42,39 @@ def test_publish_model_and_validation_survive_work_removal(tmp_path, monkeypatch
     monkeypatch.setattr(RUN, "status", lambda d: "done")
     cfg = project(tmp_path)
     delivery.initialize(cfg)
-    main = Path(paths.P(cfg, paths.INV, "main"))
-    main.mkdir(parents=True)
-    (main / "DSurfTomo.inMeasure.dat").write_text("model\n")
-    (main / "surfdata.dat").write_text("input\n")
-    check = main.parent / "checkerboards" / "check1"
+    inv = Path(paths.P(cfg, paths.INV))
+    _main(inv, MODEL_1, "1")
+    check = inv / "checkerboards" / "check1"
     check.mkdir(parents=True)
-    (check / "recovered.dat").write_text("recovery\n")
-    (main.parent / "evaluation").mkdir()
-    (main.parent / "evaluation" / "evaluation.json").write_text("{}\n")
+    (check / "DSurfTomo.inSyn.dat").write_text("recovery\n")
+    (inv / "evaluation").mkdir()
+    (inv / "evaluation" / "evaluation.json").write_text("{}\n")
     delivery.publish(cfg, "evaluate")
     root = Path(cfg["project"]["output_dir"])
     shutil.rmtree(str(root / "work"))
-    assert (root / "results/model/DSurfTomo.inMeasure.dat").read_text() == "model\n"
-    assert (root / "results/model/surfdata.dat").read_text() == "input\n"
-    assert (root / "results/validation/checkerboards/check1/recovered.dat").exists()
+    # depth first, values exactly as DSurfTomo wrote them
+    assert (root / "results/model/vs_model.csv").read_text() == (
+        "longitude_deg,latitude_deg,depth_km,vs_km_s\n99.97642,30.10929,0.00000,2.28578\n"
+        "99.97642,30.10929,0.50000,2.48578\n"
+    )
+    assert sorted(p.name for p in (root / "results/model").iterdir()) == ["vs_model.csv"]
+    assert sorted(p.name for p in (root / "results/validation").iterdir()) == ["evaluation.json"]
+    assert (root / "results/reproduce/surfdata.dat").read_text() == "surfdata.dat 1\n"
+    assert (root / "results/reproduce/DSurfTomo.inMeasure.dat").read_text() == MODEL_1
+    assert "vs_model.csv" in (root / "README.md").read_text()
     assert json.loads((root / ".lant/layout.json").read_text())["version"] == 1
+
+
+def test_dispersion_results_leave_pair_figures_in_work(tmp_path):
+    cfg = project(tmp_path)
+    disp = Path(paths.P(cfg, paths.DISP))
+    (disp / "pair_figures").mkdir(parents=True)
+    (disp / "pair_figures/spread_A_B.png").write_bytes(b"png")
+    for name in ("curves.csv", "disp.h5", "median_vs_reference.txt"):
+        (disp / name).write_text(name)
+    delivery.publish(cfg, "disp")
+    kept = Path(cfg["project"]["output_dir"]) / "results/dispersion"
+    assert sorted(p.name for p in kept.iterdir()) == ["curves.csv", "disp.h5", "median_vs_reference.txt"]
 
 
 def test_failed_publication_preserves_previous_tree(tmp_path, monkeypatch):
@@ -57,7 +88,7 @@ def test_failed_publication_preserves_previous_tree(tmp_path, monkeypatch):
     monkeypatch.setattr(lant.artifacts, "load", lambda cfg: {"results/model/model": [0, 0]})
     monkeypatch.setattr(delivery.shutil, "copytree", lambda *a, **k: (_ for _ in ()).throw(OSError("full disk")))
     with pytest.raises(OSError, match="full disk"):
-        delivery._swap(cfg, target, lambda new: delivery._copy_into(source, new))
+        delivery._swap(cfg, target, lambda new: delivery.shutil.copytree(str(source), str(new / "x")))
     assert (target / "model").read_text() == "previous"
     assert sorted(p.name for p in target.parent.iterdir()) == ["model"]
 
@@ -70,10 +101,9 @@ def _evaluated_project(tmp_path, monkeypatch):
     cfg = project(tmp_path)
     delivery.initialize(cfg)
     inv = Path(paths.P(cfg, paths.INV))
-    for d in ("main", "checkerboards/cb_done", "checkerboards/cb_unrun", "evaluation"):
+    for d in ("checkerboards/cb_done", "checkerboards/cb_unrun", "evaluation"):
         (inv / d).mkdir(parents=True)
-    (inv / "main/DSurfTomo.in").write_text("input 1\n")
-    (inv / "main/DSurfTomo.inMeasure.dat").write_text("model 1\n")
+    _main(inv, MODEL_1, "1")
     (inv / "checkerboards/cb_done/DSurfTomo.inSyn.dat").write_text("recovered\n")
     (inv / "checkerboards/cb_unrun/DSurfTomo.in").write_text("not run\n")
     (inv / "evaluation/evaluation.json").write_text("{}\n")
@@ -92,22 +122,20 @@ def test_rebuilding_the_inversion_keeps_the_evaluated_model(tmp_path, monkeypatc
 
     cfg, inv, finished = _evaluated_project(tmp_path, monkeypatch)
     results = Path(cfg["project"]["output_dir"]) / "results"
-    assert sorted(p.name for p in (results / "validation/checkerboards").iterdir()) == ["cb_done"]
     # the configuration snapshot is written in staging but must resolve from its final place
     assert "output_dir: ../.." in (results / "reproduce/effective.yaml").read_text()
     # --rebuild or a removed main directory: the new project is built, has not run, and its run is interrupted
     before = artifacts.snapshot(cfg)
     shutil.rmtree(str(inv / "main"))
-    (inv / "main").mkdir()
-    (inv / "main/DSurfTomo.in").write_text("input 2\n")
+    _main(inv, None, "2")
     finished.discard(str(inv / "main"))
     for step in ("inversion", "run"):
         delivery.publish(cfg, step)
     with pytest.raises(RuntimeError, match="retained model is kept"):
         delivery.publish(cfg, "evaluate")
     artifacts.register(cfg, before)
-    assert (results / "model/DSurfTomo.inMeasure.dat").read_text() == "model 1\n"
-    assert (results / "model/DSurfTomo.in").read_text() == "input 1\n"
+    assert "2.28578" in (results / "model/vs_model.csv").read_text()
+    assert (results / "reproduce/DSurfTomo.in").read_text() == "DSurfTomo.in 1\n"
     assert (results / "reproduce/vs1d.txt").read_text() == "start 1\n"
 
 
@@ -185,3 +213,34 @@ def test_report_says_when_a_retained_result_is_no_longer_current(tmp_path, monke
     delivery.write_report(cfg)
     text = (Path(cfg["project"]["output_dir"]) / "REPORT.md").read_text()
     assert "that step is now out of date" in text and "OLDER" not in text
+
+
+def test_report_opens_with_state_numbers_judgements_and_figures(tmp_path, monkeypatch):
+    from lant import manifest
+
+    cfg = project(tmp_path)
+    root = Path(cfg["project"]["output_dir"])
+    delivery.initialize(cfg)
+    (root / "results/figures").mkdir(parents=True)
+    for name in ("1_stations", "6_checkerboard_cb_2", "6_checkerboard_cb_1", "5_depth_slices"):
+        (root / "results/figures" / (name + ".png")).write_bytes(b"png")
+    (root / ".lant/summary").mkdir(parents=True)
+    (root / ".lant/summary/clean.json").write_text('{"stations": 12, "days": 3}')
+    state = {
+        "clean": dict(state="done", run=1, time="t"),
+        "stack": dict(state="to confirm", run=1, time="t", reason="1 item"),
+    }
+    monkeypatch.setattr(manifest, "status", lambda *a, **k: state)
+    manifest._save(cfg, {"steps": {"stack": {"to_confirm": ["remove the 3 candidate sub-stacks?"]}}})
+    delivery.write_report(cfg)
+    text = (root / "REPORT.md").read_text()
+    order = [text.index(h) for h in ("## Key numbers", "## For you to judge", "## Main figures", "## Steps")]
+    assert order == sorted(order)
+    assert "12 stations, 3 processing days" in text and "remove the 3 candidate sub-stacks?" in text
+    assert "your decision" in text
+    figures = [line for line in text.splitlines() if line.startswith("![")]
+    assert figures == [
+        "![1_stations](results/figures/1_stations.png)",
+        "![5_depth_slices](results/figures/5_depth_slices.png)",
+        "![6_checkerboard_cb_1](results/figures/6_checkerboard_cb_1.png)",
+    ]
