@@ -8,30 +8,52 @@ from .style import plt
 
 
 def residuals(cfg, csv_path, evaluation, out):
+    """Relative travel-time residuals of the starting (grey) and final (black) model: histogram and rms against
+    period; the rms of every iteration's model only when checks.iteration_residuals has computed them."""
+    from matplotlib.ticker import FuncFormatter
     style.apply(cfg["plots"]["font_scale"])
-    a = np.genfromtxt(csv_path, delimiter=",", names=True)
-    r = 1e3 * (a["t_obs_s"] - a["t_pred_s"])
-    rel = 100 * (a["t_obs_s"] - a["t_pred_s"]) / a["t_obs_s"]
+    sets = []
+    start_csv = csv_path.replace("residuals_final", "residuals_start")
+    for path, name, col in ((start_csv, "Starting model", "0.65"), (csv_path, "Final model", "k")):
+        if os.path.exists(path):
+            a = np.genfromtxt(path, delimiter=",", names=True)
+            sets.append((name, col, a, 100 * (a["t_obs_s"] - a["t_pred_s"]) / a["t_obs_s"], 1e3 * (a["t_obs_s"] - a["t_pred_s"])))
     it = evaluation["residuals"]["iterations"]
-    fig, axs = plt.subplots(1, 3, figsize=(14, 4.2))
-    lim = np.percentile(np.abs(rel), 99.5)
-    axs[0].hist(rel, bins=np.linspace(-lim, lim, 81), color="0.5")
-    axs[0].set_xlabel("Relative residual, obs - pred (%)")
+    many = len(it) > 2
+    fig, axs = plt.subplots(1, 3 if many else 2, figsize=(14 if many else 10.5, 4.2))
+    lim = max(np.percentile(np.abs(rel), 99.5) for _, _, _, rel, _ in sets)
+    bins = np.linspace(-lim, lim, 81)
+    for name, col, a, rel, r in sets:
+        txt = "%s: rms %.1f ms (%.1f %%)" % (name, np.sqrt(np.mean(r ** 2)), np.sqrt(np.mean(rel ** 2)))
+        if col == "k":
+            axs[0].hist(rel, bins=bins, histtype="step", color="k", lw=1.4, label=txt)
+        else:
+            axs[0].hist(rel, bins=bins, color=col, label=txt)
+        T = np.unique(a["period_s"])
+        axs[1].semilogx(T, [np.sqrt(np.mean(rel[a["period_s"] == t] ** 2)) for t in T], ".-", color=col, ms=5, label=name)
+    axs[0].set_xlabel("Relative residual, observed - predicted (%)")
     axs[0].set_ylabel("Travel times")
-    axs[0].text(0.03, 0.95, "rms %.2f ms (%.2f %%)\n%d travel times" % (np.sqrt(np.mean(r ** 2)), np.sqrt(np.mean(rel ** 2)), len(r)),
-                transform=axs[0].transAxes, va="top")
-    T = np.unique(a["period_s"])
-    rms = [np.sqrt(np.mean(rel[a["period_s"] == t] ** 2)) for t in T]
-    axs[1].semilogx(T, rms, "k.-")
+    axs[0].legend(loc="upper left", frameon=False, fontsize="small")
+    axs[0].text(0.97, 0.95, "%d travel times" % len(sets[-1][2]), transform=axs[0].transAxes, ha="right", va="top")
     axs[1].set_xlabel("Period (s)")
     axs[1].set_ylabel("Relative rms residual (%)")
-    k = np.arange(len(it))
-    axs[2].plot(k, [x["rms_ms"] for x in it], "ko-", ms=4)
-    axs[2].set_xticks(k)
-    axs[2].set_xticklabels([x["model"].replace("iter", "").lstrip("0") or "0" if x["model"] != "start" else "start" for x in it],
-                           rotation=45)
-    axs[2].set_xlabel("Model (start, iterations)")
-    axs[2].set_ylabel("rms residual on all travel times (ms)")
+    Tall = np.concatenate([np.unique(a["period_s"]) for _, _, a, _, _ in sets])
+    ticks = [m * 10.0 ** k for k in range(-3, 3) for m in (1, 2, 5) if Tall.min() * 0.95 <= m * 10.0 ** k <= Tall.max() * 1.05]
+    if len(ticks) < 3:
+        ticks = [m * 10.0 ** k for k in range(-3, 3) for m in (1, 1.5, 2, 3, 5, 7) if Tall.min() * 0.95 <= m * 10.0 ** k <= Tall.max() * 1.05]
+    axs[1].set_xticks(ticks)
+    axs[1].xaxis.set_major_formatter(FuncFormatter(lambda v, _: "%g" % v))
+    axs[1].minorticks_off()
+    lo0, hi0 = axs[0].get_ylim()
+    axs[0].set_ylim(lo0, hi0 * 1.3)                    # room for the legend above the histogram
+    axs[1].legend(loc="best", frameon=False)
+    if many:
+        k = np.arange(len(it))
+        axs[2].plot(k, [x["rms_ms"] for x in it], "ko-", ms=4)
+        axs[2].set_xticks(k)
+        axs[2].set_xticklabels(["start" if x["model"] == "start" else x["model"].replace("iter", "").lstrip("0") or "0" for x in it])
+        axs[2].set_xlabel("Model (start, iterations)")
+        axs[2].set_ylabel("rms residual (ms)")
     fig.tight_layout()
     return style.save(fig, out, cfg)
 
@@ -83,9 +105,9 @@ def recovery(cfg, evaluation, out):
     return style.save(fig, out, cfg)
 
 
-def kernels(cfg, inv_dir, out, periods=None, dz=0.1, step=0.05):
+def kernels(cfg, inv_dir, out, periods=None, dz=None, step=0.05):
     """Depth sensitivity of the Rayleigh phase velocity to Vs for the starting model, d ln c / d ln Vs per km of depth:
-    central differences (+-5 % at one node; nodes every dz km, the linear layering of DSurfTomo between them) with fwd1d,
+    central differences (+-5 % at one node; 45 nodes down to 1.5 x the deepest node of the model, the linear layering of DSurfTomo between them) with fwd1d,
     i.e. DSurfTomo's own forward chain in which Vp and density follow Vs (Brocher 2005) -- the sensitivity the inversion
     uses.  Smaller perturbations or node spacings run into the single-precision root search of surfdisp96."""
     from ..inversion.start import forward
@@ -94,7 +116,7 @@ def kernels(cfg, inv_dir, out, periods=None, dz=0.1, step=0.05):
     avg = np.loadtxt(os.path.join(inv_dir, "average_curve.txt"), ndmin=2)
     T = np.asarray(periods or sorted({float(avg[int(round(i)), 0]) for i in np.linspace(0, len(avg) - 1, 6)}))
     zmax = 1.5 * m[-1, 0]
-    dz = max(dz, zmax / 45)                  # DSurfTomo's forward allows about 50 nodes (lant.inversion.start.MAX_LAYERS)
+    dz = dz or zmax / 45                     # DSurfTomo's forward allows about 50 nodes (lant.inversion.start.MAX_LAYERS)
     z = np.round(np.arange(0, zmax + 1e-9, dz), 4)
     vs = np.interp(z, m[:, 0], m[:, 1])
     K = np.zeros((len(z), len(T)))

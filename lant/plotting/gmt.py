@@ -6,15 +6,16 @@ plots.formats.  On failure the script is kept and its path reported (set LANT_KE
 """
 import os
 import shutil
+import shlex
 import subprocess
 import tempfile
 
 SET = ("gmt set FORMAT_GEO_MAP ddd.xxF FONT_ANNOT_PRIMARY {a}p,Helvetica FONT_LABEL {l}p,Helvetica MAP_FRAME_TYPE plain "
        "MAP_FRAME_PEN 0.5p MAP_TICK_LENGTH_PRIMARY 0.07c MAP_ANNOT_OFFSET_PRIMARY 0.06c MAP_LABEL_OFFSET 0.12c PS_LINE_JOIN round")
-# continuous colour tables of the figures (GMT colour lists): perturbation red (slow) - white - blue (fast),
-# checkerboard orange - white - blue (after Cheng et al. 2021)
+# continuous colour tables of the figures (GMT colour lists): perturbation and checkerboards red (slow) - white -
+# blue (fast)
 PERT_CPT = "#7a0000,#e31a1c,#fd8d3c,#fee391,white,#9bdcff,#2b8cff,#0b3fbf,#081d6b"
-CHECK_CPT = "#7f3b08,#e08214,#fdb863,white,#92c5de,#4393c3,#053061"
+CHECK_CPT = "red,white,blue"
 ELEV_CPT = "#a8cfa0,#cfe0b0,#ece6bf,#e3cfa4,#cdb08a,#f4efe6"
 
 
@@ -42,27 +43,38 @@ def run(tmp, pre, cmd, out, formats=("png", "pdf"), dpi=300, font=(7, 8)):
                        "`conda install -c conda-forge gmt`")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     script = os.path.join(tmp, "draw.sh")
+    # the figure is drawn under a plain name inside the scratch directory and moved to `out` afterwards, so that
+    # an output path with spaces or shell characters never reaches the GMT command line
+    q = shlex.quote
     with open(script, "w") as f:
-        f.write("set -e\nexport GMT_TMPDIR=%s GMT_USERDIR=%s\ncd %s\n%s\ngmt begin %s %s A+m0.25c,E%d\n%s\n%s\ngmt end\n"
-                % (tmp, tmp, tmp, "\n".join(pre), os.path.abspath(out), ",".join(formats), dpi,
-                   SET.format(a=font[0], l=font[1]), "\n".join(cmd)))
+        f.write("set -e\nexport GMT_TMPDIR=%s GMT_USERDIR=%s\ncd %s\n%s\ngmt begin lant_figure %s A+m0.25c,E%d\n%s\n%s\n"
+                "gmt end\n" % (q(tmp), q(tmp), q(tmp), "\n".join(pre), ",".join(formats), dpi,
+                               SET.format(a=font[0], l=font[1]), "\n".join(cmd)))
     r = subprocess.run(["bash", script], capture_output=True, text=True)
     if r.returncode != 0 or "ERROR" in r.stderr:
         raise GMTError("GMT failed for %s:\n%s\n(script kept: %s)" % (out, r.stderr[-3000:], script))
+    for fmt in formats:
+        shutil.move(os.path.join(tmp, "lant_figure." + fmt), os.path.abspath(out) + "." + fmt)
     if not os.environ.get("LANT_KEEP_GMT"):
         shutil.rmtree(tmp, ignore_errors=True)
     return [out + "." + f for f in formats]
 
 
+RELIEF_NOTES = []          # why a figure was drawn without relief (for the figure report)
+
+
 def relief_cmds(cfg, tmp, W, E, S, N, palette="gray"):
-    """Commands that cut the relief grid (plots.topography) to the map, its hill shade and a colour table.
-    Returns (commands, have_relief).  palette gray: the light grey of the model maps; elevation: the station map."""
-    topo = cfg["plots"]["topography"]
+    """Commands that cut the relief grid (plots.topography, lant.plotting.relief) to the map, its hill shade and a
+    colour table.  Returns (commands, have_relief).  palette gray: the light grey under the model maps; elevation:
+    the coloured relief of the station map."""
+    from . import relief
+    pad = 0.01
+    topo, note = relief.grid(cfg, W - pad, E + pad, S - pad, N + pad, tmp)
     if not topo:
+        if note not in RELIEF_NOTES:
+            RELIEF_NOTES.append(note)
         return [], False
-    if not topo.startswith("@") and not os.path.exists(topo):
-        raise GMTError("plots.topography %s not found" % topo)
-    pre = ["gmt grdcut %s -R%.5f/%.5f/%.5f/%.5f -G%s/topo.nc" % (topo, W - 0.01, E + 0.01, S - 0.01, N + 0.01, tmp),
+    pre = ["gmt grdcut %s -R%.5f/%.5f/%.5f/%.5f -G%s/topo.nc" % (shlex.quote(topo), W - pad, E + pad, S - pad, N + pad, tmp),
            "gmt grdgradient %s/topo.nc -A315 -Nt0.5 -G%s/shade.nc" % (tmp, tmp)]
     if palette == "gray":
         # elevations mapped onto the pale end of the grey scale: light relief under semi-transparent values
