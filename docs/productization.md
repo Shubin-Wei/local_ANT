@@ -37,3 +37,7 @@ Use the same raw synthetic inputs for old/new comparison. Compare measurement gr
 `lant note "text" -c CONFIG` appends a timestamped note. `lant confirm STEP -c CONFIG --reason "decision and evidence"` records the result basis, reason and invocation mode under the same project lock. Status reports unregistered, missing and modified managed files without attributing an author.
 
 `lant clean-work -c CONFIG [--cache archive|cc]` previews registered unchanged files. Only `--execute --yes` deletes them, after current evaluation has finished and raw data remain available. Final products and unknown files stay intact. Rebuilding cc or stack after cleanup requires recreating upstream caches; status exposes `cache_cleaned`. `--from` and `--rebuild` display their impact and require explicit acknowledgement; rebuild backups are unique and never replace earlier backups.
+
+## Resource preflight
+
+Clean estimates memory and storage before writing the archive; cc rechecks immediately before allocating workers. Effective available memory includes readable Linux cgroup limits. The existing 70% memory reserve is retained; only worker count changes. Storage estimates are conservative full-output bounds including replacement space; quotas and future load cannot be guaranteed. A broad line-array velocity prior is flagged without adding a confirmation gate or changing the prior.

@@ -246,10 +246,9 @@ def resources(cfg, nsta, npair, ndays):
     nlag = 2 * float(c["maxlag_s"]) * float(c["fs"]) + 1
     hourly = 24.0 * npair * nlag * 4
     day = nsta * 86400.0 * float(c["fs"]) * 5
-    try:
-        ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9
-    except (ValueError, OSError):
-        ram = None
+    from .resources import available_memory
+    memory = available_memory()
+    ram = memory / 1e9 if memory is not None else None
     return dict(memory_per_process_gb=(2.5 * hourly + day) / 1e9, disk_gb=ndays * hourly / 1e9, ram_gb=ram,
                 maxlag_s=float(c["maxlag_s"]), seg_len_s=float(c["seg_len_s"]), pairs=int(npair))
 
@@ -261,7 +260,7 @@ def resources_text(cfg, r):
             "which is set by the slowest velocity of data.velocity_range_kms (%g km/s now): a range that fits the "
             "area shortens it" % (r["pairs"], r["maxlag_s"], r["seg_len_s"], r["memory_per_process_gb"],
                                   int(cfg["correlation"]["nproc"]),
-                                  "; %.0f GB installed" % r["ram_gb"] if r["ram_gb"] else "", r["disk_gb"], v[0]))
+                                  "; %.0f GB effectively available" % r["ram_gb"] if r["ram_gb"] else "", r["disk_gb"], v[0]))
 
 
 def run(cfg):
@@ -287,13 +286,13 @@ def run(cfg):
                coords={k: (v["lon"], v["lat"]) for k, v in stations.items()})
     npair = pair_indices(sorted(stations), opt["coords"], opt["max_dist"])[0].size
     res = resources(cfg, len(stations), npair, len(days))
+    from .resources import preflight
+    preflight(cfg, res, out_dir)
     nproc = int(c["nproc"])
     if res["ram_gb"]:                              # as many processes as fit into 70 % of the memory
         fit = int(0.7 * res["ram_gb"] / res["memory_per_process_gb"])
         if fit < 1:
-            raise D.DataError("%s.  One process alone does not fit: narrow data.velocity_range_kms (the slowest "
-                              "velocity sets the lag window), or limit the pairs by distance "
-                              "(correlation.max_distance_km)" % resources_text(cfg, res))
+            raise D.DataError("%s.  One process alone does not fit: free memory or use a larger worker" % resources_text(cfg, res))
         if fit < nproc:
             print("  %s\n  -> %d processes instead of correlation.nproc = %d, so that they fit into the memory"
                   % (resources_text(cfg, res), fit, nproc), flush=True)

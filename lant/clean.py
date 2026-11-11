@@ -330,7 +330,15 @@ def run(cfg):
     rep.append("  %d stations used (%d excluded by data.exclude_stations), %d processing days, %d station-days"
                % (len(rows), len(ex), len(days), nsd))
     from . import cc as CC
-    res = CC.resources(cfg, len(rows), len(rows) * (len(rows) - 1) // 2, len(days))
+    coords = {n: (v["lon"], v["lat"]) for n, v in D.used_stations(cfg).items()}
+    npair = CC.pair_indices(sorted(rows), coords, cfg["correlation"]["max_distance_km"])[0].size
+    res = CC.resources(cfg, len(rows), npair, len(days))
+    from .resources import preflight
+    preflight(cfg, res, out, est_bytes if cfg["clean"]["write_archive"] else 0)
+    if cfg["project"]["array_type"] == "line" and cfg["data"]["velocity_range_kms"] == [0.1, 5.0]:
+        import sys
+        print("[lant] line array uses the broad default velocity prior; review its scientific suitability "
+              "and resource estimate before cc. No prior was changed.", file=sys.stderr)
     rep.append("  " + CC.resources_text(cfg, res))
     with open(os.path.join(out, "processing_days.txt"), "w") as fh:
         fh.write("# label (data.day_label = %s)  UTC window\n" % cfg["data"].get("day_label", "utc_start"))
