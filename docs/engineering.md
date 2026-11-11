@@ -14,3 +14,7 @@
 10. Review the diff before committing; remove debugging, temporary artifacts and unrelated changes; explain the purpose.
 11. Update documentation when interfaces, configuration or startup changes.
 12. Solve current needs with proportionate design; avoid speculative abstractions and dependencies.
+
+## Local checks
+
+Install `pip install -e ".[dev]"`, then run `ruff check lant tests tools examples` and `python -m pytest tests --cov=lant`. New infrastructure is formatted with ruff; CI lists its scoped format check. Existing scientific modules are not bulk reformatted in functional commits. Build both distributions with `python -m build`, then verify a wheel outside the checkout.

@@ -1,0 +1,5 @@
+include LICENSE README.md README.zh.md CITATION.cff
+recursive-include lant/_external *.sh *.patch *.f90
+recursive-include docs *.md *.png
+recursive-include config *.yaml
+recursive-include tools *.py *.sh

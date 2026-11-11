@@ -28,3 +28,9 @@ dist/
 examples/synthetic/output*/
 # GMT session file
 gmt.history
+
+# Local verification artifacts
+.coverage
+coverage.xml
+htmlcov/
+.ruff_cache/

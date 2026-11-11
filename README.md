@@ -1,8 +1,19 @@
 # local_ANT
 
+[![tests](https://github.com/Shubin-Wei/local_ANT/actions/workflows/tests.yml/badge.svg)](https://github.com/Shubin-Wei/local_ANT/actions/workflows/tests.yml)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Development](https://img.shields.io/badge/status-development-orange)](docs/history.md)
+
 [中文](README.zh.md) | English
 
 High-frequency ambient-noise surface-wave tomography for dense (nodal) arrays, from raw records to a 3-D shear-velocity model. One command line, `lant`; one configuration file; every step writes a report that says what it did, with which values, and what is left for you to judge.
+
+![Synthetic dispersion and shear-velocity model](docs/assets/synthetic-result.png)
+
+*Known-truth synthetic example: dispersion on the left, horizontally averaged Vs on the right. This illustrates a laterally uniform medium; it is not a demonstration of general 3-D resolution.*
+
+Start with `OUT/REPORT.md`. Retained scientific products are under `results/`; processing files are under `work/`; state and rotating logs are under `.lant/`. Manual runs show progress on stderr, and `lant run ... -v` shows details. [Output guide](docs/outputs.md).
 
 ```
 raw records ─ clean ─ cc ─ stack ─ reference ─ disp ─ inversion ─ run ─ evaluate ─ figures
@@ -37,7 +48,7 @@ You give three paths: the raw data, the station table, the output directory. Eve
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
 conda env create -f environment.yml && conda activate lant     # Python, ObsPy, GMT 6, gfortran
 pip install -e .
-bash tools/install_external.sh                                  # DSurfTomo and pDSurfTomo, fixed versions
+lant install-external                                  # DSurfTomo and pDSurfTomo, fixed versions
 lant check                                                      # says what is missing and how to install it
 ```
 

@@ -11,6 +11,9 @@ license = {text = "MIT"}
 requires-python = ">=3.8"
 dependencies = ["numpy>=1.19", "scipy>=1.5", "h5py>=2.10", "obspy>=1.2", "matplotlib>=3.5", "pyyaml>=6.0", "openpyxl>=3.1"]
 
+[project.optional-dependencies]
+dev = ["pytest>=7,<9", "pytest-cov>=4,<6", "ruff==0.14.0", "build>=1.2,<1.3"]
+
 [project.scripts]
 lant = "lant.cli:main"
 
@@ -19,3 +22,10 @@ packages = ["lant", "lant.inversion", "lant.plotting"]
 
 [tool.setuptools.package-data]
 lant = ["_external/*.sh", "_external/*.patch", "_external/*.f90"]
+
+[tool.ruff]
+target-version = "py38"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E9", "F821", "F822", "F823"]

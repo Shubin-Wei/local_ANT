@@ -14,3 +14,7 @@
 10. 提交前自查：检查差异，清除调试代码、临时文件和无关改动，写清提交目的。
 11. 保持文档同步：接口、配置、启动方式变化时更新说明。
 12. 适度设计：优先解决当前需求，避免不必要的抽象和依赖。
+
+## 本地检查
+
+先安装 `pip install -e ".[dev]"`，再运行 `ruff check lant tests tools examples` 和 `python -m pytest tests --cov=lant`。新基础模块使用 ruff 格式化，CI 列出限定范围的格式检查；功能提交不批量重排已有科学代码。用 `python -m build` 构建两种发行物，再在源码树外验证 wheel。

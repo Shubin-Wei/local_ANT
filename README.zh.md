@@ -1,8 +1,19 @@
 # local_ANT
 
+[![tests](https://github.com/Shubin-Wei/local_ANT/actions/workflows/tests.yml/badge.svg)](https://github.com/Shubin-Wei/local_ANT/actions/workflows/tests.yml)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Development](https://img.shields.io/badge/status-development-orange)](docs/history.md)
+
 中文 | [English](README.md)
 
 密集（节点）台阵高频背景噪声面波成像的完整流程：从原始记录到三维横波速度模型。一个命令行入口 `lant`，一份配置文件；每一步都写出报告，说明做了什么、用了哪些数值、哪些事留给你判断。
+
+![合成算例频散与横波速度模型](docs/assets/synthetic-result.png)
+
+*已知真值的合成算例：左侧为频散，右侧为横向平均 Vs。这是横向均匀介质示例，不代表一般三维分辨率验证。*
+
+先打开 `OUT/REPORT.md`。科学成果在 `results/`，计算文件在 `work/`，状态和轮转日志在 `.lant/`。手动运行在 stderr 显示进度，`lant run ... -v` 查看详情。见[输出说明](docs/outputs.zh.md)。
 
 ```
 原始记录 ─ clean ─ cc ─ stack ─ reference ─ disp ─ inversion ─ run ─ evaluate ─ figures
@@ -37,7 +48,7 @@
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
 conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6、gfortran
 pip install -e .
-bash tools/install_external.sh                                  # DSurfTomo 和 pDSurfTomo（固定版本）
+lant install-external                                  # DSurfTomo 和 pDSurfTomo（固定版本）
 lant check                                                      # 缺什么、怎么装，都会列出
 ```
 

@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "Please cite this software and the scientific methods listed in the documentation."
+title: "local_ANT: high-frequency ambient-noise surface-wave tomography"
+type: software
+authors:
+  - name: "local_ANT contributors"
+repository-code: "https://github.com/Shubin-Wei/local_ANT"
+license: MIT

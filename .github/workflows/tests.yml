@@ -16,18 +16,26 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gfortran make
       - name: install
         run: |
-          pip install -e . pytest
+          pip install -e ".[dev]"
           bash tools/install_external.sh dsurftomo
       - name: unit tests
-        run: python -m pytest tests -q
+        run: python -m pytest tests -q --cov=lant --cov-report=term-missing --cov-report=xml
       - name: quick synthetic example (to the inversion project)
         run: |
           python examples/synthetic/make_synthetic.py --quick --out /tmp/quick
-          C=/tmp/quick/synthetic.yaml
-          for gate in clean stack reference inversion; do
-            lant run all -c $C --to inversion || true
-            lant confirm $gate -c $C --reason "CI synthetic data with known truth" || true
-          done
-          lant run all -c $C --to inversion
-          lant status -c $C --json
+          python tools/run_synthetic.py --dir /tmp/quick
+          lant status -c /tmp/quick/synthetic.yaml --json
           python examples/synthetic/compare_truth.py --dir /tmp/quick
+      - name: lint
+        run: ruff check lant tests tools examples
+      - name: format new infrastructure
+        run: ruff format --check lant/progress.py lant/delivery.py lant/artifacts.py lant/resources.py lant/processes.py tools/run_synthetic.py tests/test_progress.py tests/test_delivery.py tests/test_artifacts.py tests/test_resources.py tests/test_export.py tests/test_processes.py
+      - name: build distributions
+        run: python -m build
+      - name: install wheel outside checkout
+        run: |
+          python -m venv /tmp/lant-installed
+          /tmp/lant-installed/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/lant-installed/bin/lant --help
+          /tmp/lant-installed/bin/lant init -o /tmp/installed.yaml
