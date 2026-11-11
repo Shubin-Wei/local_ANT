@@ -1,277 +1,239 @@
-"""Step 05: reference phase-velocity curve.
+"""Step 04: reference phase-velocity curve, and the measurement band and velocity axis that follow from it.
 
 The reference guides the group ridge, fixes the cycle count of the phase and centres the deviation screens.
-  reference.source = fj (default): F-J spectrum of this array with CC-FJpy fj_noise (frequency-Bessel transform,
-      Wang et al. 2019; Li et al. 2021), one frequency at a time with the pairs not longer than fj_rmax_lambda
-      wavelengths of fj_c_nominal (long paths stop being coherent at high frequency and the image breaks up);
-        fj_mode max_peak (areal arrays): the largest peak (assumes the fundamental mode is strongest), picks in
-            notched lines dropped, cubic in log f up to fj_fit_fmax, held constant outside the fitted range;
-        fj_mode track_fundamental (lines, where higher modes or off-line noise can dominate): the fundamental
-            ridge is followed from an unambiguous start in track_start_band_hz (steps <= 5 % per 1/12 octave, at
-            most 3 % rise with frequency), cubic in log f, made non-increasing, constant outside.
-      This first-pass curve is used without deviation screens; the SECOND pass reference is the per-frequency
-      median of the first-pass phase velocities (>= pass2_min_pairs pairs; gaps <= 0.25 octave interpolated
-      in log f; no reference elsewhere, nothing measured there).  Written by lant.pipeline after the first pass.
+  reference.source = fj (default): F-J spectrum of this array and its fundamental-mode ridge (lant/fj.py);
   reference.source = file: a curve of another array (npz written by lant, or text "freq_Hz c_km/s"), interpolated
-      in log f onto the measurement frequencies; outside its range there is no reference (no extrapolation).
-      Used directly as the measurement reference (no first pass).
+      in log f onto the frequencies only inside its own valid segments (borrowed_curve): no value across a stretch
+      the source marks invalid and none outside (no extrapolation).
+From the curve (lant.auto.from_reference): dispersion.fmin_hz (the longest pair = qc.lam_c wavelengths),
+dispersion.vmin / vmax / dv, export.tmax_s; the reference is then cut to the measurement band.  The step stops
+for `lant confirm reference`: are the picks on the fundamental-mode ridge, are the band and the velocities right?
 """
 import os
-import sys
 
 import h5py
 import numpy as np
 
+from . import fj as FJ
 from . import paths
 from .signal import log_freqs
 
 
 def freq_grid(cfg):
+    """The measurement frequencies (dispersion.fmin_hz - fmax_hz on the 1/per_octave grid through 1 Hz)."""
     d = cfg["dispersion"]
     f = log_freqs(d["fmin_hz"], d["fmax_hz"], d["per_octave"])
     return f[f <= d["fmax_hz"] + 1e-9]
 
 
-def import_ccfj():
-    try:
-        import ccfj  # noqa: F401
-        return ccfj
-    except ImportError:
-        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        sys.path.insert(0, os.path.join(here, "external", "CC-FJpy"))
-        try:
-            import ccfj
-            return ccfj
-        except ImportError as exc:
-            raise RuntimeError("CC-FJpy is not installed (needed for reference.source = fj): run "
-                               "`bash tools/install_external.sh ccfj`, or give a reference curve with "
-                               "reference.source = file (%s)" % exc)
+def borrowed_curve(path, freqs):
+    """A borrowed reference curve on `freqs`, keeping the validity its source gives.
 
-
-def fj_image(cfg, stack_path, table):
-    r = cfg["reference"]
-    ccfj = import_ccfj()
-    with h5py.File(stack_path, "r") as h:
-        x = h["stack"][:].astype(np.float64)
-        dist = h["dist_km"][:]
-        nseg = h["nseg"][:]
-        fs, maxlag = float(h.attrs["fs"]), float(h.attrs["maxlag"])
-    use = nseg > 0
-    x, dist = x[use], dist[use]
-    L = int(round(maxlag * fs))
-    xc = np.zeros((x.shape[0], r["fj_nfft"]))
-    xc[:, :L + 1] = x[:, L:]
-    xc[:, -L:] = x[:, :L]
-    X = np.real(np.fft.rfft(xc, axis=1))
-    fall = np.fft.rfftfreq(r["fj_nfft"], 1 / fs)
-    freqs = freq_grid(cfg)
-    kbin = np.array([int(np.argmin(np.abs(fall - f))) for f in freqs])
-    c = np.arange(r["fj_cmin"], r["fj_cmax"] + 1e-9, r["fj_dc"])
-    img = np.zeros((len(freqs), len(c)))
-    npair = np.zeros(len(freqs), int)
-    for i, (f, kb) in enumerate(zip(freqs, kbin)):
-        m = dist * f / r["fj_c_nominal"] <= r["fj_rmax_lambda"]
-        npair[i] = m.sum()
-        if m.sum() < 30:
-            continue
-        out = ccfj.fj_noise(X[m][:, kb:kb + 1], dist[m] * 1e3, c * 1e3, np.array([fall[kb]]), fstride=1, itype=1,
-                            func=0, num=int(r["fj_threads"]))
-        img[i] = out[:, 0]
-    return freqs, c, img, npair
-
-
-def _peaks(y, thr):
-    return np.where((y[1:-1] > y[:-2]) & (y[1:-1] >= y[2:]) & (y[1:-1] >= thr))[0] + 1
-
-
-def pick_max(cfg, freqs, c, img, table):
-    r = cfg["reference"]
-    cfj = np.full(len(freqs), np.nan)
-    for i in range(len(freqs)):
-        if not img[i].any():
-            continue
-        j = int(np.argmax(img[i]))
-        if 0 < j < len(c) - 1:
-            cfj[i] = c[j]
-    good = np.isfinite(cfj) & (freqs <= r["fj_fit_fmax"])
-    for f0, hw in table:
-        good &= np.abs(freqs - f0) > hw
-    if good.sum() < 5:
-        raise RuntimeError("the F-J image has only %d usable picks below %.1f Hz: check the stack (too few pairs?) or "
-                           "borrow a reference (reference.source = file)" % (good.sum(), r["fj_fit_fmax"]))
-    x = np.log(freqs)
-    p = np.polyfit(x[good], np.log(cfj[good]), 3)
-    xr = np.minimum(np.log(freqs), np.log(r["fj_fit_fmax"]))
-    curve = np.exp(np.polyval(p, np.maximum(xr, x[good].min())))
-    return cfj, good, curve
-
-
-def pick_track(cfg, freqs, c, img, table, min_peak=0.5, min_track=0.3, step=0.05, max_miss=3, cmin=2.0, rise=0.03):
-    s0, s1 = cfg["reference"]["track_start_band_hz"]
-    Y = img / (img.max(axis=1, keepdims=True) + 1e-30)
-    okc = (c >= cmin) & (c <= 0.97 * c.max())
-    start = None
-    for strict in (True, False):
-        for i in np.where((freqs >= s0) & (freqs <= s1))[0]:
-            k = _peaks(Y[i], min_peak)
-            k = k[okc[k]]
-            if k.size and np.argmax(Y[i][k]) == 0 and (k.size == 1 or not strict):
-                start = i
-                break
-        if start is not None:
-            break
-    if start is None:
-        raise RuntimeError("F-J image: no unambiguous fundamental-mode start in %.2f-%.2f Hz "
-                           "(reference.track_start_band_hz); borrow a reference (reference.source = file)" % (s0, s1))
-    pick = np.full(len(freqs), np.nan)
-    k = _peaks(Y[start], min_peak)
-    pick[start] = c[k[okc[k]][0]]
-    for direction in (1, -1):
-        last, miss, i = pick[start], 0, start + direction
-        lowest = highest = last
-        while 0 <= i < len(freqs) and miss < max_miss:
-            k = _peaks(Y[i], min_track)
-            k = k[okc[k]]
-            if k.size:
-                j = k[np.argmin(np.abs(c[k] - last))]
-                rel = c[j] / last - 1
-                mono = (c[j] <= lowest * (1 + rise)) if direction > 0 else (c[j] >= highest * (1 - rise))
-                if abs(rel) <= step and mono:
-                    pick[i] = c[j]
-                    last = c[j]
-                    miss = 0
-                    lowest, highest = min(lowest, last), max(highest, last)
-                else:
-                    miss += 1
-            else:
-                miss += 1
-            i += direction
-    use = np.isfinite(pick)
-    for f0, hw in table:
-        use &= np.abs(freqs - f0) > hw
-    x = np.log(freqs)
-    pf = np.polyfit(x[use], np.log(pick[use]), 3)
-    lo, hi = x[use].min(), x[use].max()
-    curve = np.minimum.accumulate(np.exp(np.polyval(pf, np.clip(x, lo, hi))))
-    return pick, use, curve
-
-
-def from_file(cfg, path):
-    freqs = freq_grid(cfg)
+    npz written by lant: the points marked valid (ref_valid) form contiguous segments in the source's own frequency
+    order; a target frequency gets a value only inside a segment (interpolated in log f between the segment's
+    points), never across an invalid stretch and never outside (no extrapolation).  Text "freq_Hz c_km/s": the file
+    says nothing about validity, so its listed points are taken as one segment and labelled "validity unknown".
+    Support (the curve is backed by measurements there; only supported frequencies anchor the cycle count and get the
+    deviation screens): an npz written by lant carries ref_support, and a target frequency is supported only when the
+    two source points around it are both supported (a held / extrapolated stretch of the source stays unsupported);
+    a text curve is taken as supported where it has values (it is given as a measured or model curve).
+    -> c (NaN where there is no value), valid mask, support mask, origin labels per frequency, note."""
+    freqs = np.asarray(freqs, float)
     if path.endswith(".npz"):
         z = np.load(path)
         f, c = np.asarray(z["freqs"], float), np.asarray(z["c_ref"], float)
-        if "ref_valid" in z.files:
-            c = np.where(z["ref_valid"], c, np.nan)
+        v = np.asarray(z["ref_valid"], bool) if "ref_valid" in z.files else np.ones(len(f), bool)
+        sp = np.asarray(z["ref_support"], bool) if "ref_support" in z.files else v.copy()
+        known = "ref_valid" in z.files
     else:
         a = np.loadtxt(path, ndmin=2)
         f, c = a[:, 0], a[:, 1]
-        if np.median(f) > 0 and np.all(np.diff(f) < 0):
-            f, c = f[::-1], c[::-1]
-    m = np.isfinite(c) & (c > 0)
-    f, c = f[m], c[m]
-    if len(f) < 2 or np.any(np.diff(f) <= 0):
-        raise RuntimeError("%s: frequencies must be increasing (first column frequency in Hz, second c in km/s)" % path)
-    if c.min() < 0.05 or c.max() > 10:
-        raise RuntimeError("%s: velocities %.3f-%.3f look wrong (km/s expected)" % (path, c.min(), c.max()))
-    inside = (freqs >= f.min() * (1 - 1e-6)) & (freqs <= f.max() * (1 + 1e-6))
-    cr = np.full(len(freqs), np.nan)
-    cr[inside] = np.exp(np.interp(np.log(freqs[inside]), np.log(f), np.log(c)))
-    return freqs, cr, inside
+        v = np.ones(len(f), bool)
+        sp = v.copy()
+        known = False
+    o = np.argsort(f)
+    f, c, v, sp = f[o], c[o], v[o], sp[o]
+    v &= np.isfinite(c) & (c > 0) & (f > 0)
+    if v.sum() < 2:
+        raise RuntimeError("%s: fewer than 2 valid points (first column frequency in Hz, second c in km/s)" % path)
+    if np.any(np.diff(f) <= 0):
+        raise RuntimeError("%s: repeated frequencies" % path)
+    if c[v].min() < 0.05 or c[v].max() > 10:
+        raise RuntimeError("%s: velocities %.3f-%.3f look wrong (km/s expected)" % (path, c[v].min(), c[v].max()))
+    out = np.full(len(freqs), np.nan)
+    sup = np.zeros(len(freqs), bool)
+    origin = np.array(["none"] * len(freqs), dtype=object)
+    k = 0
+    while k < len(f):
+        if not v[k]:
+            k += 1
+            continue
+        j = k
+        while j + 1 < len(f) and v[j + 1]:
+            j += 1
+        if j > k:
+            m = (freqs >= f[k] * (1 - 1e-6)) & (freqs <= f[j] * (1 + 1e-6))
+            out[m] = np.exp(np.interp(np.log(freqs[m]), np.log(f[k:j + 1]), np.log(c[k:j + 1])))
+            origin[m] = "borrowed" if known else "borrowed, validity unknown"
+            for i in np.where(m)[0]:                   # supported only between two supported source points
+                b = int(np.clip(np.searchsorted(f[k:j + 1], freqs[i] * (1 - 1e-9)), 0, j - k))
+                a = max(0, b - 1)
+                at = abs(np.log(freqs[i] / f[k + b])) < 1e-6
+                sup[i] = sp[k + b] if at else (sp[k + a] and sp[k + b])
+        k = j + 1
+    note = ("valid segments of %s" % path) if known else ("%s has no validity information: its points are taken as one "
+                                                          "segment; gaps of the source cannot be recognised" % path)
+    valid = np.isfinite(out)
+    sup &= valid
+    for i in np.where(sup)[0]:
+        origin[i] = origin[i] + ", measured"
+    return out, valid, sup, origin, note
 
 
-def pass2(cfg, ref_in, disp_path, out, report):
-    """Second-pass reference: per-frequency median of the accepted first-pass phase velocities."""
+def from_file(cfg, path, freqs=None):
+    freqs = FJ.scan_grid(cfg) if freqs is None else freqs
+    c, valid, support, origin, note = borrowed_curve(path, freqs)
+    return freqs, c, valid, support, origin, note
+
+
+def _band_cut(cfg, freqs, *arrays):
+    """The arrays on the measurement grid (dispersion.fmin_hz - fmax_hz, a subset of the scan grid)."""
+    f = freq_grid(cfg)
+    idx = np.array([int(np.argmin(np.abs(np.log(freqs / x)))) for x in f])
+    if not np.allclose(freqs[idx], f, rtol=1e-6):
+        raise RuntimeError("dispersion.fmin_hz / fmax_hz %g-%g are not on the 1/%d-octave grid through 1 Hz"
+                           % (f[0], f[-1], cfg["dispersion"]["per_octave"]))
+    return (f,) + tuple(np.asarray(a)[idx] for a in arrays)
+
+
+def zone_references(cfg, stack, d, freqs, c, curve, support):
+    """reference.zone_km: one F-J curve per square zone of that size, from the pairs whose path midpoint lies in
+    the zone (local references where the structure changes across the array; a choice, not a literature value); every
+    pair is then measured against the curve of its zone.  A zone whose image does not give a curve (too few
+    pairs, no clear ridge) uses the curve of the whole array.  Writes 04_reference/zones.npz, zones.txt, zones.png."""
+    from .signal import local_xy_km
     r = cfg["reference"]
-    ref = dict(np.load(ref_in))
-    f = ref["freqs"]
-    c1 = np.asarray(ref["c_ref"], float)
-    with h5py.File(disp_path, "r") as h:
-        assert np.allclose(h["freqs"][:], f)
-        ok = h["ok_c"][:]
-        vc = np.where(ok, h["vc"][:], np.nan)
-    cnt = ok.sum(axis=0)
-    with np.errstate(all="ignore"):
-        med = np.nanmedian(vc, axis=0)
-        q16, q84 = np.nanpercentile(vc, 16, axis=0), np.nanpercentile(vc, 84, axis=0)
-    have = cnt >= r["pass2_min_pairs"]
-    if not have.any():
-        raise RuntimeError("second-pass reference: no frequency has >= %d first-pass phase velocities (max %d); lower "
-                           "reference.pass2_min_pairs or check the first pass" % (r["pass2_min_pairs"], cnt.max()))
-    lf = np.log2(f)
-    step = np.median(np.diff(lf))
-    kind = np.where(have, 3, 0)
-    c = np.where(have, med, np.nan)
-    idx = np.where(have)[0]
-    for i0, i1 in zip(idx[:-1], idx[1:]):
-        nmiss = i1 - i0 - 1
-        if nmiss > 0 and nmiss * step <= r["pass2_max_gap_octave"] + 1e-9:
-            kind[i0 + 1:i1] = 4
-    gap = kind == 4
-    c[gap] = np.exp(np.interp(lf[gap], lf[have], np.log(med[have])))
-    valid = kind > 0
-    out_ref = dict(freqs=f, c_ref=np.where(valid, c, np.nan), ref_valid=valid, ref_kind=kind, median_pass1=med,
-                   npairs_pass1=cnt, c_ref_pass1=c1,
-                   c_ref_source=np.array("second pass: median of the first-pass phase velocities (>= %d pairs)" % r["pass2_min_pairs"]))
-    np.savez(out, **out_ref)
-    d = med / c1 - 1
-    L = ["second-pass reference: median of the first-pass phase velocities (>= %d pairs, gaps <= %.2f octave interpolated)"
-         % (r["pass2_min_pairs"], r["pass2_max_gap_octave"]),
-         "  defined %.2f-%.2f Hz; median against the first-pass reference %+.2f %% to %+.2f %%"
-         % (f[valid].min(), f[valid].max(), 100 * np.nanmin(d[have]), 100 * np.nanmax(d[have])), "",
-         "  f(Hz)   kind          c_ref   pass1_ref   median  pairs"]
-    names = {0: "none", 3: "median", 4: "interpolated"}
-    for k in range(len(f)):
-        L.append("  %6.3f  %-12s %6.3f   %6.3f     %6.3f  %5d" % (f[k], names[kind[k]], out_ref["c_ref"][k], c1[k], med[k], cnt[k]))
-    open(report + ".txt", "w").write("\n".join(L) + "\n")
+    size = float(r["zone_km"])
+    with h5py.File(stack, "r") as h:
+        mlon, mlat = 0.5 * (h["lon1"][:] + h["lon2"][:]), 0.5 * (h["lat1"][:] + h["lat2"][:])
+        has = h["nseg"][:] > 0
+    x, y = local_xy_km(mlon, mlat)
+    ix, iy = np.floor((x - x[has].min()) / size).astype(int), np.floor((y - y[has].min()) / size).astype(int)
+    keys = sorted({(a, b) for a, b in zip(ix[has], iy[has])})
+    zone = np.full(len(has), -1, int)
+    curves, sups, L = [], [], ["zone references (reference.zone_km = %g): zone, centre x y (km), pairs, picks used, curve" % size]
+    for a, b in keys:
+        sel = has & (ix == a) & (iy == b)
+        cx, cy = float(x[sel].mean()), float(y[sel].mean())
+        try:
+            f2, c2, img, npair = FJ.fj_image(cfg, stack, freqs, select=sel, c_limit=(freqs, curve))
+            if r["fj_mode"] == "max_peak":
+                _, used, cz, _ = FJ.pick_max(cfg, f2, c2, img, npair)
+            else:
+                _, used, cz, _ = FJ.pick_track(cfg, f2, c2, img, start_band=FJ.track_start(cfg, f2, c2, img, npair))
+            fu = freqs[used]
+            sz = (freqs >= fu.min() * (1 - 1e-9)) & (freqs <= fu.max() * (1 + 1e-9))
+            zone[sel] = len(curves)
+            curves.append(cz)
+            sups.append(sz)
+            L.append("  %d  %+.2f %+.2f  %d pairs  %d picks  own curve (%.3f-%.3f km/s)" % (len(curves) - 1, cx, cy, sel.sum(), used.sum(), cz.min(), cz.max()))
+        except RuntimeError as exc:
+            L.append("  -  %+.2f %+.2f  %d pairs  whole-array curve (%s)" % (cx, cy, sel.sum(), str(exc)[:70]))
+    FJ.fj_image(cfg, stack, freqs[:1])                       # restores the pair threshold of the whole array
+    f, *cut = _band_cut(cfg, freqs, *curves, *sups)
+    n = len(curves)
+    np.savez(os.path.join(d, "zones.npz"), freqs=f, zone=zone, c_ref=np.array(cut[:n]).reshape(n, len(f)),
+             ref_support=np.array(cut[n:]).reshape(n, len(f)).astype(bool))
+    open(os.path.join(d, "zones.txt"), "w").write("\n".join(L) + "\n")
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, axs = plt.subplots(1, 2, figsize=(13, 5))
-    ax = axs[0]
-    ax.fill_between(f, q16, q84, color="0.85", label="first pass, 16-84 % of the pairs")
-    ax.semilogx(f, med, ".", color="0.4", label="first-pass median")
-    ax.semilogx(f, c1, "b--", lw=1, label="first-pass reference")
-    ax.semilogx(f, out_ref["c_ref"], "r-", lw=1.8, label="second-pass reference")
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    for k, cz in enumerate(curves):
+        ax.plot(freqs, cz, lw=1.0, label="zone %d" % k if n <= 12 else None)
+    ax.plot(freqs, curve, "k-", lw=2.2, label="whole array")
+    ax.set_xscale("log")
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("Phase velocity (km/s)")
-    ax.legend(fontsize=8, frameon=False)
-    axs[1].semilogx(f, cnt, "k.-")
-    axs[1].axhline(r["pass2_min_pairs"], color="r", lw=0.8)
-    axs[1].set_yscale("log")
-    axs[1].set_xlabel("Frequency (Hz)")
-    axs[1].set_ylabel("Pairs with an accepted first-pass phase velocity")
+    ax.legend(fontsize=7)
     fig.tight_layout()
-    fig.savefig(report + ".png", dpi=140)
+    fig.savefig(os.path.join(d, "zones.png"), dpi=150)
     plt.close(fig)
-    return dict(defined_hz=[float(f[valid].min()), float(f[valid].max())], frequencies_without_reference=int((~valid).sum()),
-                median_vs_pass1_percent=[float(100 * np.nanmin(d[have])), float(100 * np.nanmax(d[have]))])
+    return dict(zone_km=size, zones=len(keys), with_own_curve=n, pairs_on_whole_array_curve=int((has & (zone < 0)).sum()))
 
 
 def run(cfg):
-    from . import notch
+    from . import auto, disp
     d = paths.mk(paths.P(cfg, paths.REFERENCE))
     r = cfg["reference"]
+    geom = auto.load(cfg).get("geometry")
+    if not geom:
+        raise RuntimeError("records/auto_parameters.json has no geometry: run `lant run clean` first")
+    auto.reset(cfg, auto.REFERENCE_KEYS)
+    cfg = auto.restore(cfg, auto.REFERENCE_KEYS)
     if r["source"] == "file":
-        freqs, c, valid = from_file(cfg, r["file"])
-        np.savez(os.path.join(d, "reference.npz"), freqs=freqs, c_ref=c, ref_valid=valid,
-                 c_ref_source=np.array("borrowed: %s" % r["file"]))
-        return dict(source="file", file=r["file"], defined_hz=[float(freqs[valid].min()), float(freqs[valid].max())])
-    table = notch.read_table(cfg).tolist()
+        freqs, c, valid, support, origin, note = from_file(cfg, r["file"])
+        if valid.sum() < 2:
+            raise RuntimeError("the borrowed curve %s covers fewer than 2 of the frequencies %.3g-%.3g Hz"
+                               % (r["file"], freqs[0], freqs[-1]))
+        idx = np.where(valid)[0]
+        fill = c[idx[np.argmin(np.abs(np.arange(len(freqs))[:, None] - idx[None, :]), axis=1)]]  # held for the band rule
+        _, u, _, _ = disp.reference_work(freqs, c, valid.copy())
+        u = np.where(np.isfinite(u), u, fill)
+        picked = (float(freqs[valid].min()), float(freqs[valid].max()))
+        dec, warn = auto.from_reference(cfg, freqs, fill, u, picked, geom)
+        auto.write(cfg, dec, None)
+        cfg = auto.apply(cfg)
+        f, c2, v2, s2, o2 = _band_cut(cfg, freqs, c, valid, support, origin)
+        if not v2.any():
+            raise RuntimeError("the borrowed curve %s covers none of the measurement frequencies" % r["file"])
+        np.savez(os.path.join(d, "reference.npz"), freqs=f, c_ref=c2, ref_valid=v2, ref_support=s2,
+                 origin=o2.astype(str), c_ref_source=np.array("borrowed: %s" % r["file"]))
+        return dict(source="file", file=r["file"], note=note, defined_hz=[float(f[v2].min()), float(f[v2].max())],
+                    frequencies_without_reference=int((~v2).sum()), warnings=warn,
+                    band_hz=[cfg["dispersion"]["fmin_hz"], cfg["dispersion"]["fmax_hz"]],
+                    velocity_axis_kms=[cfg["dispersion"]["vmin"], cfg["dispersion"]["vmax"], cfg["dispersion"]["dv"]])
     stack = paths.stack_product(cfg)
-    freqs, c, img, npair = fj_image(cfg, stack, table)
-    if r["fj_mode"] == "max_peak":
-        picks, used, curve = pick_max(cfg, freqs, c, img, table)
-    else:
-        picks, used, curve = pick_track(cfg, freqs, c, img, table)
+    lam_alias = FJ.alias_wavelength_km(cfg, geom)
+    def pick(c_limit):
+        freqs, c, img, npair = FJ.fj_image(cfg, stack, c_limit=c_limit)
+        start = None
+        if r["fj_mode"] == "max_peak":
+            picks, used, curve, flat_note = FJ.pick_max(cfg, freqs, c, img, npair)
+        else:
+            start = FJ.track_start(cfg, freqs, c, img, npair, lam_min_km=lam_alias)
+            picks, used, curve, flat_note = FJ.pick_track(cfg, freqs, c, img, start_band=start, lam_min_km=lam_alias)
+        return freqs, c, img, npair, start, picks, used, curve, flat_note
+
+    c_limit, limit_text = None, "%.2f km/s" % float(r["fj_c_nominal"])
+    if auto.user_value(cfg, ("reference", "fj_c_nominal")) is None:
+        # the velocity is not known before the spectrum: a first pass with every pair gives a curve, and the
+        # second pass limits the pairs of each frequency to fj_rmax_lambda wavelengths of that curve
+        freqs, curve = pick((np.array([1e-6, 1e6]), np.array([1e9, 1e9])))[0::7][:2]
+        c_limit, limit_text = (freqs, curve), "the curve of a first pass with every pair"
+    freqs, c, img, npair, start, picks, used, curve, flat_note = pick(c_limit)
     np.savez(os.path.join(d, "fj.npz"), freqs=freqs, c=c, img=img, npair=npair, picks=picks, used=used)
-    np.savez(os.path.join(d, "reference_pass1.npz"), freqs=freqs, c_ref=curve, ref_valid=np.ones(len(freqs), bool),
+    fu = freqs[used]
+    picked = (float(fu.min()), float(fu.max()))
+    u = disp.group_reference(freqs, curve)
+    u = np.where(np.isfinite(u) & (u > 0), u, curve)
+    dec, warn = auto.from_reference(cfg, freqs, curve, u, picked, geom)
+    auto.write(cfg, dec, None, extra={"reference_picks": dict(picked_hz=list(picked), track_start_band_hz=start)})
+    cfg = auto.apply(cfg)
+    support = (freqs >= picked[0] * (1 - 1e-9)) & (freqs <= picked[1] * (1 + 1e-9))   # the picks back these; held beyond
+    f, cb, sb = _band_cut(cfg, freqs, curve, support)
+    np.savez(os.path.join(d, "reference.npz"), freqs=f, c_ref=cb, ref_valid=np.ones(len(f), bool), ref_support=sb,
              c_ref_source=np.array("F-J (%s), rmax %.1f lambda" % (r["fj_mode"], r["fj_rmax_lambda"])))
-    L = ["F-J first-pass reference (%s), pairs within %.1f wavelengths of %.2f km/s" % (r["fj_mode"], r["fj_rmax_lambda"], r["fj_c_nominal"]),
+    L = ["F-J reference (%s), pairs within %.1f wavelengths of %s; picks used %.3g-%.3g Hz; measurement band "
+         "%.3g-%.3g Hz" % (r["fj_mode"], r["fj_rmax_lambda"], limit_text, picked[0], picked[1],
+                           cfg["dispersion"]["fmin_hz"], cfg["dispersion"]["fmax_hz"])
+         + ("; picks only where the wavelength >= %.3f km (twice the mean station spacing: spatial Nyquist "
+            "limit of the line)" % lam_alias if lam_alias else ""),
          "  f(Hz)  pairs   pick    used  curve"]
     for i in range(len(freqs)):
         L.append("  %5.2f  %5d  %s  %s  %6.3f" % (freqs[i], npair[i], "%6.3f" % picks[i] if np.isfinite(picks[i]) else "   -  ",
                                                  "y" if used[i] else "-", curve[i]))
+    L += [""] + ["  WARNING " + w for w in warn]
     open(os.path.join(d, "fj.txt"), "w").write("\n".join(L) + "\n")
     import matplotlib
     matplotlib.use("Agg")
@@ -280,14 +242,35 @@ def run(cfg):
     Y = img / (img.max(axis=1, keepdims=True) + 1e-30)
     ax.pcolormesh(freqs, c, Y.T, cmap="jet", vmin=0, vmax=1, shading="nearest")
     ax.plot(freqs[used], picks[used], "o", ms=3.5, mfc="w", mec="k", mew=0.6, label="picks used")
-    ax.plot(freqs, curve, "w-", lw=1.8, label="first-pass reference")
+    ax.plot(freqs, curve, "w-", lw=1.8, label="reference (held outside the picks)")
+    for fb in (cfg["dispersion"]["fmin_hz"], cfg["dispersion"]["fmax_hz"]):
+        ax.axvline(fb, color="m", lw=1.0)
+    for v in cfg["data"]["velocity_range_kms"]:
+        ax.axhline(v, color="w", lw=0.8, ls=":")
+    if lam_alias:
+        ax.plot(freqs, lam_alias * freqs, "w--", lw=1.0, label="wavelength = 2 x mean station spacing (picks above)")
+        ax.set_ylim(c[0], c[-1])
     ax.set_xscale("log")
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("Phase velocity (km/s)")
-    ax.set_title("F-J spectrum (CC-FJpy), normalised per frequency", fontsize=10)
+    ax.set_title("F-J spectrum, normalised per frequency; magenta: measurement band; dotted: your velocity "
+                 "range", fontsize=9)
     ax.legend(fontsize=8, loc="lower left")
     fig.tight_layout()
     fig.savefig(os.path.join(d, "fj.png"), dpi=150)
     plt.close(fig)
-    return dict(source="fj", mode=r["fj_mode"], picks_used=int(used.sum()),
-                pairs_per_frequency=[int(n) for n in npair])
+    zp = os.path.join(d, "zones.npz")
+    if os.path.exists(zp):
+        os.remove(zp)
+    zsum = zone_references(cfg, stack, d, freqs, c, curve, support) if r["zone_km"] else None
+    out = dict(source="fj", zones=zsum, mode=r["fj_mode"], picks_used=int(used.sum()), picked_hz=list(picked),
+               band_hz=[cfg["dispersion"]["fmin_hz"], cfg["dispersion"]["fmax_hz"]],
+               velocity_axis_kms=[cfg["dispersion"]["vmin"], cfg["dispersion"]["vmax"], cfg["dispersion"]["dv"]],
+               pairs_per_frequency=[int(n) for n in npair], warnings=warn,
+               alias_wavelength_km=lam_alias)
+    for w in warn:
+        print("[lant] reference WARNING: " + w, flush=True)
+    if flat_note:
+        out["held_flat"] = flat_note
+        print("[lant] reference: " + flat_note, flush=True)
+    return out

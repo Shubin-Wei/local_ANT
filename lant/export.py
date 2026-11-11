@@ -1,22 +1,23 @@
 """Export of the QC'd dispersion curves.
 
-  06_dispersion/logf/CDisp|GDisp.PAIR.txt     every accepted sample on the measurement (log-frequency) grid:
+  05_dispersion/logf/CDisp.PAIR.txt           every accepted sample on the measurement (log-frequency) grid:
                                                freq_Hz period_s velocity_km/s snr uncertainty_km/s
-  06_dispersion/curves/CDisp|GDisp.PAIR.txt   the curves used by the inversion, on the MEASURED periods (1/f of the
+  05_dispersion/curves/CDisp.PAIR.txt         the curves used by the inversion, on the MEASURED periods (1/f of the
                                                measurement grid between export.tmin_s and tmax_s; nothing interpolated):
                                                two header lines "lon lat" of the two stations, then
                                                period_s velocity_km/s snr uncertainty_km/s   (velocity 0 = no value)
 With export.one_segment, each phase-velocity curve keeps only its longest contiguous run on the measurement grid
 (a tie goes to the higher mean SNR; EGFAnalysisTimeFreq manual, Yao 2015, p. 9: "select only the most continuous
-part with higher SNR"); the samples left out are written as unmeasured rows.  Group curves are exported as they are.
-Uncertainty = max(jackknife std, redundant-path robust std of the band x velocity).
+part with higher SNR"); the samples left out are written as unmeasured rows.
+Uncertainty = the jackknife standard deviation over the sub-stacks: a conditional, uncalibrated measure of the
+repeatability in time (it does not include the reference, the cycle count or the noise directivity), and not used
+by DSurfTomo (every travel time has the same weight).
 """
 import os
 
 import h5py
 import numpy as np
 
-from .qc import BANDS
 from .signal import runs_of
 
 
@@ -30,34 +31,25 @@ def longest_run(ok, snr):
     return out
 
 
-def export(cfg, disp_path, stack_path, out_dir, precision=None):
+def export(cfg, disp_path, stack_path, out_dir):
     e = cfg["export"]
     with h5py.File(disp_path, "r") as h:
         freqs = h["freqs"][:]
         pairs = [p.decode() for p in h["pairs"][:]]
-        vg, vc, snr, snr_c = h["vg"][:], h["vc"][:], h["snr"][:], h["snr_c"][:]
-        jg, jc = h["jk_g"][:], h["jk_c"][:]
-        okg, okc = h["ok_g"][:], h["ok_c"][:]
+        vc, snr, jc, okc = h["vc"][:], h["snr"][:], h["jk_c"][:], h["ok_c"][:]
     with h5py.File(stack_path, "r") as h:
         lon1, lat1, lon2, lat2 = (h[k][:] for k in ("lon1", "lat1", "lon2", "lat2"))
     inside = (1 / freqs >= e["tmin_s"] - 1e-9) & (1 / freqs <= e["tmax_s"] + 1e-9)
     order = np.argsort(1 / freqs)
     order = order[inside[order]]
-    floor = {"G": np.zeros(len(freqs)), "C": np.zeros(len(freqs))}
-    if precision:
-        for kind, key in (("G", "group"), ("C", "phase")):
-            for (lo, hi) in BANDS:
-                v = precision[key].get("%.1f-%.1f" % (lo, hi), {}).get("robust_std")
-                m = (freqs >= lo) & ((freqs < hi) | (hi >= 10.4))
-                floor[kind][m] = v if v is not None and np.isfinite(v) else 0.0
     for sub in ("logf", "curves"):
         d = os.path.join(out_dir, sub)
         os.makedirs(d, exist_ok=True)
         for old in os.listdir(d):
             os.remove(os.path.join(d, old))
-    n = {"G": 0, "C": 0, "C_points": 0, "C_points_dropped": 0, "C_two_or_more_segments": 0}
+    n = {"C": 0, "C_points": 0, "C_points_dropped": 0, "C_two_or_more_segments": 0}
     for i, p in enumerate(pairs):
-        for kind, v, ok, jk0, sn in (("G", vg, okg, jg, snr), ("C", vc, okc, jc, snr_c)):
+        for kind, v, ok, jk0, sn in (("C", vc, okc, jc, snr),):
             m = ok[i] & inside
             if not m.any():
                 continue
@@ -67,23 +59,23 @@ def export(cfg, disp_path, stack_path, out_dir, precision=None):
                     n["C_two_or_more_segments"] += 1
                     n["C_points_dropped"] += int(m.sum() - keep.sum())
                 m = keep
-            jk = np.maximum(jk0[i], floor[kind] * v[i])
+            jk = jk0[i]
             head = "%.8f    %.8f\n%.8f    %.8f\n" % (lon1[i], lat1[i], lon2[i], lat2[i])
             with open(os.path.join(out_dir, "logf", "%sDisp.%s.txt" % (kind, p)), "w") as fh:
                 fh.write(head)
                 for k in np.where(m)[0]:
-                    fh.write("%.4f %.4f %.4f %.2f %.4f\n" % (freqs[k], 1 / freqs[k], v[i, k], sn[i, k], jk[k]))
+                    fh.write("%.5f %.6f %.4f %.2f %.4f\n" % (freqs[k], 1 / freqs[k], v[i, k], sn[i, k], jk[k]))
             with open(os.path.join(out_dir, "curves", "%sDisp.%s.txt" % (kind, p)), "w") as fh:
                 fh.write(head)
                 for k in order:
                     if m[k]:
-                        fh.write("%.4f  %.3f  %.3f  %.4f\n" % (1 / freqs[k], v[i, k], sn[i, k], jk[k]))
+                        fh.write("%.6f  %.5f  %.3f  %.5f\n" % (1 / freqs[k], v[i, k], sn[i, k], jk[k]))
                     else:
-                        fh.write("%.4f  0.000  0.000  0.0000\n" % (1 / freqs[k]))
+                        fh.write("%.6f  0.000  0.000  0.0000\n" % (1 / freqs[k]))
             n[kind] += 1
             if kind == "C":
                 n["C_points"] += int(m.sum())
-    return dict(phase_curves=n["C"], phase_points=n["C_points"], group_curves=n["G"],
+    return dict(phase_curves=n["C"], phase_points=n["C_points"],
                 curves_with_several_segments=n["C_two_or_more_segments"], points_dropped_by_one_segment=n["C_points_dropped"])
 
 

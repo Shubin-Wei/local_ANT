@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lant"
-version = "1.0.0"
+version = "1.4.0"
 description = "High-frequency ambient-noise surface-wave tomography for dense nodal arrays (raw data to 3-D Vs)"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.9"
-dependencies = ["numpy>=1.21", "scipy>=1.7", "h5py>=3.0", "obspy>=1.3", "matplotlib>=3.5", "pyyaml>=5.4", "openpyxl>=3.0"]
+requires-python = ">=3.8"
+dependencies = ["numpy>=1.19", "scipy>=1.5", "h5py>=2.10", "obspy>=1.2", "matplotlib>=3.5", "pyyaml>=6.0", "openpyxl>=3.1"]
 
 [project.scripts]
 lant = "lant.cli:main"

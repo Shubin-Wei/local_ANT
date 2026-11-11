@@ -1,0 +1,310 @@
+# local_ANT configuration, written by `lant init`.
+#
+# 1. Fill in the three REQUIRED paths below.
+# 2. `lant plan -c THIS_FILE` shows what every step will do with which values.
+# 3. `lant run all -c THIS_FILE` runs the chain; it stops where a judgement is yours and says what to do.
+#
+# Every other key is listed further down with its default, commented out.  "auto" means: derived from
+# your data by the rule in the comment (the step reports show the derivation with your numbers); a value
+# you write here always wins.  In square brackets: what the default rests on -
+#   literature (cited source) | theory | rule (derived from the data) | empirical (experience, no literature
+#   value) | choice (yours, no right value) | technical (speed and files only)
+
+# ---------------------------------------------------------------- REQUIRED
+project:
+  output_dir: /path/to/output   # every result, figure and record is written here
+data:
+  raw_dir: /path/to/raw_data   # raw-data directory, searched recursively; any layout and file names
+  station_file: /path/to/stations.csv   # station table in any common form (CSV, text, Excel, StationXML)
+
+# ---------------------------------------------------------------- everything else (defaults)
+# To change a value: uncomment its line AND the section line above it (keep the indentation); keys of
+# `project` and `data` go into the sections above.
+# Line arrays (project.array_type line, or auto on an elongated array) use other defaults for:
+#   data.min_trace_length_s: 600.0, reference.fj_mode: track_fundamental, dispersion.njack: auto, dispersion.qc.dev_c: 0.0, inversion.median_min_pairs: 20, inversion.grid_refine: 1, inversion.line_strip_cells: 1.0, inversion.weight: 1.5, inversion.damp: 1.5, inversion.sparsity: 0.3, checks.controls: [reg_w0.75_d0.75, reg_w3_d3, start_grad0.05]
+
+# project:
+#   # [choice] project name (figures and records only)
+#   name: my_array
+#   # [rule] auto: from the station geometry (how many times the station cloud is longer than wide; below 3 areal, above 10 line, in between shown for confirmation); or surface / line
+#   array_type: auto
+
+# data:
+#   # [technical] auto: ObsPy detects the format of each file (MSEED, SAC, GSE2, SEG2, ...); or one ObsPy format name
+#   format: auto
+#   # [technical] file-name patterns that are tried
+#   file_patterns: ['*']
+#   # [technical] file-name patterns that are not read
+#   ignore_patterns: ['*.txt', '*.csv', '*.xml', '*.json', '*.yaml', '*.yml', '*.py', '*.sh', '*.png', '*.jpg', '*.pdf', '*.log', '*.md', '*.zip', '*.gz', '*.tar', .*]
+#   # [choice] Z: vertical-component correlations (Rayleigh waves); the only one supported
+#   component: Z
+#   # [rule] auto: the vertical channel of each station from the channel name or the SAC header; or a pattern such as "*3" when the names do not tell
+#   channel: auto
+#   # [choice] network code for record headers without one
+#   network_default: null
+#   # [choice] {header name: table name} where the automatic matching fails
+#   rename: {}
+#   # [rule] processing days start at this UTC hour; auto: the hour at which >= 60 % of the records longer than 12 h start, else 0
+#   day_start_utc_hour: auto
+#   # [choice] how a processing day is labelled: utc_start, or a fixed offset such as "UTC+8"
+#   day_label: utc_start
+#   # [choice] approximate Rayleigh-wave phase velocities of the area [slow, fast] in km/s; sets the lag window, the band and the F-J scan.  The default covers soft soil to hard rock; a narrower range saves computing time (the reference step reports the measured velocities)
+#   velocity_range_kms: [0.1, 5.0]
+#   # [choice] instrument response file or directory (StationXML, dataless SEED, RESP): the responses are removed in the clean step (Bensen et al. 2007).  Without it every station must carry the same instrument model
+#   response: null
+#   # [choice] when the station table has a line column: the line this project processes (one project per line)
+#   line: null
+#   # [empirical] pieces of record shorter than this are not used
+#   min_trace_length_s: 0.0
+#   # [choice] stations left out entirely (an instrument or coupling problem you know of)
+#   exclude_stations: []
+#   # [choice] first processing day used (YYYY-MM-DD)
+#   start_date: null
+#   # [choice] last processing day used (YYYY-MM-DD)
+#   end_date: null
+
+# clean:
+#   # [technical] write the cleaned day files (about the size of the raw data); false: later steps read the raw files
+#   write_archive: true
+#   # [technical] processes
+#   nproc: 4
+#   # [technical] miniSEED encoding of the archive
+#   encoding: FLOAT32
+#   # [technical] refuse to write the archive when the free disk is below this factor x its estimated size
+#   min_free_disk_factor: 1.2
+
+# correlation:
+#   # [choice] highest processing rate (Hz); the top of the band is 0.4 fs / (1 + sqrt(ln 2 / alpha)): raise it for small, high-frequency arrays
+#   fs_max: 50.0
+#   # [rule] rate after decimation; auto: the highest whole-number rate <= fs_max that every raw rate reaches by an integer factor
+#   fs: auto
+#   # [rule] segment length; auto: max(2 x maxlag (circular correlation), 10 longest periods)
+#   seg_len_s: auto
+#   # [literature] segment step; auto: half the segment (50 % overlap, Seats et al. 2012)
+#   seg_step_s: auto
+#   # [rule] lag window; auto: longest distance / (0.6 x slowest velocity) + 4 longest periods (the slowest arrival, then a stretch of noise for the SNR)
+#   maxlag_s: auto
+#   # [rule] bottom of the correlation band; auto: where the longest pair is 2 wavelengths at the slowest velocity, widened to the half-gain point of the Gaussian filter there
+#   fmin_hz: auto
+#   # [theory] top of the correlation band; auto: dispersion.fmax_hz widened to the half-gain point of its Gaussian filter, not above 0.4 fs (anti-alias filter)
+#   fmax_hz: auto
+#   # [choice] only pairs up to this distance are correlated (none: all pairs); for very large arrays, where all pairs do not fit into memory
+#   max_distance_km: null
+#   # [literature] smoothing of the coherence denominator in frequency bins; 1 = none (cross-coherence as in Xu et al. 2021)
+#   smooth_bins: 1
+#   # [literature] a segment is dropped when its peak exceeds this many standard deviations of the station-day (NoisePy max_over_std, Jiang & Denolle 2020)
+#   max_over_std: 10.0
+#   # [literature] subtract the waveform folded modulo 1 s, hour by hour (coherent logger noise at 1-s intervals, Takagi et al. 2015); auto: for the stations where the clean step detects it (F test of the folded records); true: all stations; false: none
+#   remove_1s_comb: auto
+#   # [technical] days processed at the same time (memory: one day of every station per process)
+#   nproc: 4
+#   # [technical] FFT threads per process
+#   threads_per_process: 2
+
+# stack:
+#   # [rule] sub-stack length of the jackknife; auto: the longest of 24, 12, 8, 6, 4, 3, 2, 1 h that gives the median station at least 8 sub-stacks
+#   block_hours: auto
+#   station_qc:
+#     # [choice] station diagnosis: sub-stacks of a station that differ from the rest in correlation or time shift are listed (never removed without you)
+#     enabled: true
+#     # [empirical] each station is compared through its pairs with this many nearest stations
+#     partners: 20
+#     # [empirical] pairs with data needed to judge a station sub-stack (fewer: not judged, and reported so)
+#     min_partners: 5
+#   # [choice] station-days you remove: [station, YYYYDDD], [station, "YYYYDDD-"], ...
+#   exclude_station_days: []
+#   # [choice] station-hours you remove: [station, YYYYDDD, hour]
+#   exclude_station_hours: []
+#   # [choice] also remove the candidates of the diagnosis (set by `lant confirm stack --exclude-candidates`)
+#   exclude_candidates: false
+
+# reference:
+#   # [literature] fj: frequency-Bessel spectrum of this array (Wang et al. 2019); file: a curve you give (as AFTAN and Yao's EGFAnalysisTimeFreq take a reference curve)
+#   source: fj
+#   # [choice] the borrowed curve: npz written by lant, or text "freq_Hz c_km/s"
+#   file: null
+#   # [choice] none: one reference curve for the whole array; a size in km: one F-J curve per square zone of that size from the pairs whose path midpoint lies in it, for arrays across which the structure changes strongly; a zone without a clear curve uses that of the whole array
+#   zone_km: null
+#   # [empirical] max_peak: the strongest ridge (areal arrays); track_fundamental: the ridge followed from an unambiguous start (lines)
+#   fj_mode: max_peak
+#   # [choice] track_fundamental: the curve may not rise with frequency; false where a velocity reversal makes the ridge really rise
+#   normal_dispersion: true
+#   # [empirical] pairs up to this many wavelengths enter the F-J spectrum of a frequency
+#   fj_rmax_lambda: 5.0
+#   # [rule] velocity that turns fj_rmax_lambda into a distance; auto: geometric mean of data.velocity_range_kms
+#   fj_c_nominal: auto
+#   # [rule] slowest scanned velocity; auto: 0.5 x the slowest of data.velocity_range_kms
+#   fj_cmin: auto
+#   # [rule] fastest scanned velocity; auto: 1.5 x the fastest of data.velocity_range_kms
+#   fj_cmax: auto
+#   # [rule] velocity step of the scan; auto: the 1-2-2.5-5 step not above fj_cmin / 200
+#   fj_dc: auto
+#   # [technical] FFT length of the spectra; auto: power of 2 >= 4 x the lag window, >= 8192
+#   fj_nfft: auto
+#   # [rule] highest frequency of the fitted picks; auto: the top of the longest run of clear picks
+#   fj_fit_fmax: auto
+#   # [rule] where the ridge tracking starts; auto: the octave with the clearest picks
+#   track_start_band_hz: auto
+
+# dispersion:
+#   # [rule] lowest measured frequency; auto: where the longest pair is qc.lam_c wavelengths of the reference curve
+#   fmin_hz: auto
+#   # [theory] highest measured frequency; auto: 0.4 fs / (1 + sqrt(ln 2 / alpha)), the highest whose Gaussian filter stays inside the anti-alias band; the QC decides how far the data reach
+#   fmax_hz: auto
+#   # [literature] measurement frequencies per octave, log-spaced (Xu et al. 2021)
+#   per_octave: 12
+#   # [rule] bottom of the velocity axis; auto: 0.6 x the slowest reference velocity in the band
+#   vmin: auto
+#   # [rule] top of the velocity axis; auto: 1.3 x the fastest
+#   vmax: auto
+#   # [rule] step of the velocity axis; auto: the 1-2-2.5-5 step not above vmin / 100
+#   dv: auto
+#   # [literature] relative width of the Gaussian filter exp(-alpha ((f - fc) / fc)^2), as in FTAN (Bensen et al. 2007); larger = narrower
+#   alpha: 5.0
+#   # [theory] phase of the far-field 2-D Green's function, pi/4 (Lin et al. 2008 eq. 7)
+#   phase_constant: pi/4
+#   # [choice] pairs shorter than this are not measured (0: lam_min alone rules)
+#   min_dist_km: 0.0
+#   # [literature] paths shorter than this many reference wavelengths are not measured (Luo et al. 2015: one wavelength can be enough)
+#   lam_min: 1.0
+#   # [empirical] the cycle count is fixed where the path is lam_min to this many wavelengths long (few cycles: the reference cannot be a cycle off)
+#   anchor_max_lambda: 3.5
+#   # [empirical] delete-a-group jackknife groups of the sub-stacks; auto: the sub-stacks holding >= 25 % of the fullest one
+#   njack: 5
+#   # [empirical] fewer groups with data: no error estimate, the sample is rejected
+#   min_jackknife_groups: 3
+#   # [technical] processes
+#   nproc: 8
+#   # [technical] pairs per task
+#   chunk: 20
+#   # [choice] bands 'lo-hi,...' where the side-lobe rule is not applied
+#   side_off_bands: ''
+#   qc:
+#     # [literature] SNR at the picked arrival (peak / rms of the trailing noise); the literature uses 4-10 (Bensen et al. 2007: 10 for global data)
+#     snr_c: 6.0
+#     # [empirical] jackknife standard error allowed, relative to the velocity
+#     jk_c_rel: 0.02
+#     # [empirical] deviation allowed from the reference curve where it is backed by picks (0 = off)
+#     dev_c: 0.2
+#     # [empirical] step of ln c between neighbouring frequencies allowed, relative to the reference's own step
+#     smooth_c: 0.03
+#     # [empirical] disagreement allowed between the measured group velocity and the one implied by the phase curve (0 = off)
+#     ucons_c: 0.25
+#     # [empirical] height of a competing envelope peak allowed, relative to the pick
+#     side_c: 1.0
+#     # [empirical] deviation of the group pick allowed from the reference (0 = off)
+#     dev_pre: 0.3
+#     # [literature] accepted samples need a path of this many of their own wavelengths (Bensen et al. 2007 use 3; Luo et al. 2015 show 1 can be enough)
+#     lam_c: 2.0
+#     # [empirical] accepted samples must form runs of at least this many frequencies
+#     min_run: 6
+#     # [choice] a frequency is not measured where the amplitude spectrum of the correlations is below this fraction of its mean over the filter band (0.5 = -6 dB, the usual definition of a band edge): beyond the band the noise excites, the filter passes only energy of other frequencies
+#     band_edge: 0.5
+#     # [empirical] first gate: the largest SNR of a frequency must reach this
+#     snr_g: 4.0
+
+# export:
+#   # [rule] shortest period passed on; auto: 1 / dispersion.fmax_hz
+#   tmin_s: auto
+#   # [rule] longest period passed on; auto: 1 / dispersion.fmin_hz
+#   tmax_s: auto
+#   # [literature] one continuous segment per pair, the longest (as curves are picked in Yao's EGFAnalysisTimeFreq)
+#   one_segment: true
+#   # [choice] single-pair figures drawn: this many spread over distance plus the conspicuous ones (0 none, -1 all)
+#   curve_figures: 30
+
+# inversion:
+#   # [choice] rayleigh_phase (the only one supported)
+#   wave: rayleigh_phase
+#   # [empirical] pairs a period needs to enter the average curve of the 1-D model
+#   median_min_pairs: 50
+#   # [rule] depth nodes; auto: steps of max(shortest wavelength / 4, depth / 4) down to half the longest wavelength (rule of thumb, Foti et al. 2018)
+#   depth_sequence_km: auto
+#   # [choice] extra depth nodes every this many km down to fine_zmax_km (0 = none)
+#   fine_step_km: 0.0
+#   # [choice] see fine_step_km
+#   fine_zmax_km: 0.0
+#   # [rule] grid spacing [lat, lon]; auto: about half the median nearest-station distance after refinement
+#   grid_spacing_deg: auto
+#   # [empirical] every grid interval is divided by this once the extent is fixed
+#   grid_refine: 2
+#   # [empirical] lines: cells kept on each side of the stations across the line
+#   line_strip_cells: null
+#   start_model:
+#     # [choice] invert: 1-D model from this array's average curve; file: depth Vs
+#     source: invert
+#     # [choice] the starting model of your own (two columns: depth km, Vs km/s)
+#     file: null
+#     # [empirical] 1-D inversion: weight of the model curvature
+#     smooth: 0.01
+#     # [empirical] 1-D inversion: damping
+#     damp: 0.05
+#     # [empirical] 1-D inversion: iterations
+#     iterations: 14
+#     # [technical] 1-D forward: sublayers per node interval
+#     minthk: 3
+#   # [literature] DSurfTomo smoothing weight (Fang et al. 2015); usually below 10
+#   weight: 1.0
+#   # [literature] DSurfTomo damping (Fang et al. 2015); usually 0.5-1
+#   damp: 1.0
+#   # [literature] DSurfTomo: sublayers between depth nodes for the kernels (its manual: 2-5)
+#   sublayers: 3
+#   # [rule] lower Vs bound; auto: 0.6 x the slowest Vs of the starting model
+#   vmin: auto
+#   # [rule] upper Vs bound; auto: 1.4 x the fastest
+#   vmax: auto
+#   # [empirical] DSurfTomo iterations
+#   iterations: 10
+#   # [technical] DSurfTomo: fraction of nonzero kernel entries reserved (memory only)
+#   sparsity: 0.05
+#   # [empirical] DSurfTomo: residuals beyond this many quartiles get zero weight
+#   threshold: 3.0
+#   # [empirical] noise added to the synthetic data of the checkerboard tests (relative)
+#   noise: 0.02
+#   # [choice] dsurftomo (<= 60 periods) or pdsurftomo (parallel, <= 80 periods)
+#   solver: dsurftomo
+#   # [technical] threads per project
+#   threads: 4
+#   # [technical] projects run at the same time
+#   njobs: 1
+
+# checks:
+#   # [rule] horizontal checkerboards [{name, cell_km}]; auto: cells of 0.12, 0.18 and 0.25 x the aperture
+#   checkerboards: auto
+#   # [rule] depth-varying checkerboards; auto: cell 0.18 x aperture, sign reversals at 0.21, 0.46, 0.71 x the deepest updated node
+#   vertical: auto
+#   # [empirical] checkerboard perturbation, a fraction of the 1-D Vs of each depth
+#   amplitude: 0.1
+#   # [empirical] control inversions: reg_w<w>_d<d> other regularisation, start_grad<f> other starting model
+#   controls: [reg_w0.5_d0.5, reg_w2_d2, start_grad0.05]
+#   precheck:
+#     # [empirical] a project is invalid when DSurfTomo's rejection rule would keep less than this fraction of the data in the first iteration
+#     min_kept: 0.5
+#     # [empirical] ... or when the median residual is beyond this many interquartile ranges
+#     max_median_iqr: 1.0
+#   # [choice] also evaluate the model of every iteration (one forward run each)
+#   iteration_residuals: false
+
+# plots:
+#   # [choice] figure formats
+#   formats: [png, pdf]
+#   # [choice] resolution of the png figures
+#   dpi: 300
+#   # [choice] GMT grid file or remote grid (@earth_relief_01s) for relief; none: no relief
+#   topography: null
+#   # [rule] colour range; auto: 2nd-98th percentile of the model under the stations, to 0.1 km/s
+#   vs_range: auto
+#   # [choice] GMT colour table
+#   vs_cpt: seis
+#   # [rule] depths of the slices; auto: up to 8 updated depth nodes, evenly chosen
+#   slice_depths_km: auto
+#   # [rule] sections [{name, start, end}]; auto: two through the array centre along its principal axes (areal) or along the line
+#   sections: auto
+#   # [choice] depth of the sections (default: the deepest updated node)
+#   section_zmax_km: null
+#   # [rule] contour interval; auto: about a tenth of the colour range
+#   contour_step: auto
+#   # [choice] font size factor
+#   font_scale: 1.0
+#   # [choice] pair drawn in the dispersion example (default: chosen automatically)
+#   pair_example: null

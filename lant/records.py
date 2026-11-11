@@ -5,9 +5,10 @@
     <output>/records/run_log.jsonl          one line per step: start, end, status, duration, outputs, messages
     <output>/records/summary/<step>.json    the key numbers of each step (what `lant inspect` reports)
     <output>/records/decisions.md           parameter choices and their reasons (written by the user or the AI)
+    <output>/records/provenance/<id>.json   code version and environment of the runs (lant/provenance.py)
+    <output>/records/lock                   the process writing to the output directory
 """
 import datetime as _dt
-import hashlib
 import json
 import os
 import shutil
@@ -47,8 +48,13 @@ def save_config(cfg):
             return cur
         hist = os.path.join(d, "config_history")
         os.makedirs(hist, exist_ok=True)
-        stamp = _dt.datetime.fromtimestamp(os.path.getmtime(cur)).strftime("%Y%m%dT%H%M%S")
-        shutil.move(cur, os.path.join(hist, "config_%s.yaml" % stamp))
+        stamp = _dt.datetime.fromtimestamp(os.path.getmtime(cur)).strftime("%Y%m%dT%H%M%S_%f")
+        dst = os.path.join(hist, "config_%s.yaml" % stamp)
+        k = 1
+        while os.path.exists(dst):                     # never overwrite an earlier version
+            dst = os.path.join(hist, "config_%s_%d.yaml" % (stamp, k))
+            k += 1
+        shutil.move(cur, dst)
     os.replace(tmp, cur)
     dec = os.path.join(d, "decisions.md")
     if not os.path.exists(dec):
@@ -56,21 +62,36 @@ def save_config(cfg):
     return cur
 
 
-def config_hash(cfg, sections):
-    sub = {s: cfg[s] for s in sections}
-    return hashlib.sha1(json.dumps(sub, sort_keys=True, default=str).encode()).hexdigest()[:12]
-
-
 def log(cfg, **entry):
     entry.setdefault("time", _now())
     with open(os.path.join(rec_dir(cfg), "run_log.jsonl"), "a") as fh:
-        fh.write(json.dumps(entry, default=str, ensure_ascii=False) + "\n")
+        fh.write(json.dumps(strict(entry), default=str, ensure_ascii=False, allow_nan=False) + "\n")
+
+
+def strict(o):
+    """JSON-safe copy: numpy types to Python, NaN / inf to None (standard JSON has no NaN)."""
+    import math
+    import numpy as np
+    if isinstance(o, dict):
+        return {str(k): strict(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [strict(v) for v in o]
+    if isinstance(o, np.ndarray):
+        return strict(o.tolist())
+    if isinstance(o, (np.integer,)):
+        return int(o)
+    if isinstance(o, (float, np.floating)):
+        return float(o) if math.isfinite(o) else None
+    if isinstance(o, (np.bool_,)):
+        return bool(o)
+    return o
 
 
 def write_summary(cfg, step, data):
     p = os.path.join(rec_dir(cfg), "summary", "%s.json" % step)
-    with open(p, "w") as fh:
-        json.dump(data, fh, indent=1, default=_json_default, ensure_ascii=False)
+    with open(p + ".tmp", "w") as fh:
+        json.dump(strict(data), fh, indent=1, default=str, ensure_ascii=False, allow_nan=False)
+    os.replace(p + ".tmp", p)
     return p
 
 
@@ -90,6 +111,10 @@ def _json_default(o):
     return str(o)
 
 
+class StepIncomplete(RuntimeError):
+    """A step finished, but some of its inputs failed (unreadable files, ...): the chain stops here."""
+
+
 class Step:
     """Context manager around one pipeline step: logs start / end / failure with the duration."""
 
@@ -97,19 +122,29 @@ class Step:
         self.cfg, self.name = cfg, name
 
     def __enter__(self):
+        from .provenance import Lock, record
+        self.lock = Lock(rec_dir(self.cfg)).__enter__()
         save_config(self.cfg)
         self.t = time.time()
-        log(self.cfg, step=self.name, event="start", config=self.cfg.get("_config_file"))
+        log(self.cfg, step=self.name, event="start", config=self.cfg.get("_config_file"),
+            provenance=record(rec_dir(self.cfg)))
         print("[lant] step %s ..." % self.name, flush=True)
         return self
 
     def __exit__(self, et, ev, tb):
         dt = round(time.time() - self.t, 1)
-        if et is None:
-            log(self.cfg, step=self.name, event="done", seconds=dt)
+        failed = getattr(self, "failed", None)
+        if et is None and failed:
+            log(self.cfg, step=self.name, event="partial", seconds=dt, params=getattr(self, "params", None),
+                failed=failed[:200], n_failed=len(failed))
+            print("[lant] step %s INCOMPLETE (%.0f s): %d items failed, e.g. %s" % (self.name, dt, len(failed),
+                                                                                  "; ".join(failed[:3])), flush=True)
+        elif et is None:
+            log(self.cfg, step=self.name, event="done", seconds=dt, params=getattr(self, "params", None))
             print("[lant] step %s done (%.0f s)" % (self.name, dt), flush=True)
         else:
             log(self.cfg, step=self.name, event="failed", seconds=dt, error="%s: %s" % (et.__name__, ev),
                 traceback=traceback.format_exception(et, ev, tb)[-3:])
             print("[lant] step %s FAILED after %.0f s: %s" % (self.name, dt, ev), flush=True)
+        self.lock.__exit__()
         return False

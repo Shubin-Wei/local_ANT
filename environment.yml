@@ -13,9 +13,8 @@ dependencies:
   - openpyxl          # Excel station tables
   - gmt>=6.1          # maps and sections
   - ghostscript
-  - fftw              # CC-FJpy (F-J reference curve)
   - cython
-  - compilers         # gfortran, gcc, g++ for DSurfTomo, pDSurfTomo, CC-FJpy
+  - compilers         # gfortran, gcc, g++ for DSurfTomo, pDSurfTomo
   - make
   - git
   - pytest

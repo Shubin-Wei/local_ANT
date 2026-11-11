@@ -25,3 +25,6 @@ dist/
 .DS_Store
 /examples/synthetic/stations.txt
 /examples/synthetic/true_*.txt
+examples/synthetic/output*/
+# GMT session file
+gmt.history

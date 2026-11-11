@@ -11,20 +11,18 @@ import os
 import numpy as np
 
 from . import paths, records
-from .signal import geodesic_km
+from .signal import geodesic_km, nearest_neighbour_km
 
 
 FIGURES = {
-    "clean": ["01_clean/report.txt", "01_clean/coverage.png", "01_clean/station_days.csv"],
-    "stack": ["03_stack/station_day_qc/station_day_qc.png", "03_stack/station_day_qc/station_day_qc.txt",
-              "03_stack/station_hour_qc/station_hour_qc.txt", "03_stack/exclude_station_days.txt"],
-    "notch": ["04_notch/notch_report.png", "04_notch/notch_table.txt", "04_notch/raw_lines.txt"],
-    "reference": ["05_reference/fj.png", "05_reference/fj.txt"],
-    "disp1": ["05_reference/reference_pass2.png", "05_reference/reference_pass2.txt"],
-    "disp2": ["06_dispersion/precision.txt", "06_dispersion/pair_figures/", "figures/3_dispersion_curves.png"],
-    "inversion": ["07_inversion/average_curve.txt", "07_inversion/vs1d.txt", "07_inversion/main/DSurfTomo.in",
+    "clean": ["01_clean/report.txt", "01_clean/coverage.png", "01_clean/station_days.csv", "01_clean/processing_days.txt"],
+    "stack": ["03_stack/candidates.txt", "03_stack/station_qc/station_qc.png", "03_stack/station_qc/station_qc.txt",
+              "03_stack/removed.txt"],
+    "reference": ["04_reference/fj.png", "04_reference/fj.txt"],
+    "disp": ["05_dispersion/median_vs_reference.txt", "05_dispersion/pair_figures/", "figures/3_dispersion_curves.png"],
+    "inversion": ["06_inversion/average_curve.txt", "06_inversion/vs1d.txt", "06_inversion/main/DSurfTomo.in",
                   "figures/4_start_model.png"],
-    "evaluate": ["07_inversion/evaluation/evaluation.json", "figures/6_residuals.png", "figures/6_recovery.png"],
+    "evaluate": ["06_inversion/evaluation/evaluation.json", "figures/6_residuals.png", "figures/6_recovery.png"],
     "figures": ["figures/"],
 }
 
@@ -35,10 +33,7 @@ def geometry(stations):
     lat = np.array([stations[n]["lat"] for n in names])
     iu, ju = np.triu_indices(len(names), 1)
     d, _ = geodesic_km(lon[iu], lat[iu], lon[ju], lat[ju])
-    nn = []
-    for i in range(len(names)):
-        m = (iu == i) | (ju == i)
-        nn.append(d[m].min() if m.any() else np.nan)
+    nn = nearest_neighbour_km(lon, lat)
     from .signal import local_xy_km
     x, y = local_xy_km(lon, lat)
     w = np.linalg.eigvalsh(np.cov(np.c_[x, y].T)) if len(names) > 2 else np.array([0, 1])
@@ -49,9 +44,7 @@ def geometry(stations):
                 nearest_neighbour_km=dict(median=float(np.nanmedian(nn)), max=float(np.nanmax(nn))),
                 extent_km=dict(east_west=float(x.max() - x.min()), north_south=float(y.max() - y.min())),
                 elongation=elong, looks_like="line" if elong > 4 else "areal",
-                note="longest usable period ~ (distance / n_lambda) / c; e.g. with 2 wavelengths and c = 2.5 km/s the "
-                     "p90 distance allows T up to %.2f s; shortest periods need distances >= 1-2 wavelengths"
-                     % (np.percentile(d, 90) / 2 / 2.5))
+                note="the longest usable period is about distance / (2 c): the reference step measures c and derives the band")
 
 
 def data(cfg):
@@ -73,8 +66,8 @@ def data(cfg):
 
 def stack(cfg, s):
     import h5py
-    p = paths.P(cfg, paths.STACK, "stack_clean.h5")
-    if os.path.exists(p):
+    p = paths.P(cfg, paths.STACK, "stack.h5")
+    if os.path.exists(p) and not isinstance(cfg["correlation"]["seg_step_s"], str):
         with h5py.File(p, "r") as h:
             nseg = h["nseg"][:]
             dist = h["dist_km"][:]
@@ -86,18 +79,18 @@ def stack(cfg, s):
     return s
 
 
-def disp2(cfg, s):
+def disp(cfg, s):
     import h5py
-    p = paths.P(cfg, paths.DISP, "disp_final.h5")
+    from .qc import reason_counts
+    p = paths.P(cfg, paths.DISP, "disp.h5")
     if os.path.exists(p):
         with h5py.File(p, "r") as h:
             f = h["freqs"][:]
             okc = h["ok_c"][:]
-            okg = h["ok_g"][:]
             pre = h["pre_c"][:]
         s["phase_points_per_frequency"] = {"%.3f" % x: int(n) for x, n in zip(f, okc.sum(0))}
-        s["group_points_per_frequency"] = {"%.3f" % x: int(n) for x, n in zip(f, okg.sum(0))}
         s["candidate_points_before_phase_qc"] = int(pre.sum())
+        s["rejected_samples_by_reason"] = reason_counts(p)
     return s
 
 
@@ -110,11 +103,12 @@ def inspect(cfg, topic):
         cfg = auto.apply(cfg)
         out = data(cfg)
     else:
+        cfg = auto.apply(cfg)
         s = records.read_summary(cfg, topic)
         if s is None:
             out = {"status": "step %s has no summary yet (not run, or it failed: see records/run_log.jsonl)" % topic}
         else:
-            out = {"stack": stack, "disp2": disp2}.get(topic, lambda c, x: x)(cfg, s)
+            out = {"stack": stack, "disp": disp}.get(topic, lambda c, x: x)(cfg, s)
     files = [os.path.join(cfg["project"]["output_dir"], f) for f in FIGURES.get(topic, [])]
     out = {"topic": topic, "result": out, "look_at": [f for f in files if os.path.exists(f.rstrip("/"))]}
     p = os.path.join(records.rec_dir(cfg), "summary", "inspect_%s.json" % topic)
@@ -124,13 +118,9 @@ def inspect(cfg, topic):
 
 
 def status(cfg):
-    """Which steps have run, with their last state, from records/run_log.jsonl."""
-    from .pipeline import STEPS
-    log = os.path.join(cfg["project"]["output_dir"], "records", "run_log.jsonl")
-    last = {}
-    if os.path.exists(log):
-        for line in open(log):
-            e = json.loads(line)
-            last[e["step"]] = e
-    return {s: ({"state": last[s]["event"], "time": last[s]["time"], **({"error": last[s]["error"]} if "error" in last[s] else {})}
-                if s in last else {"state": "not run"}) for s in STEPS}
+    """The state of every step (lant.manifest.status) and the next thing to do."""
+    from . import manifest, report
+    rcfg = report.resolved(cfg)
+    st = manifest.status(rcfg)
+    cmd, why = manifest.next_action(rcfg, st)
+    return dict(steps=st, next=dict(command=cmd, why=why))
