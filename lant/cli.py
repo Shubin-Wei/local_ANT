@@ -157,15 +157,34 @@ STEP_DIRS = {"clean": ["01_clean"], "cc": ["02_ccf"], "stack": ["03_stack"], "re
 
 
 def _rebuild(cfg, steps):
-    """Move the result directories of `steps` to <name>_old (an earlier _old is replaced)."""
-    out = cfg["project"]["output_dir"]
-    for s in steps:
-        for d in STEP_DIRS[s]:
-            p = os.path.join(out, d)
-            if os.path.isdir(p):
-                shutil.rmtree(p + "_old", ignore_errors=True)
-                os.rename(p, p + "_old")
-                print("[lant] --rebuild: %s moved to %s_old" % (p, d))
+    """Keep prior directories in a unique backup; never replace an older backup."""
+    import datetime
+    from . import artifacts, paths, records
+    from .provenance import Lock
+    artifacts.check_roots(cfg)
+    with Lock(records.rec_dir(cfg, create=True)):
+        before = artifacts.snapshot(cfg)
+        backup = os.path.join(records.rec_dir(cfg), "backups", datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
+        try:
+            for step in steps:
+                for directory in STEP_DIRS[step]:
+                    source = paths.P(cfg, directory)
+                    if os.path.isdir(source):
+                        os.makedirs(backup, exist_ok=True)
+                        os.rename(source, os.path.join(backup, directory))
+                        print("[lant] backup: %s" % backup, file=sys.stderr)
+        finally:
+            artifacts.register(cfg, before)
+
+
+def _accept_impact(message, yes):
+    print(message, file=sys.stderr)
+    if yes:
+        return
+    if not sys.stdin.isatty():
+        raise RuntimeError("noninteractive execution requires --yes after reviewing the impact")
+    if input("Continue? Type yes: ").strip() != "yes":
+        raise RuntimeError("cancelled; no changes made")
 
 
 def cmd_run(a):
@@ -198,6 +217,9 @@ def cmd_run(a):
     forced = set(steps)                             # single steps named by the user always run
     if chain:                                       # the chain leaves steps that stand alone, unless told otherwise
         forced = set(PL.STEPS[PL.STEPS.index(a.from_step):]) if a.from_step else (set(steps) if a.rebuild else set())
+    if a.rebuild or a.from_step:
+        _accept_impact("Recompute steps: " + ", ".join(s for s in steps if s in forced) +
+                       ". Retained results will be refreshed; --rebuild keeps a unique working backup.", a.yes)
     if a.rebuild:
         _rebuild(cfg, [s for s in steps if s in forced])
     for s in steps:
@@ -232,7 +254,8 @@ def cmd_confirm(a):
     cfg = _cfg(a.config)
     cfg = auto.apply(cfg)
     try:
-        entry, rerun = confirm.confirm(cfg, a.step, exclude_candidates=a.exclude_candidates)
+        entry, rerun = confirm.confirm(cfg, a.step, exclude_candidates=a.exclude_candidates,
+                                        reason=a.reason, invocation="terminal" if sys.stdin.isatty() else "noninteractive")
     except (RuntimeError, ValueError) as exc:
         sys.exit("confirm failed: %s" % exc)
     print("confirmed %s: written into %s (block 'confirmed:')" % (a.step, cfg["_config_file"]))
@@ -256,6 +279,10 @@ def cmd_status(a):
     for k, v in st["steps"].items():
         print("%-10s %-12s %-20s %s" % (k, v["state"].upper() if v["state"] != "done" else "done", v.get("time", ""),
                                         v.get("reason", "")))
+    for key in ("unregistered", "missing", "modified"):
+        files = st["artifacts"][key]
+        if files:
+            print("%s files: %d (%s)" % (key, len(files), ", ".join(files[:5])))
     print("\n%s%s" % (st["next"]["why"], "\n  next: " + st["next"]["command"] if st["next"]["command"] else ""))
 
 
@@ -280,6 +307,37 @@ def cmd_plot(a):
         sys.exit("figures failed: %s" % exc)
     for k, v in s["not_drawn"].items():
         print("not drawn: %s (%s)" % (k, v))
+
+
+def cmd_note(a):
+    from . import artifacts, records
+    from .delivery import atomic_text, initialize
+    from .provenance import Lock
+    cfg = _cfg(a.config)
+    artifacts.check_roots(cfg)
+    with Lock(records.rec_dir(cfg, create=True)):
+        before = artifacts.snapshot(cfg)
+        try:
+            initialize(cfg)
+            file = os.path.join(cfg["project"]["output_dir"], "notes.md")
+            prior = open(file).read() if os.path.exists(file) else "# Notes and decisions\n"
+            atomic_text(file, prior + "\n- %s: %s\n" % (records._now(), a.text))
+            records.log(cfg, event="note", text=a.text)
+        finally:
+            artifacts.register(cfg, before)
+    print(file)
+
+
+def cmd_clean_work(a):
+    from .artifacts import clean
+    cfg = _cfg(a.config)
+    selection = a.cache or ["archive", "cc"]
+    plan = clean(cfg, selection)
+    print(json.dumps(plan, indent=1))
+    if a.execute:
+        _accept_impact("Delete %d registered cache files (%.3f GB). %s" %
+                       (len(plan["files"]), plan["bytes"] / 1e9, plan["impact"]), a.yes)
+        clean(cfg, selection, execute=True)
 
 
 def main(argv=None):
@@ -308,11 +366,13 @@ def main(argv=None):
     q.add_argument("--what", default="all", choices=("main", "checks", "all"))
     q.add_argument("-v", "--verbose", action="store_true", help="show detailed step output")
     q.add_argument("--debug", action="store_true")
+    q.add_argument("--yes", action="store_true", help="acknowledge the displayed rebuild impact")
     q.add_argument("--rebuild", action="store_true", help="move the old results of the steps run to *_old first")
     q.set_defaults(fn=cmd_run)
     q = sub.add_parser("confirm")
     q.add_argument("step", choices=("clean", "stack", "reference", "inversion"))
     q.add_argument("-c", "--config")
+    q.add_argument("--reason", required=True, help="user decision and evidence (terminal use is not identity verification)")
     q.add_argument("--exclude-candidates", action="store_true", help="stack: remove the candidate station-days/-hours")
     q.set_defaults(fn=cmd_confirm)
     q = sub.add_parser("inspect")
@@ -323,5 +383,20 @@ def main(argv=None):
     q.add_argument("names", nargs="*")
     q.add_argument("-c", "--config")
     q.set_defaults(fn=cmd_plot)
+    q = sub.add_parser("note", help="append a project note")
+    q.add_argument("text")
+    q.add_argument("-c", "--config")
+    q.set_defaults(fn=cmd_note)
+    q = sub.add_parser("clean-work", help="preview registered cache cleanup")
+    q.add_argument("-c", "--config")
+    q.add_argument("--cache", action="append", choices=("archive", "cc"))
+    q.add_argument("--execute", action="store_true", help="perform cleanup (default is preview only)")
+    q.add_argument("--yes", action="store_true")
+    q.set_defaults(fn=cmd_clean_work)
     a = p.parse_args(argv)
-    a.fn(a)
+    try:
+        a.fn(a)
+    except KeyboardInterrupt:
+        sys.exit("interrupted; state and logs are retained; inspect lant status before continuing")
+    except (RuntimeError, ValueError, OSError) as exc:
+        sys.exit(str(exc))

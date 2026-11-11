@@ -112,7 +112,8 @@ def write_report(cfg):
              "Use `lant status -c CONFIG --json` to recheck current inputs and configuration.", "",
              "| Step | State | Detail |", "|---|---|---|"]
     for step, info in state.items():
-        detail = info.get("reason", "").replace("|", "\\|").replace("\n", " ")
+        detail = ("Caches cleaned; rebuilding needs upstream work. " if info.get("cache_cleaned") else "") + info.get("reason", "")
+        detail = detail.replace("|", "\\|").replace("\n", " ")
         link = ".lant/steps/%s.md" % step
         label = "[%s](%s)" % (step, link) if (root / link).exists() else step
         lines.append("| %s | %s | %s |" % (label, info["state"], detail))

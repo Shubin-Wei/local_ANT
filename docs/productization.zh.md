@@ -31,3 +31,9 @@
 ## 进度与日志
 
 `lant run ... -v` 显示详细输出。默认将步骤 stdout 写入受管理的 `lant.log`（每份 10 MiB、三个备份），stderr 显示进度与结束摘要。`LANT_PROGRESS=off` 可关闭进度。无法可靠计数的长步骤只输出心跳；完成部分计数任务后才估算剩余时间。
+
+## 笔记、确认与清理
+
+`lant note "内容" -c CONFIG` 追加带时间的笔记。`lant confirm STEP -c CONFIG --reason "决定及依据"` 在同一工程锁下记录结果指纹、理由和调用方式。状态报告未登记、缺失和修改的受管理文件，不推断作者。
+
+`lant clean-work -c CONFIG [--cache archive|cc]` 预览已登记且未变的文件。仅在当前评估完成、原始数据仍可访问时，`--execute --yes` 才执行删除。最终成果和未知文件保留。清理后重建 cc 或 stack 需要重建上游缓存；状态包含 `cache_cleaned`。`--from`、`--rebuild` 显示影响并要求明确确认；重建备份使用独立目录，不覆盖以前的备份。

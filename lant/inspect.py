@@ -120,4 +120,6 @@ def status(cfg):
     rcfg = report.resolved(cfg)
     st = manifest.status(rcfg)
     cmd, why = manifest.next_action(rcfg, st)
-    return dict(steps=st, next=dict(command=cmd, why=why))
+    from .artifacts import audit
+    from .delivery import RULES
+    return dict(steps=st, next=dict(command=cmd, why=why), artifacts=audit(cfg), rules=RULES)

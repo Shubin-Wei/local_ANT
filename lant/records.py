@@ -128,7 +128,10 @@ class Step:
         from .provenance import Lock, record
         self.context = contextlib.ExitStack()
         try:
+            from .artifacts import check_roots, snapshot
+            check_roots(self.cfg)
             self.context.enter_context(Lock(rec_dir(self.cfg, create=True)))
+            self.before = snapshot(self.cfg)
             from .delivery import initialize
             initialize(self.cfg)
             save_config(self.cfg)
@@ -171,7 +174,11 @@ class Step:
             log(self.cfg, step=self.name, event=event, seconds=dt, **extra)
             print("[lant] step %s %s (%.0fs)" % (self.name, event, dt), flush=True)
         finally:
-            self.context.__exit__(et, ev, tb)
+            try:
+                from .artifacts import register
+                register(self.cfg, self.before)
+            finally:
+                self.context.__exit__(et, ev, tb)
         print("[lant] %s %s (%.0fs); details: %s" % (self.name, event, dt,
               os.path.join(rec_dir(self.cfg), "lant.log")), file=sys.stderr, flush=True)
         return False

@@ -11,7 +11,7 @@ Follow [docs/ai_workflow.md](docs/ai_workflow.md). In short:
 1. `lant check` first; install what it lists as missing (`bash tools/install_external.sh`).
 2. Start with `lant run all --raw DIR --stations FILE --out DIR` (or `lant init -o CONFIG` and `lant run all -c CONFIG`). All results go to the user's output directory. **Do not write results into the repository, do not change the raw data, do not edit `lant/`.**
 3. After every stop run `lant status -c CONFIG --json`: it gives the state of each step, the reason, and the next command. Read `OUT/.lant/steps/<step>.md` and the files it lists before going on.
-4. Where the chain stops for a judgement, show the user the items under "FOR YOU TO JUDGE" with the figures, and **let the user decide: never run `lant confirm` on your own.** Record the user's decision and reason in `OUT/.lant/decisions.md`.
+4. Where the chain stops for a judgement, show the user the items under "FOR YOU TO JUDGE" with the figures, and **let the user decide: never run `lant confirm` on your own.** Record the user's decision and reason in `OUT/notes.md`.
 5. Do not loosen quality control or tune parameters to get more points or a nicer picture. Report numbers and figures, and say what was not checked or is limited.
 
 Meaning and basis of every parameter: [docs/parameters.md](docs/parameters.md). Details of every step: [docs/tutorial.md](docs/tutorial.md); principles and sources: [docs/methods.md](docs/methods.md); output files: [docs/outputs.md](docs/outputs.md); known problems and remedies: [docs/troubleshooting.md](docs/troubleshooting.md).
@@ -25,3 +25,9 @@ Meaning and basis of every parameter: [docs/parameters.md](docs/parameters.md). 
 - Run `python -m pytest tests`, and the synthetic example for the steps you touched.
 - DSurfTomo and pDSurfTomo are not modified (only the memory-reserve patch for pDSurfTomo in the install script).
 - A method or a default needs a source: literature, theory, or an explicit label "empirical". Do not invent thresholds.
+
+## Operating and development boundaries
+
+For data processing, read `REPORT.md`, `lant status --json` and the linked evidence. Produce managed outputs through lant; append notes with `lant note "text" -c CONFIG`. Record reasons for authorized configuration edits. Scientific confirmation must reflect the user's decision: `lant confirm STEP -c CONFIG --reason "user decision and evidence"`. Terminal mode is not identity verification. Unknown files are reported, never deleted. Preview with `lant clean-work -c CONFIG`; execution requires `--execute --yes`. Data-processing restrictions do not prohibit explicitly authorized repository development.
+
+Follow the [twelve development rules](docs/engineering.md).

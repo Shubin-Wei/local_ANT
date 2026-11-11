@@ -190,11 +190,14 @@ def _write_block(path, conf):
     os.replace(tmp, path)
 
 
-def confirm(cfg, step, exclude_candidates=False):
+def _confirm(cfg, step, exclude_candidates=False, reason=None, invocation=None):
     """Write the confirmation of `step` into the configuration file -> (entry, steps to run again)."""
     from . import manifest
     if step not in C.CONFIRM_STEPS:
         raise ValueError("steps to confirm: %s" % ", ".join(C.CONFIRM_STEPS))
+    current = manifest.status(cfg)[step]
+    if current["state"] not in ("to confirm", "done"):
+        raise RuntimeError("step %s is %s; rerun before confirming" % (step, current["state"]))
     r = manifest.load(cfg)["steps"].get(step)
     if r is None or r["state"] != "done":
         raise RuntimeError("step %s has not finished: `lant run all -c %s` first" % (step, cfg["_config_file"]))
@@ -204,7 +207,8 @@ def confirm(cfg, step, exclude_candidates=False):
     path = cfg["_config_file"]
     _, conf = _read_block(open(path).read())
     entry = {"_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), "_basis": r.get("basis"),
-             "_judged": list(r.get("to_confirm") or [])}
+             "_judged": list(r.get("to_confirm") or []),
+             "_reason": reason or "not supplied", "_invocation": invocation or "python API"}
     entry.update(proposals(cfg, step))
     rerun = []
     if step == "stack":
@@ -216,3 +220,25 @@ def confirm(cfg, step, exclude_candidates=False):
     conf[step] = entry
     _write_block(path, conf)
     return entry, rerun
+
+
+def confirm(cfg, step, exclude_candidates=False, reason=None, invocation=None):
+    """Serialize configuration changes and bind decisions to current results."""
+    from . import artifacts, records
+    from .delivery import atomic_text, write_report
+    from .provenance import Lock
+    artifacts.check_roots(cfg)
+    with Lock(records.rec_dir(cfg, create=True)):
+        before = artifacts.snapshot(cfg)
+        try:
+            entry, rerun = _confirm(cfg, step, exclude_candidates, reason, invocation)
+            note = os.path.join(cfg["project"]["output_dir"], "notes.md")
+            prior = open(note).read() if os.path.exists(note) else "# Notes and decisions\n"
+            atomic_text(note, prior + "\n- %s — %s: %s; evidence: .lant/steps/%s.md; basis: %s; invocation: %s\n" %
+                        (entry["_at"], step, entry["_reason"], step, entry["_basis"], entry["_invocation"]))
+            records.log(cfg, event="confirmation", step=step, confirmation=entry)
+            current = C.load(cfg["_config_file"])
+            write_report(current)
+            return entry, rerun
+        finally:
+            artifacts.register(cfg, before)

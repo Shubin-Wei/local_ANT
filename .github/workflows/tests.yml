@@ -26,7 +26,7 @@ jobs:
           C=/tmp/quick/synthetic.yaml
           for gate in clean stack reference inversion; do
             lant run all -c $C --to inversion || true
-            lant confirm $gate -c $C || true
+            lant confirm $gate -c $C --reason "CI synthetic data with known truth" || true
           done
           lant run all -c $C --to inversion
           lant status -c $C --json

@@ -97,6 +97,8 @@ def record(cfg, step, state, seconds=None, params=None, to_confirm=None, basis=N
         seconds=seconds, params=params or {},
         upstream={s: steps[s]["run"] for s in order[:order.index(step)] if s in steps},
         inputs=inputs, code=code, to_confirm=list(to_confirm or []), basis=basis, error=error)
+    from .artifacts import required
+    steps[step]["outputs"] = required(cfg, step)
     _save(cfg, m)
     return steps[step]
 
@@ -135,6 +137,8 @@ def status(cfg, check_inputs=True):
                 broken = broken or (s, "has not run")
             continue
         e = dict(state=r["state"], time=r["time"], run=r["run"])
+        if r.get("cache_cleaned"):
+            e["cache_cleaned"] = True
         if r["state"] in ("failed", "partial"):
             e["reason"] = r.get("error") or ""
             broken = broken or (s, "failed" if r["state"] == "failed" else "is incomplete")
@@ -144,8 +148,11 @@ def status(cfg, check_inputs=True):
         changed = sorted(k for k in set(now) | set(r["params"]) if now.get(k) != r["params"].get(k)
                          and k not in RESOURCE_KEYS)
         again = [u for u in order[:order.index(s)] if u in steps and r["upstream"].get(u) != steps[u]["run"]]
+        missing = [p for p in r.get("outputs", []) if not os.path.exists(os.path.join(cfg["project"]["output_dir"], p))]
         why = None
-        if changed:
+        if missing:
+            why = "required products missing: " + ", ".join(missing)
+        elif changed:
             why = "parameters changed since it ran: %s%s" % (", ".join(changed[:8]), " ..." if len(changed) > 8 else "")
         elif s == "clean" and check_inputs and r.get("inputs") and raw_inputs(cfg) != r["inputs"]:
             why = "the raw files or the station table changed since it ran"
@@ -192,6 +199,9 @@ def gate(cfg, step, st=None):
     st = st or status(cfg)
     order = _steps()
     c = cfg.get("_config_file", "CONFIG")
+    needed = {"cc": "clean", "stack": "cc"}.get(step)
+    if needed and st[needed].get("cache_cleaned"):
+        raise NotCurrent("%s caches were cleaned; rebuild with lant run all --from clean -c %s" % (needed, c))
     for s in order[:order.index(step)]:
         e = st[s]
         if e["state"] == "done" or (step == "figures" and e["state"] == "not run"):

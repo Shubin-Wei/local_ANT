@@ -31,3 +31,9 @@ Use the same raw synthetic inputs for old/new comparison. Compare measurement gr
 ## Progress and logs
 
 `lant run ... -v` shows detailed output. Normally, step stdout goes to the managed `lant.log` (10 MiB per file, three backups); stderr carries progress and the final summary. `LANT_PROGRESS=off` disables progress. Long stages without a reliable total emit a heartbeat; ETA is approximate and shown only after counted work has started.
+
+## Notes, confirmation and cleanup
+
+`lant note "text" -c CONFIG` appends a timestamped note. `lant confirm STEP -c CONFIG --reason "decision and evidence"` records the result basis, reason and invocation mode under the same project lock. Status reports unregistered, missing and modified managed files without attributing an author.
+
+`lant clean-work -c CONFIG [--cache archive|cc]` previews registered unchanged files. Only `--execute --yes` deletes them, after current evaluation has finished and raw data remain available. Final products and unknown files stay intact. Rebuilding cc or stack after cleanup requires recreating upstream caches; status exposes `cache_cleaned`. `--from` and `--rebuild` display their impact and require explicit acknowledgement; rebuild backups are unique and never replace earlier backups.
