@@ -16,6 +16,7 @@ class Progress:
         self.interval = interval if interval is not None else (1 if self.tty else 30)
         self.disabled = os.environ.get("LANT_PROGRESS", "auto").lower() in ("off", "0", "false")
         self.done, self.total, self.unit = 0, None, "tasks"
+        self.eta = True
         self.detail = ""
         self.started = time.monotonic()
         self.stop = threading.Event()
@@ -28,7 +29,7 @@ class Progress:
             elapsed = time.monotonic() - self.started
             count = "%d/%d %s" % (self.done, self.total, self.unit) if self.total is not None else "running"
             eta = ""
-            if self.total and self.done and elapsed >= 2:
+            if self.eta and self.total and self.done and elapsed >= 2:
                 eta = ", ETA ~%.0fs" % (elapsed * max(0, self.total - self.done) / self.done)
             bar = ""
             if self.tty and self.total:
@@ -63,12 +64,13 @@ class Progress:
         _current = self.previous
 
 
-def track(items, total, unit):
-    """Count completed tasks without changing their order or scheduling."""
+def track(items, total, unit, eta=True):
+    """Count completed tasks without changing their order or scheduling.  eta=False when the tasks differ too much
+    in duration for a rate to mean anything (solver projects)."""
     p = _current
     if p:
         with p.guard:
-            p.done, p.total, p.unit = 0, total, unit
+            p.done, p.total, p.unit, p.eta = 0, total, unit, eta
     for item in items:
         yield item
         if p:

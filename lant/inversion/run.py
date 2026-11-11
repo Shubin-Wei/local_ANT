@@ -121,7 +121,8 @@ def run_projects(cfg, dirs):
     with workers(max_workers=int(inv["njobs"])) as ex:
         from concurrent.futures import as_completed
         futures = [ex.submit(run_one, d, binary, int(inv["threads"])) for d in dirs]
-        res = [future.result() for future in track(as_completed(futures), len(futures), "solver projects")]
+        done = [future.result() for future in track(as_completed(futures), len(futures), "solver projects", eta=False)]
+    res = sorted(done, key=lambda r: dirs.index(r[0]))  # summaries in project order, not in order of completion
     for d, msg in res:
         print("  %s %s" % (d, msg), flush=True)
     failed = [d for d, m in res if m.startswith("FAILED")]
