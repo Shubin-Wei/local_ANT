@@ -1,4 +1,5 @@
 """Effective Linux memory limits and storage estimates; never adjust scientific priors."""
+
 import os
 import shutil
 from pathlib import Path
@@ -40,8 +41,10 @@ def available_memory(proc=Path("/proc"), cgroup=Path("/sys/fs/cgroup")):
 def check_disk(directory, required_bytes):
     free = shutil.disk_usage(directory).free
     if required_bytes > free:
-        raise RuntimeError("estimated additional storage %.2f GB exceeds %.2f GB free on %s; "
-                           "free space or choose another output filesystem" % (required_bytes / 1e9, free / 1e9, directory))
+        raise RuntimeError(
+            "estimated additional storage %.2f GB exceeds %.2f GB free on %s; "
+            "free space or choose another output filesystem" % (required_bytes / 1e9, free / 1e9, directory)
+        )
     return free
 
 
@@ -49,10 +52,12 @@ def preflight(cfg, estimate, directory, archive_bytes=0):
     per_process = estimate["memory_per_process_gb"] * 1e9
     available = available_memory()
     if available is not None and per_process > 0.7 * available:
-        raise RuntimeError("one cc process needs about %.2f GB; effective available memory is %.2f GB "
-                           "(including readable cgroup limits). Free memory or use a larger worker. "
-                           "Scientific velocity priors must only change with independent evidence." %
-                           (per_process / 1e9, available / 1e9))
+        raise RuntimeError(
+            "one cc process needs about %.2f GB; effective available memory is %.2f GB "
+            "(including readable cgroup limits). Free memory or use a larger worker. "
+            "Scientific velocity priors must only change with independent evidence."
+            % (per_process / 1e9, available / 1e9)
+        )
     # Full new output is a conservative bound and includes the transient replacement of existing files.
     check_disk(directory, estimate["disk_gb"] * 1e9 + archive_bytes)
     return available

@@ -1,4 +1,5 @@
 """Delivery keeps complete products independently of working files."""
+
 import json
 from pathlib import Path
 
@@ -21,6 +22,7 @@ def test_status_does_not_initialize_output(tmp_path):
 
 def test_publish_model_and_validation_survive_work_removal(tmp_path):
     import shutil
+
     cfg = project(tmp_path)
     delivery.initialize(cfg)
     main = Path(paths.P(cfg, paths.INV, "main"))
@@ -53,13 +55,16 @@ def test_failed_publication_preserves_previous_tree(tmp_path, monkeypatch):
 def test_moving_project_keeps_clean_state_and_archive_readable(tmp_path):
     from lant import data, manifest, pipeline, report
     from util import make_raw
+
     make_raw(tmp_path)
     root = tmp_path / "project"
     root.mkdir()
     file = root / "config.yaml"
-    file.write_text("project: {output_dir: ., array_type: surface}\n"
-                    "data: {raw_dir: %s, station_file: %s, velocity_range_kms: [0.5, 3.0]}\n"
-                    "clean: {nproc: 1}\n" % (tmp_path / "raw", tmp_path / "sta.csv"))
+    file.write_text(
+        "project: {output_dir: ., array_type: surface}\n"
+        "data: {raw_dir: %s, station_file: %s, velocity_range_kms: [0.5, 3.0]}\n"
+        "clean: {nproc: 1}\n" % (tmp_path / "raw", tmp_path / "sta.csv")
+    )
     pipeline.run_step(config.load(str(file)), "clean")
     moved = tmp_path / "moved"
     root.rename(moved)

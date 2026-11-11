@@ -1,4 +1,5 @@
 """An interrupted parallel batch reaps its solver before releasing its caller."""
+
 import sys
 import threading
 import time

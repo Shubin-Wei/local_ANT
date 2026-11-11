@@ -1,4 +1,5 @@
 """Cleanup never adopts unknown files or follows links outside the project."""
+
 from pathlib import Path
 
 import pytest
@@ -49,6 +50,7 @@ def test_cleanup_rejects_parent_symlink(tmp_path):
 
 def test_cleanup_honors_lock_and_retains_deliverables(tmp_path, monkeypatch):
     from lant import manifest
+
     cfg = setup_project(tmp_path)
     cfg["data"]["raw_dir"] = str(tmp_path)
     cache = tmp_path / "work/02_ccf/day.h5"
@@ -63,6 +65,7 @@ def test_cleanup_honors_lock_and_retains_deliverables(tmp_path, monkeypatch):
     monkeypatch.setattr(manifest, "status", lambda *a, **k: {"evaluate": {"state": "done"}})
     monkeypatch.setattr(artifacts, "write_report", lambda cfg: None, raising=False)
     import lant.delivery
+
     monkeypatch.setattr(lant.delivery, "write_report", lambda cfg: None)
     artifacts.clean(cfg, ["cc"], execute=True)
     assert not cache.exists() and model.read_text() == "model"

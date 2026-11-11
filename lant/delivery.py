@@ -1,4 +1,5 @@
 """Project entry points and retained scientific deliverables; no computation lives here."""
+
 import json
 import os
 import shutil
@@ -41,12 +42,15 @@ def initialize(cfg):
         atomic_text(marker, json.dumps({"version": LAYOUT_VERSION}) + "\n")
     readme = root / "README.md"
     if not readme.exists():
-        atomic_text(readme, "# lant project\n\nStart with [REPORT.md](REPORT.md).\n\n"
-                    "- `results/`: retained models, dispersion, figures, validation and reproduction inputs.\n"
-                    "- `work/`: processing files. Only explicitly selected registered caches may be cleaned.\n"
-                    "- `.lant/`: state, step reports, configuration history, provenance and rotating logs.\n"
-                    "- `notes.md`: optional append-only notes and scientific decisions.\n\n"
-                    "## Operating rules\n\n" + "\n".join("- " + r for r in RULES) + "\n")
+        atomic_text(
+            readme,
+            "# lant project\n\nStart with [REPORT.md](REPORT.md).\n\n"
+            "- `results/`: retained models, dispersion, figures, validation and reproduction inputs.\n"
+            "- `work/`: processing files. Only explicitly selected registered caches may be cleaned.\n"
+            "- `.lant/`: state, step reports, configuration history, provenance and rotating logs.\n"
+            "- `notes.md`: optional append-only notes and scientific decisions.\n\n"
+            "## Operating rules\n\n" + "\n".join("- " + r for r in RULES) + "\n",
+        )
 
 
 def _replace_tree(source, target):
@@ -95,6 +99,7 @@ def publish(cfg, step):
     effective = Path(records.rec_dir(cfg)) / "config.yaml"
     if effective.exists():
         from . import config
+
         target = dest / "reproduce" / "effective.yaml"
         target.parent.mkdir(parents=True, exist_ok=True)
         config.dump(cfg, str(target) + ".tmp")
@@ -106,13 +111,22 @@ def publish(cfg, step):
 
 def write_report(cfg):
     from . import manifest, report
+
     root = Path(cfg["project"]["output_dir"])
     state = manifest.status(report.resolved(cfg), check_inputs=False)
-    lines = ["# Run report", "", "State belongs to the latest recorded run; retained files may be from an earlier complete run.",
-             "Use `lant status -c CONFIG --json` to recheck current inputs and configuration.", "",
-             "| Step | State | Detail |", "|---|---|---|"]
+    lines = [
+        "# Run report",
+        "",
+        "State belongs to the latest recorded run; retained files may be from an earlier complete run.",
+        "Use `lant status -c CONFIG --json` to recheck current inputs and configuration.",
+        "",
+        "| Step | State | Detail |",
+        "|---|---|---|",
+    ]
     for step, info in state.items():
-        detail = ("Caches cleaned; rebuilding needs upstream work. " if info.get("cache_cleaned") else "") + info.get("reason", "")
+        detail = ("Caches cleaned; rebuilding needs upstream work. " if info.get("cache_cleaned") else "") + info.get(
+            "reason", ""
+        )
         detail = detail.replace("|", "\\|").replace("\n", " ")
         link = ".lant/steps/%s.md" % step
         label = "[%s](%s)" % (step, link) if (root / link).exists() else step
@@ -122,15 +136,25 @@ def write_report(cfg):
         if p.is_file():
             rel = p.relative_to(root).as_posix()
             lines.append("- [%s](%s)" % (rel, rel))
-    lines += ["", "## Judgements and limits", "",
-              "Read the linked step reports for key numbers, parameters, diagnostic figures and scientific judgements.",
-              "Jackknife uncertainty is conditional, not a calibrated total error. Review checkerboards with the model.",
-              "Directional-noise and higher-mode limitations remain those of the documented method."]
+    lines += [
+        "",
+        "## Judgements and limits",
+        "",
+        "Read the linked step reports for key numbers, parameters, diagnostic figures and scientific judgements.",
+        "Jackknife uncertainty is conditional, not a calibrated total error. Review checkerboards with the model.",
+        "Directional-noise and higher-mode limitations remain those of the documented method.",
+    ]
     conf = cfg.get("_confirmed") or {}
     if conf:
         lines += ["", "## Confirmation record", "", "Invocation metadata is not identity verification.", ""]
         for step, entry in conf.items():
-            lines.append("- %s: %s; reason: %s; invocation: %s" %
-                         (step, entry.get("_at", "unknown"), entry.get("_reason", "not recorded"),
-                          entry.get("_invocation", "not recorded")))
+            lines.append(
+                "- %s: %s; reason: %s; invocation: %s"
+                % (
+                    step,
+                    entry.get("_at", "unknown"),
+                    entry.get("_reason", "not recorded"),
+                    entry.get("_invocation", "not recorded"),
+                )
+            )
     atomic_text(root / "REPORT.md", "\n".join(lines) + "\n")

@@ -1,4 +1,5 @@
 """Main-process progress on stderr; unknown work uses a heartbeat, never a fake ETA."""
+
 import os
 import sys
 import threading
@@ -70,4 +71,3 @@ def track(items, total, unit):
         if p:
             with p.guard:
                 p.done += 1
-

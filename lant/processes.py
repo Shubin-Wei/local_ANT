@@ -1,4 +1,5 @@
 """Reap solver process groups when parallel work is interrupted."""
+
 import contextlib
 import os
 import signal

@@ -1,4 +1,5 @@
 """Resource decisions use effective limits and leave scientific configuration untouched."""
+
 from collections import namedtuple
 
 import pytest

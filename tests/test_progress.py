@@ -1,4 +1,5 @@
 """Progress stays on its chosen stream and never invents totals."""
+
 import io
 
 from lant.progress import Progress, track

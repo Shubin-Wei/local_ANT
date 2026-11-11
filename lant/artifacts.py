@@ -1,4 +1,5 @@
 """Registered output files and conservative, preview-first cache cleanup."""
+
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -60,7 +61,7 @@ def is_cache(relative, selection):
     if p.is_absolute() or ".." in p.parts:
         return False
     prefixes = {"archive": ("work", "01_clean", "archive"), "cc": ("work", "02_ccf")}
-    return any(p.parts[:len(prefixes[s])] == prefixes[s] for s in selection)
+    return any(p.parts[: len(prefixes[s])] == prefixes[s] for s in selection)
 
 
 def cleanup_plan(cfg, selection):
@@ -79,8 +80,12 @@ def cleanup_plan(cfg, selection):
             changed.append(rel)
         else:
             files.append(dict(path=rel, bytes=st.st_size))
-    return dict(files=files, bytes=sum(p["bytes"] for p in files), protected=changed,
-                impact="Retained results stay readable. Rebuilding cc requires clean archives; rebuilding stack requires cc files.")
+    return dict(
+        files=files,
+        bytes=sum(p["bytes"] for p in files),
+        protected=changed,
+        impact="Retained results stay readable. Rebuilding cc requires clean archives; rebuilding stack requires cc files.",
+    )
 
 
 def clean(cfg, selection, execute=False):
@@ -88,6 +93,7 @@ def clean(cfg, selection, execute=False):
     from . import manifest, report
     from .delivery import write_report
     from .provenance import Lock
+
     check_roots(cfg)
     if not execute:
         return cleanup_plan(cfg, selection)
@@ -123,7 +129,8 @@ def required(cfg, step):
     """Essential working products; path storage is always relative to the project."""
     table = {
         "clean": [paths.P(cfg, "01_clean", "archive_index.json"), paths.P(cfg, "01_clean", "stations.csv")],
-        "cc": [paths.P(cfg, paths.CCF)], "stack": [paths.stack_product(cfg)],
+        "cc": [paths.P(cfg, paths.CCF)],
+        "stack": [paths.stack_product(cfg)],
         "reference": [paths.P(cfg, paths.REFERENCE, "reference.npz")],
         "disp": [paths.P(cfg, paths.DISP, "disp.h5")],
         "inversion": [paths.P(cfg, paths.INV, "main", "DSurfTomo.in")],
