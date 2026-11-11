@@ -52,4 +52,4 @@ clean 估算 cc 所需内存和空间并给出警告（clean 本身两者都不�
 
 `lant install-external [dsurftomo|pdsurftomo]` 使用 wheel 和源码发行包内的资源。安装包默认写入 `$XDG_CACHE_HOME/lant/external`（或 `~/.cache/lant/external`），源码工作区使用自身 `external/`；两者都可用 `LANT_EXTERNAL` 覆盖。源码脚本保留为便捷入口。编译输入及既有内存补丁移动至 `lant/_external/`，不改变科学实现。
 
-求解进度在日志可读时显示 DSurfTomo 日志末尾观测到的迭代次数。日志尚未刷新时退回耗时心跳，不把观测到的迭代数当作准确百分比或剩余时间保证。绘图显示已完成任务数。
+`lant run all` 中每一步显示它在整链中的位置（`[6/9] run`）。DSurfTomo 运行时设置 `GFORTRAN_UNBUFFERED_ALL=y`，只是让日志随写随落盘（合成检验中模型逐字节相同），进度行因此能显示每个运行中工程已观测到的迭代（`iterations: main 3/10, start_grad0.05 2/10`）和这一批是哪类工程；观测到的迭代不是百分比，也不是剩余时间。预检和绘图显示完成数。整链完成后打印报告和成果的位置及几个关键数字。被中断的求解工程移到 `.lant/backups/<时间>-interrupted/`，从输入重新运行；输入比输出新的工程仍然报错。步骤运行期间也能用 `lant note`（笔记有自己的小锁）。

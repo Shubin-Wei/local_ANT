@@ -80,7 +80,8 @@ Confirmations are written by `lant confirm` into the `confirmed:` section at the
 | Configuration error (also for removed old keys) | the message names the key and the reason; follow it |
 | A step fails | read the last entry of `run_log.jsonl` and the traceback with `--debug`; a data problem: ask the user; a defect of the program: stop and report |
 | A step is stale | the configuration or an earlier result changed; run again from the step `next` names; confirmations have to be given again |
-| The output directory is locked | another run is active; do not delete the lock file, find that process first |
+| The output directory is locked | another run is active; do not delete the lock file, find that process first. Notes can still be added with `lant note` |
+| A run was interrupted (Ctrl-C, kill, closed terminal) | run `lant run all -c CONFIG` again: the interrupted step is recorded as failed and solver projects restart from their inputs; do not delete files by hand |
 | The result looks unreasonable | do not "repair" it with parameters; report what you see, the numbers and possible causes, and ask the user |
 
 ## Operating and development boundaries
