@@ -23,6 +23,9 @@ If you know them, add: the rough range of surface-wave velocities, whether there
 5. **Do not tune for a nicer result**: no looser quality control for more points, no regularisation chosen by checkerboard or residual, no removal of stations that "look bad".
 6. Every parameter that differs from its default needs a basis (data statistics, a figure, literature), recorded in `notes.md`.
 7. **Report numbers and figures only**, without words such as "stable", "reliable", "passed"; say what was not checked and what the data limit.
+8. **Write files in two places only**: notes with `lant note "text" -c CONFIG`, and temporary scripts, extracts or figures under `OUT/scratch/` (delete them when no longer needed). Nothing else in the output directory, the raw-data directory or the repository; never edit `work/`, `results/`, `.lant/`, REPORT.md or README.md. `lant status --json` lists every file in the output directory that lant did not write (`artifacts.unregistered`, also at the top of the directory) and the size of `scratch/`; keep the list empty except for what the user put there.
+
+Every new output directory holds `AGENTS.md` with these rules (read by Codex and other agents that use AGENTS.md) and a `CLAUDE.md` that imports it (Claude Code reads CLAUDE.md first when there is one in the directory or above it). Whether an assistant loads them depends on the assistant; the file check in `lant status` does not.
 
 ## 3. Who decides what
 

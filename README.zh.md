@@ -44,6 +44,8 @@
 
 ## 安装
 
+lant 从本仓库安装，不在 PyPI 上（`pip install lant` 装到的是同名的无关软件包）。
+
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
 conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6、gfortran 和 lant 本身

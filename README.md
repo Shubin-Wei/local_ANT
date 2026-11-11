@@ -44,6 +44,8 @@ You give three paths: the raw data, the station table, the output directory. Eve
 
 ## Install
 
+lant is installed from this repository; it is not on PyPI (`pip install lant` installs an unrelated package of that name).
+
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
 conda env create -f environment.yml && conda activate lant     # Python, ObsPy, GMT 6, gfortran and lant itself

@@ -25,6 +25,17 @@ Open `REPORT.md` first: the state of every step and the next command, key number
 
 The per-pair diagnostic figures stay in `work/05_dispersion/pair_figures/`; the checkerboard and control projects with their recovered models stay in `work/06_inversion/`.
 
+## Top of the output directory
+
+| File | Content |
+|---|---|
+| `REPORT.md`, `README.md` | the report and the guide to the directory (written by lant) |
+| `AGENTS.md`, `CLAUDE.md` | rules for AI assistants working here (`CLAUDE.md` imports `AGENTS.md`) |
+| `notes.md` | your notes and decisions (`lant note`) |
+| `scratch/` | optional: temporary files of people and assistants; not checked by `lant status` (which reports its size), safe to delete |
+
+Any other file here, or in `work/`, `results/` or `.lant/`, that lant did not write is listed by `lant status` as unregistered; lant never deletes or overwrites it.
+
 ## .lant/: the run record
 
 | File | Content |
