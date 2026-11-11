@@ -309,6 +309,12 @@ def cmd_plot(a):
         print("not drawn: %s (%s)" % (k, v))
 
 
+def _external_program(value):
+    if value not in ("dsurftomo", "pdsurftomo"):
+        raise argparse.ArgumentTypeError("choose dsurftomo or pdsurftomo")
+    return value
+
+
 def cmd_install_external(a):
     import subprocess
     from .tools import external_path
@@ -396,7 +402,7 @@ def main(argv=None):
     q.add_argument("-c", "--config")
     q.set_defaults(fn=cmd_plot)
     q = sub.add_parser("install-external", help="build fixed third-party programs in a writable location")
-    q.add_argument("programs", nargs="*", choices=("dsurftomo", "pdsurftomo"))
+    q.add_argument("programs", nargs="*", type=_external_program, metavar="PROGRAM")
     q.set_defaults(fn=cmd_install_external)
     q = sub.add_parser("note", help="append a project note")
     q.add_argument("text")
