@@ -19,11 +19,20 @@ RULES = [
 ]
 
 
+def _umask():
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
 def atomic_text(path, text):
+    """Replace a small text file in one step, with the permissions an ordinary write would give (mkstemp: 0600)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".write-", dir=str(path.parent))
     try:
+        mode = path.stat().st_mode & 0o777 if path.exists() else 0o666 & ~_umask()
+        os.fchmod(fd, mode)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
         os.replace(tmp, str(path))
@@ -53,16 +62,29 @@ def initialize(cfg: dict) -> None:
         )
 
 
-def _replace_tree(source, target):
-    """Build before replacing; retain the old complete tree if copying or replacement fails."""
+def _swap(cfg, target, fill):
+    """Fill a new tree beside `target`, then put it in place; the previous complete tree stays if anything fails.
+    Unregistered files in the old tree are never replaced."""
+    from .artifacts import load
+
+    root = Path(cfg["project"]["output_dir"])
     target = Path(target)
-    target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_symlink():
         raise RuntimeError("refusing to replace a symlink: %s" % target)
+    owned = load(cfg)
+    unknown = [
+        p.relative_to(root).as_posix()
+        for p in target.rglob("*")
+        if p.is_file() and p.relative_to(root).as_posix() not in owned
+    ]
+    if unknown:
+        raise RuntimeError("unregistered retained files are protected: " + ", ".join(unknown[:5]))
+    target.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".deliver-", dir=str(target.parent)))
     new, old = staging / "new", staging / "previous"
     try:
-        shutil.copytree(str(source), str(new))
+        new.mkdir()  # ordinary permissions; the mkdtemp directory itself is private
+        fill(new)
         if target.exists():
             os.rename(str(target), str(old))
         try:
@@ -75,54 +97,64 @@ def _replace_tree(source, target):
         shutil.rmtree(str(staging))
 
 
-def _publish_tree(cfg, source, target):
-    from .artifacts import load
+def _copy_into(source, new):
+    shutil.copytree(str(source), str(new), dirs_exist_ok=True)
 
-    root = Path(cfg["project"]["output_dir"])
-    owned = load(cfg)
-    target = Path(target)
-    unknown = [
-        p.relative_to(root).as_posix()
-        for p in target.rglob("*")
-        if p.is_file() and p.relative_to(root).as_posix() not in owned
-    ]
-    if unknown:
-        raise RuntimeError("unregistered retained files are protected: " + ", ".join(unknown[:5]))
-    _replace_tree(source, target)
+
+def _mark(cfg, target, step):
+    """Which run of which step a retained tree belongs to (manifest.record gives the run this number next)."""
+    from . import manifest
+
+    p = Path(records.rec_dir(cfg)) / "published.json"
+    marks = json.loads(p.read_text()) if p.exists() else {}
+    run = int(manifest.load(cfg)["steps"].get(step, {}).get("run", 0)) + 1
+    marks[target] = dict(step=step, run=run, time=records._now())
+    atomic_text(p, json.dumps(marks, indent=1) + "\n")
 
 
 def publish(cfg, step):
-    """Retain complete scientific products before cache cleanup becomes available."""
-    root = Path(cfg["project"]["output_dir"])
-    dest = root / "results"
+    """Replace retained products only by complete ones: the dispersion table after disp; the model, its checks
+    and its reproduction inputs together after evaluate (the main model has run and been evaluated).  Building
+    or rerunning the inversion leaves the previous complete model in results/ until then."""
+    from .inversion import run as RUN
+
+    dest = Path(cfg["project"]["output_dir"]) / "results"
     inv = Path(paths.P(cfg, paths.INV))
     if step == "disp":
-        source = Path(paths.P(cfg, paths.DISP))
-        target = dest / "dispersion"
-        _publish_tree(cfg, source, target)
-    if step in ("inversion", "run", "evaluate"):
-        if (inv / "main").exists():
-            _publish_tree(cfg, inv / "main", dest / "model")
-        for name in ("checkerboards", "controls", "evaluation"):
-            if (inv / name).exists():
-                _publish_tree(cfg, inv / name, dest / "validation" / name)
-        reproduce = dest / "reproduce"
-        reproduce.mkdir(parents=True, exist_ok=True)
+        _swap(cfg, dest / "dispersion", lambda new: _copy_into(paths.P(cfg, paths.DISP), new))
+        _mark(cfg, "results/dispersion", step)
+        return
+    if step != "evaluate":
+        return
+    if RUN.status(str(inv / "main")) != "done":
+        raise RuntimeError("the main model has not finished; the retained model is kept")
+
+    def validation(new):
+        for name in ("checkerboards", "controls"):
+            for project in sorted((inv / name).iterdir()) if (inv / name).is_dir() else []:
+                if project.is_dir() and RUN.status(str(project)) == "done":  # unrun checks are not results
+                    _copy_into(project, new / name / project.name)
+        _copy_into(inv / "evaluation", new / "evaluation")
+
+    def reproduce(new):
         for p in inv.iterdir():
             if p.is_file():
-                atomic_text(reproduce / p.name, p.read_text())
-    # Effective configuration and station geometry are small and useful without the raw files.
-    effective = Path(records.rec_dir(cfg)) / "config.yaml"
-    if effective.exists():
+                shutil.copy2(str(p), str(new / p.name))
+        stations = Path(paths.P(cfg, "01_clean", "stations.csv"))
+        if stations.exists():
+            shutil.copy2(str(stations), str(new / "stations.csv"))
         from . import config
 
-        target = dest / "reproduce" / "effective.yaml"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        config.dump(cfg, str(target) + ".tmp")
-        os.replace(str(target) + ".tmp", str(target))
-    stations = Path(paths.P(cfg, "01_clean", "stations.csv"))
-    if stations.exists():
-        atomic_text(dest / "reproduce" / "stations.csv", stations.read_text())
+        # Small and useful without the raw files; relative paths as seen from its final place.
+        config.dump(cfg, str(new / "effective.yaml"), base=str(dest / "reproduce"))
+
+    for name, fill in (
+        ("model", lambda new: _copy_into(inv / "main", new)),
+        ("validation", validation),
+        ("reproduce", reproduce),
+    ):
+        _swap(cfg, dest / name, fill)
+        _mark(cfg, "results/" + name, step)  # each tree is labelled as soon as it is in place
 
 
 def write_report(cfg: dict) -> None:
@@ -148,10 +180,33 @@ def write_report(cfg: dict) -> None:
         label = "[%s](%s)" % (step, link) if (root / link).exists() else step
         lines.append("| %s | %s | %s |" % (label, info["state"], detail))
     lines += ["", "## Retained deliverables", ""]
-    for p in sorted((root / "results").rglob("*")):
-        if p.is_file():
-            rel = p.relative_to(root).as_posix()
-            lines.append("- [%s](%s)" % (rel, rel))
+    marks_path = Path(records.rec_dir(cfg)) / "published.json"
+    marks = json.loads(marks_path.read_text()) if marks_path.exists() else {}
+    trees = [p for p in (root / "results").iterdir() if p.is_dir()] if (root / "results").is_dir() else []
+    for tree in sorted(p for p in trees if not p.name.startswith(".")):  # not staging left by an interruption
+        rel = tree.relative_to(root).as_posix()
+        mark = marks.get(rel) or (dict(step="figures") if tree.name == "figures" else {})
+        made = state.get(mark.get("step"), {})
+        if not mark:
+            origin = "origin not recorded"
+        elif "run" not in mark:
+            origin = "written by step %s" % mark["step"]
+        else:
+            origin = "from run %d of step %s (%s)" % (mark["run"], mark["step"], mark["time"])
+            if made.get("run") != mark["run"]:
+                origin += "; OLDER than the latest run %s of that step (%s)" % (made.get("run"), made.get("state"))
+            elif made.get("state") != "done":
+                origin += "; that step is now %s: earlier steps changed and a new result is not complete yet" % (
+                    made.get("state", "not run")
+                )
+        files = sorted(p for p in tree.rglob("*") if p.is_file())
+        lines.append("- [%s/](%s): %d files, %s" % (rel, rel, len(files), origin))
+        shown = files if len(files) <= 25 else [p for p in files if p.parent == tree][:25]
+        for p in shown:
+            link = p.relative_to(root).as_posix()
+            lines.append("  - [%s](%s)" % (p.relative_to(tree).as_posix(), link))
+        if len(shown) < len(files):
+            lines.append("  - ... %d more files in the directory" % (len(files) - len(shown)))
     lines += [
         "",
         "## Judgements and limits",

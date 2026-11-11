@@ -545,13 +545,15 @@ def validate(cfg):
     return cfg
 
 
-def dump(cfg, path):
+def dump(cfg, path, base=None):
+    """base: the directory the file will be read from, when it is written elsewhere first (default: its own)."""
     out = copy.deepcopy({k: v for k, v in cfg.items() if not k.startswith("_")})
     root = cfg["project"]["output_dir"]
+    base = base or os.path.dirname(os.path.abspath(path))
     for keys in PATH_KEYS:
         value = _get(out, keys)
         if isinstance(value, str) and os.path.isabs(value) and os.path.commonpath([root, value]) == root:
-            _set(out, keys, os.path.relpath(value, os.path.dirname(os.path.abspath(path))))
+            _set(out, keys, os.path.relpath(value, base))
     with open(path, "w") as fh:
         yaml.safe_dump(out, fh, sort_keys=False, allow_unicode=True)
     if cfg.get("_confirmed"):
