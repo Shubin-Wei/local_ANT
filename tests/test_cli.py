@@ -52,3 +52,38 @@ def test_install_external_defaults_to_both_programs(monkeypatch):
     monkeypatch.setattr(cli, "cmd_install_external", lambda args: called.append(args.programs))
     cli.main(["install-external"])
     assert called == [[]]
+
+
+def test_multiline_dispatch_preserves_execution_options(monkeypatch):
+    import subprocess
+
+    called = []
+    monkeypatch.setattr(cli, "_quick_config", lambda args: ["line1.yaml", "line2.yaml"])
+    monkeypatch.setattr(subprocess, "call", lambda command: called.append(command) or 0)
+    with pytest.raises(SystemExit) as result:
+        cli.main(
+            [
+                "run",
+                "all",
+                "--raw",
+                "raw",
+                "--stations",
+                "stations.csv",
+                "--out",
+                "output",
+                "--from",
+                "reference",
+                "--to",
+                "inversion",
+                "--what",
+                "main",
+                "--verbose",
+                "--rebuild",
+                "--yes",
+            ]
+        )
+    assert result.value.code == 0 and len(called) == 2
+    for command in called:
+        for option, value in (("--from", "reference"), ("--to", "inversion"), ("--what", "main")):
+            assert command[command.index(option) + 1] == value
+        assert all(option in command for option in ("--verbose", "--rebuild", "--yes"))
