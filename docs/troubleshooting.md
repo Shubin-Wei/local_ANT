@@ -40,6 +40,7 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 |---|---|
 | `N processes instead of correlation.nproc` | memory does not hold the requested number of processes; the number is reduced automatically, the results are the same, only slower |
 | `One process alone does not fit` | the hourly correlations of all pairs of one day do not fit in memory. Most effective: write the actual range of the area in `data.velocity_range_kms` (the lag window is inversely proportional to the slowest velocity); on large arrays also use `correlation.max_distance_km` to correlate only pairs within a distance |
+| `a worker process ended unexpectedly` | a worker of clean, cc or disp was killed, most often for lack of memory (`dmesg` shows the out-of-memory killer). The step stops instead of waiting for the lost task; free memory or lower the `nproc` of the step, then run again |
 | `02_ccf` takes a lot of disk | as above: the lag window sets the file size. The clean report gives an estimate |
 
 ## stack

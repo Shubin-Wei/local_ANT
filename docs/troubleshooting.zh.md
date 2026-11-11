@@ -40,6 +40,7 @@
 |---|---|
 | `N processes instead of correlation.nproc` | 内存不够同时跑设定的进程数，自动减少，结果不变，只是更慢 |
 | `One process alone does not fit` | 一天全部台对的逐小时互相关放不进内存。最有效的是把 `data.velocity_range_kms` 写成本区的实际范围（时延窗与最慢速度成反比）；大台阵另用 `correlation.max_distance_km` 只算一定距离内的台对 |
+| `a worker process ended unexpectedly` | clean、cc 或 disp 的一个工作进程被杀掉，最常见的是内存不够（`dmesg` 里能看到 OOM killer）。这一步停下，不再等那个丢失的任务；释放内存或减小这一步的 `nproc` 后重跑 |
 | `02_ccf` 占用磁盘很大 | 同上：时延窗决定文件大小。clean 报告中有估计 |
 
 ## stack
