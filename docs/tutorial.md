@@ -10,15 +10,14 @@ Purpose, method, basis and what to look at, step by step. A first run in half an
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant     # Python, ObsPy, GMT 6, gfortran
-pip install -e .
+conda env create -f environment.yml && conda activate lant     # Python, ObsPy, GMT 6, gfortran and lant itself
 ```
 
-If `conda env create` stays at "Solving environment" for a long time, use `--solver libmamba`, or mamba / micromamba. Without conda: `pip install -e .` on Python ≥ 3.9, plus GMT 6 (≥ 6.1), gfortran, gcc, make, git. Linux only.
+If `conda env create` stays at "Solving environment" for a long time, use `--solver libmamba`, or mamba / micromamba. Without conda: `pip install -e .` on Python ≥ 3.8, plus GMT 6 (≥ 6.1), gfortran, gcc, make, git. Linux only.
 
 ### 1.2 Third-party programs
 
-The repository holds no third-party source; a script downloads fixed versions from the official repositories and builds them in `external/`:
+The repository holds no third-party source; `lant install-external` downloads fixed versions from the official repositories and builds them (needs git, make and gfortran). They go to `external/` of a source checkout, or to `~/.cache/lant/external` (`$XDG_CACHE_HOME/lant/external`) for an installed package; `LANT_EXTERNAL=DIR` chooses another place for building and for running:
 
 ```bash
 lant install-external            # DSurfTomo + fwd1d, pDSurfTomo
@@ -39,6 +38,8 @@ lant check          # state of the Python packages, GMT, DSurfTomo, fwd1d, and h
 ```
 
 ### 1.4 Run the synthetic example first
+
+`lant demo` makes a small synthetic array and runs the whole chain in a few minutes (quickstart.md). Step by step, with the full example:
 
 ```bash
 python examples/synthetic/make_synthetic.py              # 16 stations, 3 days; 5–20 minutes, about 300 MB
@@ -89,7 +90,8 @@ Names are matched by: network and station equal; station equal; "network + stati
 ### 2.4 Disk and computing
 
 - The cleaned day files are about as large as the raw data (`clean.write_archive: false` skips them; response removal needs them).
-- `02_ccf` takes about pairs × 24 × (2 × lag window × rate + 1) × 4 bytes per day; the clean report gives this estimate and the memory of one cc process. When memory does not hold `correlation.nproc` processes (70 % of the physical memory), the cc step runs fewer; when not even one fits it stops and suggests a narrower `data.velocity_range_kms` or `correlation.max_distance_km` (only pairs within that distance).
+- `02_ccf` takes about pairs × 24 × (2 × lag window × rate + 1) × 4 bytes per day; the clean report gives this estimate and the memory of one cc process. The memory counted is what is available now, within the limits of a job or container (Linux cgroups), with reclaimable file cache counted as available. When it does not hold `correlation.nproc` processes (70 % of it), the cc step runs fewer; when not even one fits, the clean step warns and the cc step stops. Free memory or use a larger machine; a narrower `data.velocity_range_kms` or `correlation.max_distance_km` (only pairs within that distance) also reduces it, but change them only on independent knowledge of the area, not to make the run fit.
+- After a run is finished and evaluated, `lant clean-work -c CONFIG` lists the rebuildable caches (cleaned day files, hourly correlations) and their size; `--execute --yes` removes them. Results and the report stay readable; rebuilding cc or stack, or redrawing the stack-time figures, then needs the caches again.
 - The inversion time depends on the number of grid nodes and of "stations × periods"; every checkerboard and control is one project, and they can run side by side (`inversion.njobs`).
 
 ## 3. Configuration
@@ -119,7 +121,11 @@ lant confirm STEP -c CONFIG     # after you looked at the report and the figures
 lant run all -c CONFIG --from disp     # run again from a step after changing a parameter
 ```
 
-Every step prints a report and stores it in `.lant/steps/<step>.md`: what it did, key numbers, every parameter it used (value, basis, source), files to look at, items left for you. `.lant/manifest.json` records on which inputs and parameters every step stands; when one of them changes, the step and those after it become stale and confirmations lapse. A step with nothing to judge does not stop.
+While a step runs, one progress line shows its place in the chain, what it counts (station-days, days, pair batches, solver projects with their iterations, figures) and the elapsed time; in a terminal it is a bar updated every second, in a log one line every 30 seconds; `LANT_PROGRESS=off` turns it off. Detailed output goes to `.lant/lant.log` (`-v` shows it as well). A finished chain prints where the report and results are.
+
+An interrupted run (Ctrl-C, `kill`, a closed terminal; under `nohup` a closed terminal does not stop it) stops the solver processes, records the step as failed and releases the lock; `lant run all -c CONFIG` continues, and interrupted solver projects restart from their inputs (their partial output is kept in `.lant/backups/`). Even after `kill -9` or running out of memory the next command records the step as failed instead of refusing to run. While a step runs, `lant status` shows it as running and `lant note` still works.
+
+Every step stores a report in `.lant/steps/<step>.md` (`-v` prints it): what it did, key numbers, every parameter it used (value, basis, source), files to look at, items left for you. `.lant/manifest.json` records on which inputs and parameters every step stands; when one of them changes, the step and those after it become stale and confirmations lapse. A step with nothing to judge does not stop.
 
 ### 4.1 clean: cleaning (`01_clean`)
 

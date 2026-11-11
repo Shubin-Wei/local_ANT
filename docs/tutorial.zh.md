@@ -10,15 +10,14 @@
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6、gfortran
-pip install -e .
+conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6、gfortran 和 lant 本身
 ```
 
-`conda env create` 长时间停在 “Solving environment” 时，改用 `--solver libmamba`，或用 mamba / micromamba。不用 conda 也可以：Python ≥ 3.9 上 `pip install -e .`，另装 GMT 6（≥ 6.1）、gfortran、gcc、make、git。只支持 Linux。
+`conda env create` 长时间停在 “Solving environment” 时，改用 `--solver libmamba`，或用 mamba / micromamba。不用 conda 也可以：Python ≥ 3.8 上 `pip install -e .`，另装 GMT 6（≥ 6.1）、gfortran、gcc、make、git。只支持 Linux。
 
 ### 1.2 第三方程序
 
-仓库不含第三方源码，由脚本从官方仓库下载固定版本并编译到 `external/`：
+仓库不含第三方源码，`lant install-external` 从官方仓库下载固定版本并编译（需要 git、make、gfortran）。源码目录里装到 `external/`，安装的软件包装到 `~/.cache/lant/external`（`$XDG_CACHE_HOME/lant/external`）；`LANT_EXTERNAL=目录` 可指定别的位置，编译和运行都用它：
 
 ```bash
 lant install-external            # DSurfTomo + fwd1d、pDSurfTomo
@@ -39,6 +38,8 @@ lant check          # 逐项列出 Python 包、GMT、DSurfTomo、fwd1d 的状�
 ```
 
 ### 1.4 先跑合成算例
+
+`lant demo` 生成一个小的合成台阵，几分钟跑完整条流程（见 quickstart.zh.md）。用完整算例逐步运行：
 
 ```bash
 python examples/synthetic/make_synthetic.py              # 16 台、3 天，5–20 分钟，约 300 MB
@@ -89,7 +90,8 @@ CSV、空格或制表符分隔的文本（有无表头均可）、Excel、Statio
 ### 2.4 磁盘和计算量
 
 - 清洗后的日文件与原始数据大小相当（`clean.write_archive: false` 可不写，但去响应需要写）。
-- `02_ccf` 每天约为 台对数 × 24 × (2 × 时延窗 × 采样率 + 1) × 4 字节；clean 报告给出这一估计和每个 cc 进程的内存。内存（物理内存的 70 %）放不下 `correlation.nproc` 个进程时，cc 自动少开进程；一个进程也放不下时停下，建议写窄 `data.velocity_range_kms` 或用 `correlation.max_distance_km`（只算这个距离内的台对）。
+- `02_ccf` 每天约为 台对数 × 24 × (2 × 时延窗 × 采样率 + 1) × 4 字节；clean 报告给出这一估计和每个 cc 进程的内存。这里的内存是当前可用的内存，包括作业或容器的限制（Linux cgroup），可回收的文件缓存计为可用。它的 70 % 放不下 `correlation.nproc` 个进程时，cc 自动少开进程；一个进程也放不下时，clean 给出警告，cc 停下。可以释放内存或换更大的机器；写窄 `data.velocity_range_kms` 或用 `correlation.max_distance_km`（只算这个距离内的台对）也能减少用量，但只能依据对本区的独立了解来改，不能为了让程序跑得下而改。
+- 运行完成并评估后，`lant clean-work -c CONFIG` 列出可重建的缓存（清洗后的日文件、逐小时互相关）及其大小，`--execute --yes` 才删除。成果和报告仍可读；之后要重建 cc、stack 或重画叠加时间图，需要重新生成这些缓存。
 - 反演时间取决于网格节点数和“台站 × 周期”数；棋盘和对照各是一个工程，可以并行（`inversion.njobs`）。
 
 ## 3. 配置
@@ -119,7 +121,11 @@ lant confirm STEP -c CONFIG     # 看过报告和图之后确认
 lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 ```
 
-每一步跑完在屏幕上打印报告并存到 `.lant/steps/<步骤>.md`：做了什么、关键数字、用到的每个参数（值、依据、来源）、要看的文件、留给你判断的事项。`.lant/manifest.json` 记录每一步依据哪些输入和参数成立；输入或参数变了，这一步及其后的步骤自动标为过时，已做的确认失效。没有需要判断的事项时流程不停。
+步骤运行时有一行进度：在整链中的位置、计数（台站日、天、台对批次、求解工程及其迭代、图件）和已用时间；终端里是每秒刷新的进度条，写入日志时每 30 秒一行；`LANT_PROGRESS=off` 关闭。详细输出写进 `.lant/lant.log`（`-v` 同时显示在屏幕上）。整链完成后打印报告和成果的位置。
+
+运行被中断（Ctrl-C、`kill`、终端关闭；在 `nohup` 下关闭终端不会中断）时，求解进程会停止，步骤记为失败，锁被释放；再运行 `lant run all -c CONFIG` 就继续，被中断的求解工程从输入重新运行（半成品保留在 `.lant/backups/`）。即使是 `kill -9` 或内存耗尽，下一条命令也会把该步骤记为失败，而不是拒绝运行。步骤运行期间 `lant status` 显示它正在运行，`lant note` 照常可用。
+
+每一步的报告存到 `.lant/steps/<步骤>.md`（`-v` 时也打印）：做了什么、关键数字、用到的每个参数（值、依据、来源）、要看的文件、留给你判断的事项。`.lant/manifest.json` 记录每一步依据哪些输入和参数成立；输入或参数变了，这一步及其后的步骤自动标为过时，已做的确认失效。没有需要判断的事项时流程不停。
 
 ### 4.1 clean：清洗（`01_clean`）
 
