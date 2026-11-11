@@ -31,7 +31,7 @@ If you know them, add: the rough range of surface-wave velocities, whether there
 | The user gives | the three paths; if known: velocity range, response files, time zone, stations to exclude |
 | The program derives, the report shows the derivation | sampling rate, band, lag window, segment length, sub-stack length, F-J scan, measurement band and velocity axis, depth nodes, grid, velocity bounds, checkerboards, sections, colour scale |
 | The program lists, the user judges | clean: ambiguous names, coordinate mismatches, unknown orientation, unclear array type, responses not removed and models unknown; stack: remove the candidates or not; reference: is the picked ridge the fundamental mode; inversion: starting model, deepest node, velocity bounds |
-| The assistant may decide (and records in decisions.md) | processes and threads (from cores and the memory estimate); no clean archive when the disk is short |
+| The assistant may decide (and records with `lant note`) | processes and threads (from cores and the memory estimate); no clean archive when the disk is short |
 | The assistant must ask first | all judgements above; `data.rename`; excluding a whole station; borrowing a reference curve or starting model; any change of a quality-control threshold or of the regularisation; deleting existing results |
 
 ## 4. The procedure
@@ -44,10 +44,10 @@ lant status -c OUT/config.yaml --json                        # 2. after every st
 
 `lant status --json` is the only interface you need to parse: per step the state (stands, stale, waiting for confirmation, not run, failed), the reason, and the `next` command. The loop:
 
-1. Run the command given as `next`.
+1. Run the command given as `next`, unless `next.requires_user` is true (a `lant confirm`): then do steps 2–3 and wait for the user's decision. Do not run anything while `writer` is set; a step shown as `running` is being recomputed.
 2. After the stop read `OUT/.lant/steps/<step>.md` and the files under "LOOK AT" (look at the figures if you can read images; otherwise ask the user to).
 3. Check by the table below; report numbers, figure locations and the items to judge.
-4. When the user has decided, carry it out (`lant confirm …` or a change of the configuration) and add a line to `notes.md`.
+4. When the user has decided, carry it out (`lant confirm …` or a change of the configuration) and record it with `lant note` (`lant confirm` writes its own line).
 5. Back to 1, until `figures` stands.
 
 | Step | Look at | Common cases |
@@ -63,12 +63,13 @@ lant status -c OUT/config.yaml --json                        # 2. after every st
 
 ## 5. Records
 
-One line per decision in `OUT/notes.md`:
+One note per decision, appended to `OUT/notes.md` with `lant note` (step, item, decision, basis, who decided):
 
 ```
-| date | step | key or item | decision | basis | who |
-| 2026-11-09 | stack | 3 candidate station sub-stacks | kept | correlation just below the limit, shifts inside the limit (work/03_stack/candidates.txt) | user |
+lant note "stack: 3 candidate station sub-stacks kept; correlation just below the limit, shifts inside the limit (work/03_stack/candidates.txt); decided by the user" -c OUT/config.yaml
 ```
+
+`lant confirm` adds its own note with the reason, the result fingerprint and the invocation.
 
 Confirmations are written by `lant confirm` into the `confirmed:` section at the end of the configuration; the other files in `.lant/` are written by the program and are not edited by hand.
 

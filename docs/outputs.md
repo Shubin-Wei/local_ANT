@@ -6,7 +6,7 @@ All results are written under `project.output_dir` of the configuration; the raw
 
 ## Project entry points
 
-Open `REPORT.md` first. `README.md` explains ownership and operating rules. `notes.md` holds appended notes and decisions. `results/model/` retains the solver inputs and model; `results/validation/` retains checks and evaluation; `results/reproduce/` holds the effective configuration and station geometry. Scientific products remain available independently of working caches. `work/` is not disposable as a whole.
+Open `REPORT.md` first. `README.md` explains ownership and operating rules. `notes.md` holds appended notes and decisions. `results/dispersion/` is replaced after a complete disp step. `results/model/` (solver inputs and model), `results/validation/` (finished checks and the evaluation) and `results/reproduce/` (effective configuration, station geometry, starting-model files) are replaced together after a complete evaluate step, so rebuilding or rerunning the inversion keeps the previous evaluated model until the new one is evaluated. `REPORT.md` names the run each of them comes from and marks it when the step has run again since. Scientific products remain available independently of working caches. `work/` is not disposable as a whole.
 
 
 ## .lant/: the run record

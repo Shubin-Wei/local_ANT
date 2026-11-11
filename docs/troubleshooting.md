@@ -65,7 +65,7 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 | few accepted points | `.lant/steps/disp.md` counts the rejected points by reason. Mostly snr: stacking time too short, or no energy in the band; mostly wavelength / path_short: distances too short relative to the wavelength; mostly off_band: the frequency is outside the band excited by the noise sources |
 | `median_vs_reference.txt` shows a systematic offset | the reference curve may be wrong (higher mode, cycle skip); go back to reference and check `fj.png` |
 | line: the reference covers only a small part of the measured band, and the medians at high frequencies change with the velocity range | beyond the picks of the reference, the cycle count relies on continuation along frequency and the group pick is not guided by the reference, so a fast population can enter. On one real line, with the default range 0.1–5 km/s the reference covered only 1.7–2.8 Hz, and the medians at 3–13 Hz were 4–9 % higher than with the range of the area, 1–4 km/s; the extra points were 8–16 % faster than the points accepted in both runs and did not agree with the F-J ridge. On a line, always give the velocity range of the area, and check in `fj.png` that the picks follow the ridge up to the aliasing line |
-| you want to loosen quality control for more points | not recommended. If it is really needed, write the reason in `.lant/decisions.md` and state it in your report |
+| you want to loosen quality control for more points | not recommended. If it is really needed, record the reason with `lant note` and state it in your report |
 
 ## inversion and run
 

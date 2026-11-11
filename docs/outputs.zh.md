@@ -6,7 +6,7 @@
 
 ## 工程入口
 
-先打开 `REPORT.md`。`README.md` 说明产物归属和操作规则；`notes.md` 追加笔记和决策。`results/model/` 保留求解器输入和模型，`results/validation/` 保留检查和评估，`results/reproduce/` 保留有效配置和台站几何。科学成果独立于工作缓存保留，不能整删 `work/`。
+先打开 `REPORT.md`。`README.md` 说明产物归属和操作规则；`notes.md` 追加笔记和决策。`results/dispersion/` 在 disp 完整完成后替换。`results/model/`（求解器输入和模型）、`results/validation/`（已完成的检查和评估）、`results/reproduce/`（有效配置、台站几何、起始模型文件）在 evaluate 完整完成后一起替换；重建或重跑反演时，上一次评估过的模型一直保留到新模型评估完。`REPORT.md` 写明它们各来自哪一次运行，该步骤之后又运行过时会标出。科学成果独立于工作缓存保留，不能整删 `work/`。
 
 
 ## .lant/：运行记录

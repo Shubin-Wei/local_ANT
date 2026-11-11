@@ -161,7 +161,7 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 
 **看什么**：`results/figures/3_dispersion_curves.png`（全部曲线与参考）、`pair_figures/`（单台对：速度谱、拾取、被拒原因）、`median_vs_reference.txt`。
 
-**不要为了多出点放宽质控。** 门限改了要在 `.lant/decisions.md` 里写明理由。
+**不要为了多出点放宽质控。** 门限改了要用 `lant note` 记下理由。
 
 ### 4.6 inversion：建反演工程（`06_inversion`）
 

@@ -161,7 +161,7 @@ Every step prints a report and stores it in `.lant/steps/<step>.md`: what it did
 
 **Look at**: `results/figures/3_dispersion_curves.png` (all curves and the reference), `pair_figures/` (single pairs: velocity spectrum, picks, reasons), `median_vs_reference.txt`.
 
-**Do not loosen the quality control to get more points.** A changed threshold needs its reason in `.lant/decisions.md`.
+**Do not loosen the quality control to get more points.** A changed threshold needs its reason, recorded with `lant note`.
 
 ### 4.6 inversion: building the projects (`06_inversion`)
 

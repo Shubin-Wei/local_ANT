@@ -34,7 +34,7 @@ This is engineering validation, not a new scientific validation campaign. The fu
 
 Review result publication and failure paths (`delivery.py`, `plotting/figures.py`), file ownership and cleanup (`artifacts.py`), locks and state (`records.py`, `manifest.py`, `provenance.py`), CSV precision (`export.py`), process cancellation (`processes.py`, `inversion/run.py`) and installed-package resources first.
 
-File auditing uses size and nanosecond modification/change times, not content hashes or authorship. Same-filesystem relocation was tested; copying files may change metadata and trigger audit warnings. A terminal flag and a recorded reason are not authentication. Resource estimates cannot guarantee future load or unknown storage quotas. Figure staging preserves previous files when rendering fails; a whole figure group is not a multi-file atomic transaction.
+File auditing uses size and nanosecond modification time, not content hashes or authorship. Same-filesystem relocation was tested; copies that keep modification times (`cp -a`, `rsync -a`) keep the audit clean, other copies show files as modified. A terminal flag and a recorded reason are not authentication. Resource estimates cannot guarantee future load or unknown storage quotas. Figure staging preserves previous files when rendering fails; a whole figure group is not a multi-file atomic transaction.
 
 Useful review commands from the checkout:
 

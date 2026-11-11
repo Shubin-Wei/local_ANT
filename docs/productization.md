@@ -24,7 +24,7 @@ No measurement or solver method, scientific default, QC criterion or third-party
 
 Progress goes to stderr; machine output remains valid JSON. A terminal is a display capability, not proof of human authorization. Scientific confirmations bind a result fingerprint and record reasons and invocation metadata. Assistants must obtain the user's scientific decision and never invent one.
 
-Cleanup previews by default, holds the project lock when executing, removes only explicitly registered cache files, rejects unsafe paths and preserves deliverables and unknown files. Published results remain readable after cache cleanup. No legacy layout reader or migration command is introduced.
+Cleanup previews by default, holds the project lock when executing, removes only registered cache files of the names the steps write (`*.mseed`, `*.done.json` in the archive, `day_*.h5`), rejects unsafe paths and preserves deliverables and unknown files. Published results remain readable after cache cleanup. No legacy layout reader or migration command is introduced.
 
 ## Acceptance
 
@@ -32,17 +32,17 @@ Use the same raw synthetic inputs for old/new comparison. Compare measurement gr
 
 ## Progress and logs
 
-`lant run ... -v` shows detailed output. Normally, step stdout goes to the managed `lant.log` (10 MiB per file, three backups); stderr carries progress and the final summary. `LANT_PROGRESS=off` disables progress. Long stages without a reliable total emit a heartbeat; ETA is approximate and shown only after counted work has started.
+`lant run ... -v` shows detailed output. Normally, step stdout goes to the managed `lant.log` (10 MiB per file, three backups); stderr carries progress and the final summary. `LANT_PROGRESS=off` disables progress. Long stages without a reliable total emit a heartbeat; ETA is approximate, shown only after counted work has started, and not shown for solver projects, whose durations differ widely.
 
 ## Notes, confirmation and cleanup
 
-`lant note "text" -c CONFIG` appends a timestamped note. `lant confirm STEP -c CONFIG --reason "decision and evidence"` records the result basis, reason and invocation mode under the same project lock. Status reports unregistered, missing and modified managed files without attributing an author.
+`lant note "text" -c CONFIG` appends a timestamped note. `lant confirm STEP -c CONFIG --reason "decision and evidence"` records the result basis, reason and invocation mode under the same project lock. Status reports unregistered, missing and modified managed files without attributing an author; the audit compares size and modification time (kept by `cp -a` and `rsync -a`), not content. While a writer holds the lock, status shows its step as `running` and defers the file audit. Every write command (steps, note, confirm, rebuild, cleanup) takes the lock through one context that registers its outputs; a command that ended without cleanup (SIGKILL, out of memory) leaves `.lant/pending.json`, and the next write command registers its outputs and records its step as failed instead of refusing to run. SIGTERM and SIGHUP are handled like Ctrl-C (solver groups stopped, step recorded as failed); a signal ignored by `nohup` stays ignored.
 
 `lant clean-work -c CONFIG [--cache archive|cc]` previews registered unchanged files. Only `--execute --yes` deletes them, after current evaluation has finished and raw data remain available. Final products and unknown files stay intact. Rebuilding cc or stack after cleanup requires recreating upstream caches; status exposes `cache_cleaned`. `--from` and `--rebuild` display their impact and require explicit acknowledgement; rebuild backups are unique and never replace earlier backups.
 
 ## Resource preflight
 
-Clean estimates memory and storage before writing the archive; cc rechecks immediately before allocating workers. Effective available memory includes readable Linux cgroup limits. The existing 70% memory reserve is retained; only worker count changes. Storage estimates are conservative full-output bounds including replacement space; quotas and future load cannot be guaranteed. A broad line-array velocity prior is flagged without adding a confirmation gate or changing the prior.
+Clean estimates the cc memory and storage and warns (clean itself needs neither, and its report is the evidence for the velocity range); cc checks again before allocating workers and refuses what does not fit. Effective available memory includes readable Linux cgroup limits, with the inactive page cache counted as available as MemAvailable does. The existing 70% memory reserve is retained; only worker count changes. Storage estimates are conservative full-output bounds including replacement space; quotas and future load cannot be guaranteed. A broad line-array velocity prior is flagged without adding a confirmation gate or changing the prior.
 
 ## Dispersion table
 
