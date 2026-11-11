@@ -1,12 +1,52 @@
-# Tests and the quick synthetic example on every push and pull request.
-# The quick example runs the chain up to the DSurfTomo project (the inversion itself takes minutes and needs no
-# check here beyond the unit tests of the interface); the gates are confirmed automatically because the data are
-# synthetic - never do this with real data.
+# Lint, unit tests on the supported Python versions, the quick synthetic example and an installed wheel, on every
+# push and pull request.  The quick example runs the chain up to the DSurfTomo project (the inversion itself takes
+# minutes and needs no check here beyond the unit tests of the interface); its gates are confirmed automatically
+# because the data are synthetic with a known answer - never do this with real data.
 name: tests
 on: [push, pull_request]
 jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "ruff==0.14.0"
+      - name: lint
+        run: ruff check lant tests tools examples
+      - name: format
+        run: ruff format --check lant tests tools examples
+
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: system packages
+        run: sudo apt-get update && sudo apt-get install -y gfortran make
+      - name: install
+        run: |
+          pip install -e ".[dev]"
+          lant install-external dsurftomo
+          lant check
+      - name: unit tests
+        run: python -m pytest tests -q --cov=lant --cov-report=term-missing --cov-report=xml
+      - name: quick synthetic example (to the inversion project)
+        run: |
+          python -m lant.synthetic --quick --out /tmp/quick
+          python tools/run_synthetic.py --dir /tmp/quick
+          lant status -c /tmp/quick/synthetic.yaml --json
+          python examples/synthetic/compare_truth.py --dir /tmp/quick
+
+  package:
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -14,28 +54,14 @@ jobs:
           python-version: "3.10"
       - name: system packages
         run: sudo apt-get update && sudo apt-get install -y gfortran make
-      - name: install
-        run: |
-          pip install -e ".[dev]"
-          bash tools/install_external.sh dsurftomo
-      - name: unit tests
-        run: python -m pytest tests -q --cov=lant --cov-report=term-missing --cov-report=xml
-      - name: quick synthetic example (to the inversion project)
-        run: |
-          python examples/synthetic/make_synthetic.py --quick --out /tmp/quick
-          python tools/run_synthetic.py --dir /tmp/quick
-          lant status -c /tmp/quick/synthetic.yaml --json
-          python examples/synthetic/compare_truth.py --dir /tmp/quick
-      - name: lint
-        run: ruff check lant tests tools examples
-      - name: format new infrastructure
-        run: ruff format --check lant/progress.py lant/delivery.py lant/artifacts.py lant/resources.py lant/processes.py tools/run_synthetic.py tests/test_progress.py tests/test_delivery.py tests/test_artifacts.py tests/test_resources.py tests/test_export.py tests/test_processes.py tests/test_cli.py
       - name: build distributions
-        run: python -m build
-      - name: install wheel outside checkout
+        run: pip install "build>=1.2,<1.3" && python -m build
+      - name: install the wheel outside the checkout and build the solver from its resources
         run: |
           python -m venv /tmp/lant-installed
           /tmp/lant-installed/bin/pip install dist/*.whl
           cd /tmp
-          /tmp/lant-installed/bin/lant --help
+          /tmp/lant-installed/bin/lant --version
           /tmp/lant-installed/bin/lant init -o /tmp/installed.yaml
+          LANT_EXTERNAL=/tmp/lant-external /tmp/lant-installed/bin/lant install-external dsurftomo
+          LANT_EXTERNAL=/tmp/lant-external /tmp/lant-installed/bin/lant check
