@@ -2,6 +2,34 @@
 
 [中文](history.zh.md) | English
 
+## v1.5 (2026-11): readable results, visible progress, safe interruption, installation and maintenance
+
+No measurement, quality-control or inversion method and no scientific default changed. On the same synthetic input as v1.4.0 the stack and measurement datasets (34), the solver dispersion curves (35) and the solver inputs are identical bit for bit, and the main model is identical byte for byte.
+
+**Changed behaviour**
+- New project layout: `results/` (what you use), `work/` (processing files), `.lant/` (state and logs), with `REPORT.md` and `README.md` at the top. Projects of earlier versions are not read.
+- `results/model/vs_model.csv` (longitude, latitude, depth, Vs; DSurfTomo's values with a header) replaces the solver project in the results; the per-pair dispersion text files are replaced by `curves.csv` (measured values, QC and inversion flags, the values given to DSurfTomo with their former rounding).
+- `lant init` writes a compact configuration (`--full`: every key with its basis); figures are PNG by default (`plots.formats` adds PDF).
+- `lant confirm` needs `--reason` with the user's decision; third-party programs are built with `lant install-external`.
+
+**Results and report**
+- The model, checks and reproduction files are replaced only after a complete evaluation, so a rebuilt or interrupted inversion keeps the previous evaluated model; `REPORT.md` opens with the state, key numbers, the items to judge and the main figures, and names the run each result comes from.
+
+**Running**
+- One progress line with the place in the chain, counts, the observed iteration of every running solver project (DSurfTomo logs unbuffered) and the elapsed time; detailed output in `.lant/lant.log` (`-v` shows it); a closing summary.
+- Ctrl-C, `kill` and a closed terminal stop the solver processes and record the step as failed; `lant run all` continues and restarts interrupted solver projects from their inputs. After `kill -9` or running out of memory the next command recovers instead of refusing; a pool worker killed for lack of memory stops the step instead of leaving it waiting.
+- Memory checks count job and container limits; `lant clean-work` removes rebuildable caches of a finished project on request; `lant note` works while a step runs.
+
+**Getting started**
+- `lant demo` runs a synthetic array with a known answer through the whole chain in a few minutes; `lant --version`; complete help; suggestions for misspelt configuration keys; messages that name the next command.
+- `conda env create -f environment.yml` installs lant itself; installed wheels carry the solver build resources.
+
+**AI assistants**
+- Every output directory holds `AGENTS.md` with the rules (and a `CLAUDE.md` importing it); notes go through `lant note`, temporary files under `scratch/`; `lant status` lists every file lant did not write, at the top of the directory too; files lant did not write are never overwritten or deleted.
+
+**Maintenance**
+- The repository is formatted and linted with ruff; CI runs lint, the tests on Python 3.8, 3.10 and 3.12, the quick synthetic example and an installed wheel; contributing guides and an issue template.
+
 ## v1.4 (2026-11): corrections after trial runs on real data, complete documentation
 
 After trial runs from raw records on one line and one areal array of real data, the problems found were fixed; every change comes with a synthetic test ([validation.md](validation.md)).
@@ -135,21 +163,3 @@ Many parameters of v1.0 were still the values of the author's one array. Changes
 - Third-party programs are not in the repository; `tools/install_external.sh` downloads fixed versions and builds them; the lower memory reserve of pDSurfTomo is a patch.
 - The memory queue for a shared server became the two parameters `inversion.njobs` and `threads`.
 - The user gives only the raw-data directory and the station file; format, layout, vertical component, table form and name matching are recognised by the program, and the remaining parameters follow from the data by written rules (`records/auto_parameters.json`).
-
-## Productization (unreleased)
-
-New projects use `work/`, `results/` and `.lant/`, with README and total report entry points. Solver inputs, models and checks are retained separately from working caches. Internal archive paths and configuration snapshots are portable. Progress uses stderr and bounded detail logs; inspect/status no longer write inspection snapshots. No measurement or solver method changes.
-
-Compact `lant init` is now the default; `--full` retains all parameter descriptions. PNG is the default presentation format; add PDF explicitly with `plots.formats`. The dispersion CSV preserves legacy solver rounding and selection semantics.
-
-After the independent review: the retained model, checks and reproduction inputs are replaced only after a complete evaluation, and REPORT names the run they come from; a step killed without cleanup is recovered by the next write command (outputs registered, step recorded as failed) instead of blocking it; SIGTERM/SIGHUP stop the solver process groups like Ctrl-C; atomically written files get ordinary permissions; status shows the running step and defers the file audit during writes; `next.requires_user` marks a confirmation; a placeholder or empty reason is refused; the file audit uses size and modification time; cleanup deletes only the cache file names the steps write; the clean-stage cc resource estimate warns instead of stopping clean, and cgroup memory counts the inactive page cache as available; no ETA for solver projects.
-
-Run experience: chain position on the progress line; DSurfTomo logs unbuffered (identical models) so running projects show their observed iteration; precheck counts; a closing summary with the report, results and key numbers; interrupted solver projects are set aside in `.lant/backups` and run again; `lant note` works while a step runs.
-
-Results: `results/` holds readable products only: `model/vs_model.csv` (DSurfTomo's values with a header), the dispersion table and HDF5, the evaluation numbers and the files for reproduction; solver projects and per-pair figures stay in `work/`. `REPORT.md` opens with the state, key numbers, the items to judge and the main figures.
-
-Getting started: `lant demo` runs a synthetic array with a known answer through the whole chain in a few minutes (the generator moved into the package as `lant.synthetic`; it refuses directories it did not create); `lant --version`; `lant` without a command prints the commands and the first steps; every option has a help text; a misspelt configuration key gets a suggestion; a missing configuration, template paths left in it, and a failed step say what to do next.
-
-Maintenance: the whole repository is formatted with ruff and checked with pyflakes, pycodestyle, import order and bugbear rules (formatting verified syntax-tree-identical); re-raised exceptions keep their cause; CI runs lint, tests on Python 3.8, 3.10 and 3.12, the quick example and an installed wheel; project metadata, contributing guides and an issue template; `conda env create` installs lant itself. A worker of clean, cc or disp killed for lack of memory now stops the step with an explanation instead of leaving it waiting forever.
-
-File rules for assistants: every new output directory holds `AGENTS.md` with the rules and a `CLAUDE.md` that imports it; `scratch/` is the one place for temporary files; `lant status` also lists unregistered files at the top of the output directory and reports the size of `scratch/`.

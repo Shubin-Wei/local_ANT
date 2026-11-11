@@ -6,4 +6,4 @@ control -> DSurfTomo direct inversion for 3-D Vs (areal arrays) or narrow-strip 
 figures.  Command line: `lant --help`; documentation: docs/tutorial.md.
 """
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"

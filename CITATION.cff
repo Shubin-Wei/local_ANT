@@ -6,3 +6,5 @@ authors:
   - name: "local_ANT contributors"
 repository-code: "https://github.com/Shubin-Wei/local_ANT"
 license: MIT
+version: "1.5.0"
+date-released: "2026-11-11"
