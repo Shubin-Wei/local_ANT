@@ -87,3 +87,26 @@ def test_checkerboard_noise_from_the_main_fit(tmp_path, monkeypatch):
     os.utime(main / "DSurfTomo.inMeasure.dat", (1e9, 1e9))
     pipeline.checkerboard_noise(cfg, str(main))
     assert len(calls) == 2                                            # a new main model: computed again
+
+
+def test_failed_figure_refresh_keeps_previous_complete_image(tmp_path):
+    from lant.plotting.figures import _Figures
+    figure = _Figures.__new__(_Figures)
+    figure.out, figure.done, figure.skipped = str(tmp_path), {}, {}
+    old = tmp_path / "model.png"
+    old.write_bytes(b"previous complete image")
+    def fail():
+        with open(figure.path("model.png"), "wb") as fh:
+            fh.write(b"partial")
+        raise RuntimeError("renderer failed")
+    figure.attempt("model", fail)
+    assert old.read_bytes() == b"previous complete image" and "model" in figure.skipped
+    def success():
+        path = figure.path("model.png")
+        with open(path, "wb") as fh:
+            fh.write(b"new complete image")
+        return [path]
+    figure.attempt("replacement", success)
+    assert old.read_bytes() == b"new complete image"
+    assert figure.done["replacement"] == [str(old)]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["model.png"]
