@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation / 文档
+    url: https://github.com/Shubin-Wei/local_ANT/tree/main/docs
+    about: Tutorial, outputs, troubleshooting and parameters / 教程、输出说明、常见问题和参数

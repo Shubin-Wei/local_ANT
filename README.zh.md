@@ -46,8 +46,7 @@
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6、gfortran
-pip install -e .
+conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6、gfortran 和 lant 本身
 lant install-external                                  # DSurfTomo 和 pDSurfTomo（固定版本）
 lant check                                                      # 缺什么、怎么装，都会列出
 lant demo                                                       # 已知答案的合成台阵，几分钟跑完
@@ -81,6 +80,7 @@ lant run all -c /data/result/config.yaml          # 从第一个不成立的步�
 | [docs/ai_workflow.zh.md](docs/ai_workflow.zh.md) | 借助 AI 助手运行流程 |
 | [docs/validation.zh.md](docs/validation.zh.md) | 合成检验及其数字 |
 | [docs/history.zh.md](docs/history.zh.md) | 各版本的变化 |
+| [CONTRIBUTING.zh.md](CONTRIBUTING.zh.md) | 报告问题、开发规范和检查 |
 | [AGENTS.zh.md](AGENTS.zh.md) | 给在本仓库里工作的 AI 助手的说明 |
 
 ## 引用
@@ -89,4 +89,4 @@ lant run all -c /data/result/config.yaml          # 从第一个不成立的步�
 
 ## 许可
 
-MIT（见 `LICENSE`）。第三方程序由 `tools/install_external.sh` 下载，保留各自的许可（DSurfTomo MIT、pDSurfTomo GPL-3），不包含在本仓库中。
+MIT（见 `LICENSE`）。第三方程序由 `lant install-external` 下载编译，保留各自的许可（DSurfTomo MIT、pDSurfTomo GPL-3），不包含在本仓库中。

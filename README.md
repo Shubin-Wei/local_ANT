@@ -46,8 +46,7 @@ You give three paths: the raw data, the station table, the output directory. Eve
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant     # Python, ObsPy, GMT 6, gfortran
-pip install -e .
+conda env create -f environment.yml && conda activate lant     # Python, ObsPy, GMT 6, gfortran and lant itself
 lant install-external                                  # DSurfTomo and pDSurfTomo, fixed versions
 lant check                                                      # says what is missing and how to install it
 lant demo                                                       # a synthetic array with a known answer, a few minutes
@@ -81,6 +80,7 @@ lant run all -c /data/result/config.yaml          # continues from the first ste
 | [docs/ai_workflow.md](docs/ai_workflow.md) | running the chain with an AI assistant |
 | [docs/validation.md](docs/validation.md) | synthetic tests and their numbers |
 | [docs/history.md](docs/history.md) | changes between versions |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | reporting a problem, development rules and checks |
 | [AGENTS.md](AGENTS.md) | instructions for AI assistants working in this repository |
 
 ## Citation
@@ -89,4 +89,4 @@ If you use this workflow, please cite the methods it rests on (table above; full
 
 ## License
 
-MIT (see `LICENSE`). The third-party programs are downloaded by `tools/install_external.sh` under their own licences (DSurfTomo MIT, pDSurfTomo GPL-3) and are not part of this repository.
+MIT (see `LICENSE`). The third-party programs are downloaded and built by `lant install-external` under their own licences (DSurfTomo MIT, pDSurfTomo GPL-3) and are not part of this repository.
