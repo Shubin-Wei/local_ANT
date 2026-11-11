@@ -226,19 +226,13 @@ def confirm(cfg, step, exclude_candidates=False, reason=None, invocation=None):
     """Serialize configuration changes and bind decisions to current results."""
     from . import artifacts, records
     from .delivery import atomic_text, write_report
-    from .provenance import Lock
-    artifacts.check_roots(cfg)
-    with Lock(records.rec_dir(cfg, create=True)):
-        before = artifacts.snapshot(cfg)
-        try:
-            entry, rerun = _confirm(cfg, step, exclude_candidates, reason, invocation)
-            note = os.path.join(cfg["project"]["output_dir"], "notes.md")
-            prior = open(note).read() if os.path.exists(note) else "# Notes and decisions\n"
-            atomic_text(note, prior + "\n- %s — %s: %s; evidence: .lant/steps/%s.md; basis: %s; invocation: %s\n" %
-                        (entry["_at"], step, entry["_reason"], step, entry["_basis"], entry["_invocation"]))
-            records.log(cfg, event="confirmation", step=step, confirmation=entry)
-            current = C.load(cfg["_config_file"])
-            write_report(current)
-            return entry, rerun
-        finally:
-            artifacts.register(cfg, before)
+    with artifacts.writing(cfg, "confirm"):
+        entry, rerun = _confirm(cfg, step, exclude_candidates, reason, invocation)
+        note = os.path.join(cfg["project"]["output_dir"], "notes.md")
+        prior = open(note).read() if os.path.exists(note) else "# Notes and decisions\n"
+        atomic_text(note, prior + "\n- %s — %s: %s; evidence: .lant/steps/%s.md; basis: %s; invocation: %s\n" %
+                    (entry["_at"], step, entry["_reason"], step, entry["_basis"], entry["_invocation"]))
+        records.log(cfg, event="confirmation", step=step, confirmation=entry)
+        current = C.load(cfg["_config_file"])
+        write_report(current)
+        return entry, rerun

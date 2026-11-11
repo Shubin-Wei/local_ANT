@@ -44,3 +44,41 @@ def test_file_backed_process_can_report_progress(tmp_path):
             [sys.executable, "-c", "import time; time.sleep(1.2)"], stdout=output, on_poll=lambda: polled.append(True)
         )
     assert result.returncode == 0 and polled
+
+
+def test_termination_signal_stops_the_solver_group(tmp_path):
+    import os
+    import signal
+    import subprocess
+
+    marker = "sleep %s" % (60 + os.getpid() % 1000 / 1000)  # unique, to find exactly this process
+    child = (
+        "import sys\n"
+        "from lant import cli, processes\n"
+        "cli._interrupt_on_termination()\n"
+        "try:\n"
+        "    with processes.workers(1) as ex:\n"
+        "        ex.submit(processes.run, %r.split()).result()\n"
+        "except KeyboardInterrupt:\n"
+        "    sys.exit(130)\n" % marker
+    )
+    lant_process = subprocess.Popen(
+        [sys.executable, "-c", child],
+        cwd=str(tmp_path.parents[0]),
+        env=dict(os.environ, PYTHONPATH=os.path.dirname(os.path.dirname(__file__))),
+    )
+
+    def solver_running():
+        out = subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True).stdout
+        return any(line.strip() == marker for line in out.splitlines())
+
+    for _ in range(100):
+        if solver_running():
+            break
+        time.sleep(0.05)
+    else:
+        lant_process.kill()
+        pytest.fail("solver did not start")
+    lant_process.send_signal(signal.SIGTERM)
+    assert lant_process.wait(timeout=10) == 130  # the interrupt path ran, not the default kill
+    assert not solver_running()  # no orphaned solver keeps writing

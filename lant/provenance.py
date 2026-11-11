@@ -87,27 +87,36 @@ class Lock:
     of the same process passes."""
     _held = {}
 
-    def __init__(self, rec_dir):
+    def __init__(self, rec_dir, what=None):
         self.path = os.path.join(rec_dir, "lock")
+        self.what = what
         self.fh = None
+        self.nested = False
 
     def __enter__(self):
         import fcntl
+        import time
         if self.path in Lock._held:                  # nested step of the same process
             Lock._held[self.path][1] += 1
+            self.nested = True
             return self
         fh = open(self.path, "a+")
-        try:
-            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            fh.seek(0)
-            other = fh.read().strip()
-            fh.close()
-            raise RuntimeError("another lant process is writing to this output directory (%s); wait for it to finish"
-                               % (other or "unknown process"))
+        for attempt in range(20):                    # a status probe holds a shared lock for a moment only
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if attempt < 19:
+                    time.sleep(0.05)
+                    continue
+                fh.seek(0)
+                other = fh.read().strip()
+                fh.close()
+                raise RuntimeError("another lant process is writing to this output directory (%s); wait for it to "
+                                   "finish" % (other or "unknown process"))
         fh.seek(0)
         fh.truncate()
-        fh.write(json.dumps(dict(pid=os.getpid(), host=socket.gethostname(),
+        fh.write(json.dumps(dict(pid=os.getpid(), host=socket.gethostname(), what=self.what,
                                  start=_dt.datetime.now().isoformat(timespec="seconds"))))
         fh.flush()
         self.fh = fh

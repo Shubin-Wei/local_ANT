@@ -159,21 +159,15 @@ def _rebuild(cfg, steps):
     """Keep prior directories in a unique backup; never replace an older backup."""
     import datetime
     from . import artifacts, paths, records
-    from .provenance import Lock
-    artifacts.check_roots(cfg)
-    with Lock(records.rec_dir(cfg, create=True)):
-        before = artifacts.snapshot(cfg)
+    with artifacts.writing(cfg, "rebuild"):
         backup = os.path.join(records.rec_dir(cfg), "backups", datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
-        try:
-            for step in steps:
-                for directory in STEP_DIRS[step]:
-                    source = paths.P(cfg, directory)
-                    if os.path.isdir(source):
-                        os.makedirs(backup, exist_ok=True)
-                        os.rename(source, os.path.join(backup, directory))
-                        print("[lant] backup: %s" % backup, file=sys.stderr)
-        finally:
-            artifacts.register(cfg, before)
+        for step in steps:
+            for directory in STEP_DIRS[step]:
+                source = paths.P(cfg, directory)
+                if os.path.isdir(source):
+                    os.makedirs(backup, exist_ok=True)
+                    os.rename(source, os.path.join(backup, directory))
+                    print("[lant] backup: %s" % backup, file=sys.stderr)
 
 
 def _accept_impact(message, yes):
@@ -182,7 +176,9 @@ def _accept_impact(message, yes):
         return
     if not sys.stdin.isatty():
         raise RuntimeError("noninteractive execution requires --yes after reviewing the impact")
-    if input("Continue? Type yes: ").strip() != "yes":
+    sys.stderr.write("Continue? Type yes: ")              # stdout may carry JSON
+    sys.stderr.flush()
+    if sys.stdin.readline().strip() != "yes":
         raise RuntimeError("cancelled; no changes made")
 
 
@@ -290,7 +286,11 @@ def cmd_status(a):
         files = st["artifacts"][key]
         if files:
             print("%s files: %d (%s)" % (key, len(files), ", ".join(files[:5])))
-    print("\n%s%s" % (st["next"]["why"], "\n  next: " + st["next"]["command"] if st["next"]["command"] else ""))
+    if st["artifacts"].get("deferred"):
+        print("file audit: %s" % st["artifacts"]["deferred"])
+    nxt = st["next"]
+    print("\n%s%s" % (nxt["why"], "\n  next%s: %s" % (" (the user's decision)" if nxt["requires_user"] else "",
+                                                     nxt["command"]) if nxt["command"] else ""))
 
 
 def cmd_plan(a):
@@ -339,19 +339,13 @@ def cmd_install_external(a):
 def cmd_note(a):
     from . import artifacts, records
     from .delivery import atomic_text, initialize
-    from .provenance import Lock
     cfg = _cfg(a.config)
-    artifacts.check_roots(cfg)
-    with Lock(records.rec_dir(cfg, create=True)):
-        before = artifacts.snapshot(cfg)
-        try:
-            initialize(cfg)
-            file = os.path.join(cfg["project"]["output_dir"], "notes.md")
-            prior = open(file).read() if os.path.exists(file) else "# Notes and decisions\n"
-            atomic_text(file, prior + "\n- %s: %s\n" % (records._now(), a.text))
-            records.log(cfg, event="note", text=a.text)
-        finally:
-            artifacts.register(cfg, before)
+    with artifacts.writing(cfg, "note"):
+        initialize(cfg)
+        file = os.path.join(cfg["project"]["output_dir"], "notes.md")
+        prior = open(file).read() if os.path.exists(file) else "# Notes and decisions\n"
+        atomic_text(file, prior + "\n- %s: %s\n" % (records._now(), a.text))
+        records.log(cfg, event="note", text=a.text)
     print(file)
 
 
@@ -365,6 +359,32 @@ def cmd_clean_work(a):
         _accept_impact("Delete %d registered cache files (%.3f GB). %s" %
                        (len(plan["files"]), plan["bytes"] / 1e9, plan["impact"]), a.yes)
         clean(cfg, selection, execute=True)
+
+
+def _interrupt_on_termination():
+    """SIGTERM and SIGHUP (kill, job schedulers, a closed terminal) take the same path as Ctrl-C: solver process
+    groups are stopped, the step is recorded as failed and the lock released.  A signal already ignored (nohup)
+    stays ignored; forked workers keep the default action, so that Pool.terminate still ends them."""
+    import signal
+    owner = os.getpid()
+
+    def interrupt(signum, frame):
+        if os.getpid() != owner:
+            signal.signal(signum, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
+            return
+        raise KeyboardInterrupt("signal %d" % signum)
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        if signal.getsignal(sig) != signal.SIG_IGN:
+            signal.signal(sig, interrupt)
+
+
+def _reason(text):
+    """A confirmation records the user's decision; an empty or copied placeholder reason is not one."""
+    if not text.strip() or "USER_DECISION" in text:
+        raise argparse.ArgumentTypeError("give the user's decision and its evidence in your own words")
+    return text
 
 
 def main(argv=None):
@@ -400,7 +420,7 @@ def main(argv=None):
     q = sub.add_parser("confirm")
     q.add_argument("step", choices=("clean", "stack", "reference", "inversion"))
     q.add_argument("-c", "--config")
-    q.add_argument("--reason", required=True, help="user decision and evidence (terminal use is not identity verification)")
+    q.add_argument("--reason", required=True, type=_reason, help="user decision and evidence (terminal use is not identity verification)")
     q.add_argument("--exclude-candidates", action="store_true", help="stack: remove the candidate station-days/-hours")
     q.set_defaults(fn=cmd_confirm)
     q = sub.add_parser("inspect")
@@ -425,6 +445,7 @@ def main(argv=None):
     q.add_argument("--yes", action="store_true")
     q.set_defaults(fn=cmd_clean_work)
     a = p.parse_args(argv)
+    _interrupt_on_termination()
     try:
         a.fn(a)
     except KeyboardInterrupt:

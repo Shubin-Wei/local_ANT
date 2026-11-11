@@ -1,5 +1,6 @@
 """Cleanup never adopts unknown files or follows links outside the project."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -53,7 +54,7 @@ def test_cleanup_honors_lock_and_retains_deliverables(tmp_path, monkeypatch):
 
     cfg = setup_project(tmp_path)
     cfg["data"]["raw_dir"] = str(tmp_path)
-    cache = tmp_path / "work/02_ccf/day.h5"
+    cache = tmp_path / "work/02_ccf/day_2024001.h5"
     cache.parent.mkdir(parents=True)
     before = artifacts.snapshot(cfg)
     cache.write_text("cache")
@@ -86,3 +87,94 @@ def test_step_cannot_overwrite_an_unregistered_figure(tmp_path):
         with records.Step(cfg, "figures"):
             pytest.fail("the exporter must not start")
     assert figure.read_bytes() == b"user figure"
+
+
+def test_interrupted_step_is_recovered_instead_of_blocking_the_rerun(tmp_path):
+    import signal
+    import subprocess
+    import sys
+
+    from lant import manifest
+
+    child = (
+        "import os, sys, time\n"
+        "from lant import config, records\n"
+        "cfg = config.defaults(); cfg['project']['output_dir'] = sys.argv[1]\n"
+        "with records.Step(cfg, 'cc'):\n"
+        "    d = os.path.join(sys.argv[1], 'work', '02_ccf'); os.makedirs(d, exist_ok=True)\n"
+        "    open(os.path.join(d, 'day_2024001.h5'), 'w').write('partial')\n"
+        "    sys.__stdout__.write('ready\\n'); sys.__stdout__.flush()\n"
+        "    time.sleep(60)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", child, str(tmp_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        cwd=str(Path(__file__).parents[1]),
+    )
+    assert process.stdout.readline().strip() == "ready"
+    process.send_signal(signal.SIGKILL)  # no cleanup at all (out of memory, kill -9)
+    process.wait()
+    cfg = setup_project(tmp_path)
+    assert (tmp_path / ".lant/pending.json").exists()
+    from lant import inspect
+
+    shown = inspect.status(cfg)
+    assert shown["steps"]["cc"]["state"] == "failed" and "interrupted" in shown["steps"]["cc"]["reason"]
+    with records.Step(cfg, "cc"):  # was refused: unregistered files of the step
+        pass
+    assert "work/02_ccf/day_2024001.h5" in artifacts.load(cfg)
+    assert not (tmp_path / ".lant/pending.json").exists()
+    events = [json.loads(line)["event"] for line in (tmp_path / ".lant/run_log.jsonl").read_text().splitlines()]
+    assert "interrupted" in events
+    assert manifest.load(cfg)["steps"]["cc"]["state"] == "failed"  # recorded at recovery, before this run
+    assert artifacts.audit(cfg)["unregistered"] == []
+
+
+def test_status_during_a_write_shows_the_running_step(tmp_path):
+    from lant import inspect
+    from lant.provenance import Lock
+
+    cfg = setup_project(tmp_path)
+    (tmp_path / "work/02_ccf").mkdir(parents=True)
+    (tmp_path / "work/02_ccf/day_2024001.h5").write_text("being written")
+    with Lock(records.rec_dir(cfg), "cc"):
+        st = inspect.status(cfg)
+    assert st["steps"]["cc"]["state"] == "running" and st["next"]["command"] is None
+    assert st["artifacts"]["unregistered"] == [] and st["artifacts"]["deferred"]
+    assert "work/02_ccf/day_2024001.h5" in inspect.status(cfg)["artifacts"]["unregistered"]
+
+
+def test_snapshot_tolerates_files_renamed_during_the_scan(tmp_path, monkeypatch):
+    cfg = setup_project(tmp_path)
+    (tmp_path / "work").mkdir()
+    (tmp_path / "work/kept.txt").write_text("kept")
+    (tmp_path / "work/x.tmp").write_text("renamed by a writer")
+    real = Path.lstat
+    monkeypatch.setattr(
+        Path,
+        "lstat",
+        lambda self: (_ for _ in ()).throw(FileNotFoundError(self)) if self.name == "x.tmp" else real(self),
+    )
+    assert list(artifacts.snapshot(cfg)) == ["work/kept.txt"]
+
+
+def test_cleanup_only_takes_the_cache_files_the_steps_write():
+    assert artifacts.is_cache("work/02_ccf/day_2024001.h5", ["cc"])
+    assert artifacts.is_cache("work/01_clean/archive/ZZ.A01/ZZ.A01..HHZ.2024001.mseed.done.json", ["archive"])
+    assert not artifacts.is_cache("work/02_ccf/check.py", ["cc"])  # e.g. written there during a run
+    assert not artifacts.is_cache("work/01_clean/archive/notes.txt", ["archive"])
+
+
+def test_archived_copy_keeps_the_audit_clean(tmp_path):
+    import shutil
+
+    cfg = setup_project(tmp_path / "a")
+    before = artifacts.snapshot(cfg)
+    (tmp_path / "a/results").mkdir()
+    (tmp_path / "a/results/model.dat").write_text("model")
+    artifacts.register(cfg, before)
+    shutil.copytree(str(tmp_path / "a"), str(tmp_path / "b"))  # copy2: keeps modification times
+    copy = setup_project(tmp_path / "b")
+    assert artifacts.audit(copy)["modified"] == []

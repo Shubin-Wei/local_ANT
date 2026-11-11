@@ -87,3 +87,25 @@ def test_multiline_dispatch_preserves_execution_options(monkeypatch):
         for option, value in (("--from", "reference"), ("--to", "inversion"), ("--what", "main")):
             assert command[command.index(option) + 1] == value
         assert all(option in command for option in ("--verbose", "--rebuild", "--yes"))
+
+
+@pytest.mark.parametrize("reason", ["USER_DECISION_AND_EVIDENCE", "  "])
+def test_confirmation_needs_a_reason_of_the_user(tmp_path, reason, capsys):
+    with pytest.raises(SystemExit) as stop:
+        cli.main(["confirm", "clean", "-c", str(tmp_path / "config.yaml"), "--reason", reason])
+    assert stop.value.code == 2 and "own words" in capsys.readouterr().err
+
+
+def test_a_confirmation_is_marked_as_the_users_decision(monkeypatch):
+    from lant import inspect, manifest, report
+
+    monkeypatch.setattr(report, "resolved", lambda cfg: cfg)
+    monkeypatch.setattr(manifest, "status", lambda cfg: {"stack": dict(state="to confirm")})
+    monkeypatch.setattr(inspect, "active_writer", lambda rec: None, raising=False)
+    import lant.artifacts
+    import lant.provenance
+
+    monkeypatch.setattr(lant.provenance, "active_writer", lambda rec: None)
+    monkeypatch.setattr(lant.artifacts, "audit", lambda cfg: dict(unregistered=[], missing=[], modified=[]))
+    st = inspect.status({"project": {"output_dir": "/nonexistent"}, "_config_file": "c.yaml"})
+    assert st["next"]["command"].startswith("lant confirm stack") and st["next"]["requires_user"]

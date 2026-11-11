@@ -125,5 +125,21 @@ def status(cfg):
     from .provenance import active_writer
     writer = active_writer(records.rec_dir(cfg))
     if writer:
-        cmd, why = None, "a writer is active; wait for it and follow the progress log"
-    return dict(steps=st, next=dict(command=cmd, why=why), artifacts=audit(cfg), rules=RULES, writer=writer)
+        # The record shows the step's previous run and the files are being written: neither is a result yet.
+        what = writer.get("what")
+        cmd, why = None, "a writer is active (%s); wait for it and follow the progress log" % (what or "unknown")
+        if what in st:
+            st[what] = dict(st[what], state="running", recorded_state=st[what]["state"])
+        files = dict(unregistered=[], missing=[], modified=[], deferred="checked when no writer is active")
+    else:
+        from .artifacts import interrupted
+
+        lost = interrupted(cfg)
+        if lost in st:  # its record still shows the run before, while its outputs were being replaced
+            st[lost] = dict(st[lost], state="failed", reason="interrupted before it finished; the next lant command "
+                            "registers its partial outputs and records it as failed")
+            cmd, why = manifest.next_action(rcfg, st)
+        files = audit(cfg)
+    # A confirmation is the user's decision: an assistant shows the items and waits instead of running it.
+    nxt = dict(command=cmd, why=why, requires_user=bool(cmd and cmd.startswith("lant confirm")))
+    return dict(steps=st, next=nxt, artifacts=files, rules=RULES, writer=writer)
