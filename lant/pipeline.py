@@ -183,6 +183,7 @@ def checkerboard_noise(cfg, main):
 
 
 def _run_batch(cfg, dirs, main):
+    RUN.set_aside_unfinished(cfg, dirs)              # an interrupted run starts again from its inputs
     invalid = precheck_projects(cfg, [d for d in dirs if RUN.status(d) == "new"])
     if main in invalid:
         raise RuntimeError("the main project cannot be inverted: %s (work/06_inversion/main/precheck.json); check the starting "
@@ -207,8 +208,8 @@ def step_run(cfg, what="all"):
     res = _run_batch(cfg, ([main] if what in ("main", "all") else []) + first, main)
     if pending:
         if RUN.status(main) != "done":
-            raise RuntimeError("the checkerboards need the finished main project (inversion.noise: auto): run "
-                               "`lant run run` first")
+            why = res["results"].get(main) or "not run (`lant run run --what main`)"
+            raise RuntimeError("the checkerboards need the finished main project (inversion.noise: auto); main: %s" % why)
         nz = checkerboard_noise(cfg, main)
         print("  checkerboard noise %.4f: %s" % (nz["value"], nz["reason"]), flush=True)
         auto.write(cfg, {"inversion.noise": dict(value=round(nz["value"], 4), reason=nz["reason"])}, None)
@@ -231,7 +232,9 @@ def precheck_projects(cfg, dirs):
     """lant.inversion.run.precheck for every project about to run -> {dir: reasons} of the invalid ones."""
     from .processes import workers
     with workers(max_workers=int(cfg["inversion"]["njobs"])) as ex:
-        res = list(ex.map(lambda d: (d, RUN.precheck(cfg, d)), dirs))
+        from .progress import track
+        res = list(track(ex.map(lambda d: (d, RUN.precheck(cfg, d)), dirs), len(dirs), "prechecks (forward runs)",
+                         eta=False))
     for d, r in res:
         st = r["stats"]
         print("  precheck %s: median residual %.2f ms, kept by the rejection rule %.1f %% -> %s"

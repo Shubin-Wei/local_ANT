@@ -1,11 +1,12 @@
 """Export of the curves and the DSurfTomo projects: one segment per curve, project files, period limit, node order,
 depth nodes, forward modelling."""
 import os
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from lant import export
+from lant import config, export
 from lant.inversion import project
 
 
@@ -105,22 +106,44 @@ def test_observed_iteration_handles_missing_and_buffered_logs(tmp_path):
     assert observed_iteration(str(tmp_path)) == 2
 
 
-def test_solver_run_captures_output_and_reports_observed_iteration(tmp_path):
-    import io
+def test_solver_run_captures_output_and_reports_observed_iteration(tmp_path, monkeypatch):
     import sys
+    from lant import progress
     from lant.inversion.run import run_one
-    from lant.progress import Progress
 
-    (tmp_path / "DSurfTomo.in").write_text("inputs")
+    shown = []
+    monkeypatch.setattr(progress, "detail", shown.append)
+    (tmp_path / "DSurfTomo.in").write_text("4                                c: maximum iteration\n")
     binary = tmp_path / "fake_solver"
     binary.write_text("#!%s\n" % sys.executable +
-                      "from pathlib import Path\nimport time\n"
+                      "from pathlib import Path\nimport os, time\n"
+                      "Path('env.txt').write_text(os.environ.get('GFORTRAN_UNBUFFERED_ALL', ''))\n"
                       "Path('DSurfTomo.in.log').write_text('1st iteration...\\n')\n"
                       "print('solver output', flush=True)\ntime.sleep(1.2)\n"
                       "Path('DSurfTomo.inMeasure.dat').write_text('100 30 0 2.5\\n')\n"
                       "with open('DSurfTomo.in.log', 'a') as f: f.write('Program finishes successfully\\n')\n")
     binary.chmod(0o755)
-    with Progress("run", stream=io.StringIO(), interval=100) as progress:
-        _, result = run_one(str(tmp_path), str(binary), 1)
-        assert "observed iteration 1" in progress.detail
+    _, result = run_one(str(tmp_path), str(binary), 1)
     assert result == "ok" and "solver output" in (tmp_path / "run.log").read_text()
+    assert "iterations: %s 1/4" % tmp_path.name in shown and shown[-1] == ""   # cleared when the project ends
+    assert (tmp_path / "env.txt").read_text() == "y"                           # the log reaches the file at once
+
+
+def test_interrupted_project_is_set_aside_and_runs_again(tmp_path):
+    from lant.inversion import run as RUN
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    project = tmp_path / "work/06_inversion/main"
+    project.mkdir(parents=True)
+    for name in RUN.BUILT:
+        (project / name).write_text("built\n")
+    (project / "DSurfTomo.in.log").write_text("1st iteration...\n")        # killed: no success line
+    (project / "DSurfTomo.inMeasure.dat.iter001").write_text("partial\n")
+    assert RUN.status(str(project)) == "unfinished"
+    moved = RUN.set_aside_unfinished(cfg, [str(project)])
+    assert RUN.status(str(project)) == "new"
+    assert sorted(p.name for p in project.iterdir()) == sorted(RUN.BUILT)
+    backup = Path(moved[str(project)])
+    assert str(backup).startswith(str(tmp_path / ".lant/backups"))
+    assert sorted(p.name for p in backup.iterdir()) == ["DSurfTomo.in.log", "DSurfTomo.inMeasure.dat.iter001"]

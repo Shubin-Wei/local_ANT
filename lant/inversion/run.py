@@ -1,7 +1,9 @@
 """Running DSurfTomo / pDSurfTomo projects, and the forward evaluation of a model on a fixed data set.
 
 A project counts as finished only if its log ends with "Program finishes successfully", its model file is complete
-(one finite row per output node) and none of its inputs is newer than the log; the output of an interrupted run is never overwritten silently (status FAILED, move it away).
+(one finite row per output node) and none of its inputs is newer than the log.  The output of an interrupted run is
+never overwritten: it is moved to .lant/backups (reported) and the project runs again from its inputs.  A project
+whose inputs are newer than its log (stale) is an error.
 pDSurfTomo (Zhu et al. 2026) runs in its Mode 2 (parallel travel times and kernels, the original LSMR), which gives
 the same model as DSurfTomo.
 """
@@ -9,7 +11,9 @@ import glob
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
 from ..processes import run as run_process, workers
 from ..progress import track
 
@@ -18,6 +22,10 @@ import numpy as np
 from ..tools import solver_binary
 
 INPUTS = ("DSurfTomo.in", "MOD", "MOD.true", "surfdata.dat")
+BUILT = INPUTS + ("vs1d.txt", "project.json")  # what lant.inversion.project writes; everything else is solver output
+# DSurfTomo is Fortran: without this its log stays in the runtime's buffer until the end, so the iterations cannot
+# be followed.  It changes only when the bytes reach the file (models identical byte for byte on the synthetic test).
+UNBUFFERED = {"GFORTRAN_UNBUFFERED_ALL": "y"}
 
 
 def model_complete(d):
@@ -80,20 +88,73 @@ def observed_iteration(project):
     return int(matches[-1]) if matches else None
 
 
+def max_iterations(project):
+    """The iteration count written into DSurfTomo.in ("c: maximum iteration"), or None."""
+    try:
+        for line in open(os.path.join(project, "DSurfTomo.in")):
+            if "c: maximum iteration" in line:
+                return int(line.split()[0])
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def set_aside_unfinished(cfg, dirs):
+    """Move the solver output of interrupted projects to one .lant/backups directory, so that they run again from
+    their inputs (nothing is deleted) -> {project: backup}."""
+    import datetime
+    from .. import records
+    root = cfg["project"]["output_dir"]
+    backup = os.path.join(records.rec_dir(cfg), "backups",
+                          datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f") + "-interrupted")
+    moved = {}
+    for d in dirs:
+        if status(d) != "unfinished":
+            continue
+        target = os.path.join(backup, os.path.relpath(d, root))
+        os.makedirs(target)
+        for name in sorted(os.listdir(d)):
+            if name not in BUILT:
+                os.rename(os.path.join(d, name), os.path.join(target, name))
+        moved[d] = target
+        message = "%s: the output of an interrupted run is kept in %s; running it again" % (d, target)
+        print("  " + message, flush=True)
+        sys.stderr.write("[lant] %s\n" % message)  # the user should see it without -v
+    return moved
+
+
+_running = {}                                        # project name -> observed iteration, for the progress line
+_running_guard = threading.Lock()
+
+
+def _show_running(name=None, value=None):
+    from ..progress import detail
+    with _running_guard:
+        if value is None:
+            _running.pop(name, None)
+        else:
+            _running[name] = value
+        text = ", ".join("%s %s" % kv for kv in sorted(_running.items()))
+    detail("iterations: " + text if text else "")
+
+
 def run_one(d, binary, threads):
     st = status(d)
     if st == "done":
         return d, "skipped (finished, inputs unchanged)"
-    if st in ("stale", "unfinished"):
-        return d, "FAILED: output of an earlier or interrupted run is present (%s); delete the outputs or the directory" % st
-    env = dict(os.environ, OMP_NUM_THREADS=str(threads))
+    if st == "stale":
+        return d, "FAILED: its inputs are newer than its output (stale); rebuild with lant run all --from inversion"
+    if st == "unfinished":                           # lant.pipeline sets interrupted runs aside before this
+        return d, "FAILED: output of an earlier run is present (unfinished); move it away or rerun the run step"
+    env = dict(os.environ, OMP_NUM_THREADS=str(threads), **UNBUFFERED)
     if os.path.basename(binary) == "pDSurfTomo":
         open(os.path.join(d, "ParallelConfig.in"), "w").write(
             "tt_senK_lsmr = parallel, parallel, default\nThreadNum = %d\nInvResultDir = InvResult\n" % threads)
     progress_errors = []
+    name, total = os.path.basename(d), max_iterations(d)
+    _show_running(name, "starting")
 
     def show_iteration():
-        from ..progress import detail
         try:
             iteration = observed_iteration(d)
         except OSError as exc:
@@ -102,11 +163,14 @@ def run_one(d, binary, threads):
                 progress_errors.append(str(exc))
             return
         if iteration is not None:
-            detail("%s: observed iteration %d" % (os.path.basename(d), iteration))
+            _show_running(name, "%d/%s" % (iteration, total or "?"))
 
-    with open(os.path.join(d, "run.log"), "w") as fh:
-        rc = run_process([binary, "DSurfTomo.in"], cwd=d, env=env, stdout=fh,
-                         stderr=subprocess.STDOUT, on_poll=show_iteration).returncode
+    try:
+        with open(os.path.join(d, "run.log"), "w") as fh:
+            rc = run_process([binary, "DSurfTomo.in"], cwd=d, env=env, stdout=fh,
+                             stderr=subprocess.STDOUT, on_poll=show_iteration).returncode
+    finally:
+        _show_running(name)
     if rc != 0:
         return d, "FAILED: exit status %d (see %s/run.log)" % (rc, d)
     if status(d) != "done":
@@ -121,7 +185,9 @@ def run_projects(cfg, dirs):
     with workers(max_workers=int(inv["njobs"])) as ex:
         from concurrent.futures import as_completed
         futures = [ex.submit(run_one, d, binary, int(inv["threads"])) for d in dirs]
-        done = [future.result() for future in track(as_completed(futures), len(futures), "solver projects", eta=False)]
+        kinds = sorted({"main" if os.path.basename(d) == "main" else os.path.basename(os.path.dirname(d)) for d in dirs})
+        unit = "solver projects (%s)" % ", ".join(kinds)
+        done = [future.result() for future in track(as_completed(futures), len(futures), unit, eta=False)]
     res = sorted(done, key=lambda r: dirs.index(r[0]))  # summaries in project order, not in order of completion
     for d, msg in res:
         print("  %s %s" % (d, msg), flush=True)
