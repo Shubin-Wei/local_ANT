@@ -82,3 +82,28 @@ def test_termination_signal_stops_the_solver_group(tmp_path):
     lant_process.send_signal(signal.SIGTERM)
     assert lant_process.wait(timeout=10) == 130  # the interrupt path ran, not the default kill
     assert not solver_running()  # no orphaned solver keeps writing
+
+
+def _square_or_die(x):
+    import os
+    import signal
+
+    if x == 3:
+        os.kill(os.getpid(), signal.SIGKILL)  # what the out-of-memory killer does
+    return x * x
+
+
+def test_pool_results_keep_order_and_fail_when_a_worker_is_killed():
+    from multiprocessing import Pool
+
+    with Pool(2) as pool:
+        assert list(processes.pool_results(pool, abs, [-3, -1, -2], ordered=True)) == [3, 1, 2]
+        assert sorted(processes.pool_results(pool, abs, [-3, -1, -2])) == [1, 2, 3]
+        chunked = list(processes.pool_results(pool, abs, [-5, -4, -3, -2, -1], chunksize=2, ordered=True))
+        assert chunked == [5, 4, 3, 2, 1]
+        assert sorted(processes.pool_results(pool, abs, range(-9, 0), chunksize=4)) == list(range(1, 10))
+    begin = time.monotonic()
+    with pytest.raises(RuntimeError, match="lack of memory"):
+        with Pool(2) as pool:
+            list(processes.pool_results(pool, _square_or_die, range(6), poll=0.2))
+    assert time.monotonic() - begin < 20  # it used to wait forever

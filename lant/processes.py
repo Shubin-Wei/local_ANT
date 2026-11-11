@@ -1,4 +1,5 @@
-"""Reap solver process groups when parallel work is interrupted."""
+"""Child processes: solver process groups reaped when parallel work is interrupted, and results of
+multiprocessing pools that fail instead of waiting forever when a worker is killed."""
 
 import contextlib
 import os
@@ -70,3 +71,38 @@ def workers(max_workers):
     finally:
         executor.shutdown(wait=True)
         _cancelled.clear()
+
+
+def _run_chunk(fn, chunk):
+    return [fn(task) for task in chunk]
+
+
+def pool_results(pool, fn, tasks, chunksize=1, ordered=False, poll=5.0):
+    """pool.imap_unordered (or pool.imap when ordered) whose iteration fails when a worker is killed.
+
+    When the kernel kills a worker (typically for lack of memory), multiprocessing.Pool starts a replacement but the
+    task the worker held never returns, so iterating over the results waits forever.  Workers are replaced only
+    then (the pools here have no maxtasksperchild), so a changed set of worker processes means a lost task.  Pool
+    keeps its workers in pool._pool (CPython 3.8 to 3.13).  Tasks are sent in chunks of `chunksize` as Pool itself
+    does (in order within a chunk), because Pool's own chunked iterator cannot wait with a timeout."""
+    import functools
+    import multiprocessing
+
+    workers = {w.pid for w in pool._pool}
+    tasks = list(tasks)
+    chunks = [tasks[i : i + chunksize] for i in range(0, len(tasks), chunksize)]
+    results = (pool.imap if ordered else pool.imap_unordered)(functools.partial(_run_chunk, fn), chunks)
+    while True:
+        try:
+            chunk = results.next(timeout=poll)
+        except StopIteration:
+            return
+        except multiprocessing.TimeoutError:
+            if {w.pid for w in pool._pool} != workers:
+                raise RuntimeError(
+                    "a worker process ended unexpectedly, most often killed for lack of memory (see `dmesg`); "
+                    "its task is lost, so the step stops instead of waiting. Free memory or use fewer processes "
+                    "(the nproc of this step), then run again"
+                ) from None
+            continue
+        yield from chunk

@@ -178,6 +178,8 @@ def build_index(cfg, nproc=4):
     """Scan the headers of every candidate file -> index dict (all channels)."""
     from multiprocessing import Pool
 
+    from .processes import pool_results
+
     d = cfg["data"]
     files = find_files(d["raw_dir"], d["file_patterns"], d["ignore_patterns"])
     if not files:
@@ -196,7 +198,8 @@ def build_index(cfg, nproc=4):
         sig[f] = [st.st_size, int(st.st_mtime)]
     todo = [f for f in files if f not in cache or cache[f][0] != sig[f]]
     with Pool(nproc) as pool:
-        new = {r[0]: r for r in pool.map(_scan_one, [(f, d["format"]) for f in todo], chunksize=16)}
+        tasks = [(f, d["format"]) for f in todo]
+        new = {r[0]: r for r in pool_results(pool, _scan_one, tasks, chunksize=16, ordered=True)}
     res = [new[f] if f in new else (f, cache[f][1], cache[f][2]) for f in files]
     try:
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)

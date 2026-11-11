@@ -35,6 +35,7 @@ import h5py
 import numpy as np
 
 from . import signal as S
+from .processes import pool_results
 from .progress import track
 
 VEL = None  # velocity axis, set from dispersion.vmin/vmax/dv by init_worker
@@ -510,7 +511,7 @@ def measure(cfg, stack, reference, out):
     os.environ["OMP_NUM_THREADS"] = "1"
     with Pool(int(d["nproc"]), initializer=init_worker, initargs=(opt,)) as pool:
         done = 0
-        for idx, res in track(pool.imap_unordered(process_chunk, chunks), len(chunks), "pair batches"):
+        for idx, res in track(pool_results(pool, process_chunk, chunks), len(chunks), "pair batches"):
             for k in out_d:
                 out_d[k][idx] = res[k]
             done += len(idx)

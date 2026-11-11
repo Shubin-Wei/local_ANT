@@ -31,6 +31,7 @@ from scipy.signal import detrend
 from . import data as D
 from . import paths
 from . import pulse as PU
+from .processes import pool_results
 from .progress import track
 
 SETTINGS = (
@@ -381,7 +382,7 @@ def run(cfg):
         os.environ[v] = str(c["threads_per_process"])
     msgs, failed, skipped = {}, [], []
     with Pool(nproc) as pool:
-        for day, msg, fails in track(pool.imap_unordered(process_day, tasks), len(tasks), "days"):
+        for day, msg, fails in track(pool_results(pool, process_day, tasks), len(tasks), "days"):
             print("  %s %s" % (day, msg), flush=True)
             msgs[day] = msg
             failed += ["%s %s" % (day, f) for f in fails]

@@ -40,6 +40,7 @@ from . import data as D
 from . import paths
 from . import pulse as PU
 from . import station_match as SM
+from .processes import pool_results
 from .progress import track
 
 ARCHIVE_VERSION = 2  # raise when _clean_station_day changes what it writes: older station-days are redone
@@ -522,7 +523,7 @@ def run(cfg):
     stats, new_rows = [], []
     with Pool(nproc) as pool:
         for k, (name, rr, stat) in enumerate(
-            track(pool.imap_unordered(_clean_station_day, tasks, chunksize=4), len(tasks), "station-days")
+            track(pool_results(pool, _clean_station_day, tasks, chunksize=4), len(tasks), "station-days")
         ):
             stats.append(stat)
             if rr:
