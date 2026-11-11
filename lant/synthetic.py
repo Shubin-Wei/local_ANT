@@ -131,6 +131,7 @@ def main(argv=None, default_out=None):
     TRUE_Z, TRUE_VS = np.array(M["z"]), np.array(M["vs"])
     f_lo, f_hi = M["band"]
     import obspy
+
     from lant.inversion.start import forward
 
     rng = np.random.default_rng()  # no fixed seed: every run draws a new noise field and layout
@@ -188,7 +189,7 @@ def main(argv=None, default_out=None):
     t0 = obspy.UTCDateTime(2024, 6, 1)
     resp = {}
     if a.responses:  # geophones: two zeros at 0, two poles of natural frequency f0 and damping h
-        from obspy.core.inventory import Inventory, Network, Station, Channel
+        from obspy.core.inventory import Channel, Inventory, Network, Station
         from obspy.core.inventory.response import Response
 
         stas = []

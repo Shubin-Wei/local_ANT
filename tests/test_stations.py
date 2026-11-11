@@ -36,7 +36,8 @@ def test_station_tables_and_names(tmp_path):
 def test_coordinates_channels_ambiguous_names():
     """Coordinate notations; the vertical channel is chosen (a horizontal one is refused, an unknown orientation is
     left to confirm); one table name for two points is ambiguous."""
-    from lant import stations as ST, data as D
+    from lant import data as D
+    from lant import stations as ST
 
     assert abs(ST.parse_coord("1.054321e2") - 105.4321) < 1e-9
     assert abs(ST.parse_coord("35d07m24.2s") - 35.123389) < 1e-5 and ST.parse_coord("35d07m24.2sS") < 0
@@ -56,7 +57,9 @@ def test_coordinates_channels_ambiguous_names():
 def test_moved_nodes_names_geometry(tmp_path):
     """Station table with serial numbers and deployment times: a record is given to the point of its window and
     cut to it; lines; names with other zero padding; records named from the file name; geometry checks."""
-    from lant import stations as ST, station_match as SM, data as D
+    from lant import data as D
+    from lant import station_match as SM
+    from lant import stations as ST
 
     (tmp_path / "t.csv").write_text(
         "point,serial,start,end,line,lat,lon\n"

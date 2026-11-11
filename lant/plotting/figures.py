@@ -55,6 +55,7 @@ def resolve(cfg, model, stations):
     """plots.vs_range / slice_depths_km / contour_step given as "auto": from the final model (nodes within twice the
     median nearest-station distance of a station, updated depths)."""
     import numpy as np
+
     from ..inversion.run import read_model
     from ..pipeline import recovery_radius
     from ..signal import local_xy_km, nice_number

@@ -58,7 +58,7 @@ def _cfg():
 def test_two_station_phase_velocity(tmp_path):
     """Phase velocities of J0 correlations against c(f).  (Between 2 and 3 wavelengths the far-field phase pi/4
     is itself in error by up to about 3 %: the reason for the wavelength limit qc.lam_c.)"""
-    from lant import disp, reference, qc
+    from lant import disp, qc, reference
 
     stack = str(tmp_path / "stack.h5")
     dist = _stack(stack)
@@ -102,7 +102,8 @@ def test_fj_spectrum_picks_the_curve(tmp_path):
 
 def test_correlation_sign(monkeypatch):
     """Station B records what station A recorded 0.4 s earlier: the cross-coherence A-B peaks at +0.4 s."""
-    from lant import cc, data as D
+    from lant import cc
+    from lant import data as D
 
     fs, n = 50.0, int(86400 * 50)
     rng = np.random.default_rng(32)
@@ -130,7 +131,8 @@ def test_correlation_sign(monkeypatch):
 def test_distance_on_the_ellipsoid():
     """geodesic_km against ObsPy (WGS84) at several latitudes and azimuths; the sphere differs by up to 0.6 %."""
     from obspy.geodetics import gps2dist_azimuth
-    from lant.signal import geodesic_km, sphere_km, local_xy_km
+
+    from lant.signal import geodesic_km, local_xy_km, sphere_km
 
     rng = np.random.default_rng(1)
     la1, lo1 = rng.uniform(-70, 70, 200), rng.uniform(-180, 180, 200)

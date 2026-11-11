@@ -16,8 +16,8 @@ import os
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
-from . import gmt as G
 from ..signal import km_per_degree, local_xy_km
+from . import gmt as G
 
 H_MIN, H_MAX = 2.5, 8.0  # height (cm) of a section panel: true scale inside these limits
 
@@ -211,6 +211,7 @@ def relief_along(cfg, lon, lat):
     """Elevation (m) of the relief grid (plots.topography) at the points of a section, or None without relief."""
     import subprocess
     import tempfile
+
     from . import relief
 
     W, E, S, N = min(lon) - 0.01, max(lon) + 0.01, min(lat) - 0.01, max(lat) + 0.01

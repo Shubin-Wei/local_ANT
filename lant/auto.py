@@ -30,7 +30,7 @@ from collections import Counter
 import numpy as np
 
 from . import config as C
-from .signal import geodesic_km, km_per_degree, local_xy_km, nearest_neighbour_km, nice_number, common_rates
+from .signal import common_rates, geodesic_km, km_per_degree, local_xy_km, nearest_neighbour_km, nice_number
 
 GEOMETRY_KEYS = [
     ("data", "day_start_utc_hour"),

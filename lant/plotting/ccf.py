@@ -14,12 +14,11 @@ stack_time  one pair: a diagnostic built from the raw hourly correlations of ste
 import glob
 import os
 
-from .. import paths
-
 import h5py
 import numpy as np
 from scipy.signal import butter, detrend, sosfiltfilt
 
+from .. import paths
 from . import style
 from .style import plt
 

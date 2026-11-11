@@ -10,9 +10,8 @@ Nothing here changes a result.
 import json
 import os
 
-from . import auto
+from . import auto, paths, records
 from . import config as C
-from . import records, paths
 
 # The configuration each step reads (sections or single keys).  A change in any of them makes the step and every
 # later step out of date.
@@ -652,7 +651,6 @@ def _param_lines(rows):
 
 def step_report(cfg, step, summary, rec=None):
     """Text of the report of one step; printed and written to .lant/steps/<step>.md."""
-    out_dir = cfg["project"]["output_dir"]
     cf = cfg.get("_config_file", "CONFIG")
     L = ["", "=" * 100, "step %s: report  (.lant/steps/%s.md)" % (step, step), "-" * 100]
     done = did(cfg, step, summary)

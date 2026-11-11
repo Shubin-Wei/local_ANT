@@ -1,16 +1,18 @@
 """Records: the manifest and its gates, confirmations, derived parameters, the lock."""
 
 import os
+
 import pytest
+from util import REQ, make_raw, write_cfg
 
 from lant import config
-from util import REQ, write_cfg, make_raw
 
 
 def test_manifest_gate_confirm(tmp_path):
     """One manifest decides what stands: a step with nothing to judge does not stop the chain; a judgement stops it
     until confirmed; changed parameters, changed raw files or a rerun upstream make results out of date."""
-    from lant import pipeline, manifest, report, auto, confirm as CF
+    from lant import auto, manifest, pipeline, report
+    from lant import confirm as CF
 
     make_raw(tmp_path)
     p = write_cfg(
@@ -92,6 +94,7 @@ def test_lock_is_exclusive(tmp_path):
     """records/lock: a second process cannot take it while the first holds it; nested steps of one process can."""
     import subprocess
     import sys
+
     from lant.provenance import Lock
 
     with Lock(str(tmp_path)):

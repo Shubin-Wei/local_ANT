@@ -192,8 +192,8 @@ def centre_on_data(z, vs, scale, data, iters=6):
     high frequencies; long paths weigh more in seconds), and DSurfTomo's rejection rule drops data whose residuals
     lean to one side.  data: rows (lat1, lon1, lat2, lon2, period, velocity) of surfdata.dat.
     -> (scale x u on the updatable depths, info)."""
-    from .start import forward
     from ..signal import sphere_km
+    from .start import forward
 
     dist = sphere_km(data[:, 1], data[:, 0], data[:, 3], data[:, 2])  # as DSurfTomo turns velocities into times
     T = np.unique(data[:, 4])

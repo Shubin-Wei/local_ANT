@@ -32,6 +32,7 @@ def scan_grid(cfg):
     """The F-J scan frequencies: from the lowest usable frequency (correlation.fmin_hz undone by the filter margin)
     to dispersion.fmax_hz, on the same grid."""
     import math
+
     from .auto import FILTER_EDGE, _grid_up
 
     d = cfg["dispersion"]

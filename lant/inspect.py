@@ -14,7 +14,6 @@ import numpy as np
 from . import paths, records
 from .signal import geodesic_km, nearest_neighbour_km
 
-
 FIGURES = {
     "clean": [
         "work/01_clean/report.txt",
@@ -121,6 +120,7 @@ def stack(cfg, s):
 
 def disp(cfg, s):
     import h5py
+
     from .qc import reason_counts
 
     p = paths.P(cfg, paths.DISP, "disp.h5")

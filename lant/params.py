@@ -432,6 +432,7 @@ def _full_template(
     """Text of a full configuration file for `lant init`: the three required paths, then every other key with its
     default, commented out, with what it means and what its value rests on."""
     import yaml
+
     from . import config as C
 
     cfg = C.defaults("surface")
@@ -504,6 +505,7 @@ def template(
     if full:
         return _full_template(raw_dir, station_file, output_dir, line)
     import yaml
+
     from . import config as C
 
     cfg = C.defaults()

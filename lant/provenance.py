@@ -124,7 +124,7 @@ class Lock:
             try:
                 fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
-            except OSError:
+            except OSError as exc:
                 if attempt < 19:
                     time.sleep(0.05)
                     continue
@@ -134,7 +134,7 @@ class Lock:
                 raise RuntimeError(
                     "another lant process is writing to this output directory (%s); wait for it to "
                     "finish" % (other or "unknown process")
-                )
+                ) from exc
         fh.seek(0)
         fh.truncate()
         fh.write(

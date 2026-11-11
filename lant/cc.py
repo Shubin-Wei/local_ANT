@@ -23,8 +23,6 @@ import os
 import time
 from multiprocessing import Pool
 
-from .progress import track
-
 import h5py
 import numpy as np
 from scipy.ndimage import uniform_filter1d
@@ -33,6 +31,7 @@ from scipy.signal import detrend
 from . import data as D
 from . import paths
 from . import pulse as PU
+from .progress import track
 
 SETTINGS = (
     "fs",

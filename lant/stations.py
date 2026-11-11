@@ -191,8 +191,8 @@ def parse_coord(s):
         parts = [re.sub(r"[sS″\"]$", "", p) for p in parts]
         try:
             v = [float(p) for p in parts]
-        except ValueError:
-            raise StationError("cannot read the coordinate %r" % s)
+        except ValueError as exc:
+            raise StationError("cannot read the coordinate %r" % s) from exc
     if not 1 <= len(v) <= 3 or any(x < 0 for x in v[1:]) or any(x >= 60 for x in v[1:]):
         raise StationError("cannot read the coordinate %r" % s)
     neg = body.lstrip().startswith("-")
@@ -236,10 +236,10 @@ def _rows_text(path):
 def _rows_excel(path):
     try:
         import openpyxl
-    except ImportError:
+    except ImportError as exc:
         raise StationError(
             "%s: reading Excel files needs openpyxl (pip install openpyxl), or save the sheet as CSV" % path
-        )
+        ) from exc
     ws = openpyxl.load_workbook(path, read_only=True, data_only=True).worksheets[0]
     rows = [["" if c is None else str(c).strip() for c in r] for r in ws.iter_rows(values_only=True)]
     return [r for r in rows if any(r)]
@@ -347,7 +347,7 @@ def read_table(path, date_offset_s=0.0):
         try:
             lat, lon = parse_coord(r[cols["latitude"]]), parse_coord(r[cols["longitude"]])
         except (IndexError, StationError) as exc:
-            raise StationError("%s row %d: %s" % (path, k + 2, exc))
+            raise StationError("%s row %d: %s" % (path, k + 2, exc)) from exc
         if not np.isfinite(lat) or not np.isfinite(lon):
             continue
         if abs(lat) > 90 or abs(lon) > 360:
@@ -384,11 +384,11 @@ def read_table(path, date_offset_s=0.0):
             if opt(col):
                 try:
                     row[key] = parse_time(opt(col), col == "end", date_offset_s)
-                except Exception:
+                except Exception as exc:
                     raise StationError(
                         "%s row %d: %s time %r is not a date (2024-05-01) or a date and time "
                         "(2024-05-01T08:00:00, UTC)" % (path, k + 2, col, opt(col))
-                    )
+                    ) from exc
         if row["serial"] is None and (row["t_start"] is not None or row["t_end"] is not None):
             row["serial"] = sta  # a deployment window without a serial column: the station name is
             # the code of the record headers, used only inside the window

@@ -4,9 +4,9 @@ borrowed curves."""
 import os
 
 import numpy as np
+from util import tmp_dir
 
 from lant import config
-from util import tmp_dir
 
 
 def test_track_steep_ridge_and_alias_limit():

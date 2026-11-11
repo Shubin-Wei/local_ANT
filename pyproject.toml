@@ -49,4 +49,9 @@ target-version = "py38"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E9", "F821", "F822", "F823"]
+# pyflakes, pycodestyle errors and warnings, import order, bugbear.
+select = ["E4", "E7", "E9", "F", "W", "I", "B"]
+# E731/E741: lambdas and short names such as l are the style of the scientific code.
+# B007/B008/B023: loop-bound lambdas called in the same iteration and default arguments that bind the current loop
+# value are intended (figures.py, maps.py, stations.py), not late-binding bugs.
+ignore = ["E731", "E741", "B007", "B008", "B023"]

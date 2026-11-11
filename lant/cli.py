@@ -188,7 +188,8 @@ def cmd_check(a):
 
 
 def cmd_validate(a):
-    from . import data as D, stations as ST
+    from . import data as D
+    from . import stations as ST
 
     cfg = _cfg(a.config)
     placeholders = [
@@ -249,6 +250,7 @@ STEP_DIRS = {
 def _rebuild(cfg, steps):
     """Keep prior directories in a unique backup; never replace an older backup."""
     import datetime
+
     from . import artifacts, paths, records
 
     with artifacts.writing(cfg, "rebuild"):
@@ -457,6 +459,7 @@ def _external_program(value):
 
 def cmd_install_external(a):
     import subprocess
+
     from .tools import external_path
 
     script = os.path.join(os.path.dirname(__file__), "_external", "install.sh")

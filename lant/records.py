@@ -61,6 +61,7 @@ def log(cfg, **entry):
 def strict(o):
     """JSON-safe copy: numpy types to Python, NaN / inf to None (standard JSON has no NaN)."""
     import math
+
     import numpy as np
 
     if isinstance(o, dict):
@@ -106,6 +107,7 @@ class Step:
         import logging
         import sys
         from logging.handlers import RotatingFileHandler
+
         from .progress import Progress
         from .provenance import record
 

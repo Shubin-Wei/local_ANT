@@ -16,10 +16,10 @@ import h5py
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
-from . import style
-from .style import plt
 from .. import disp as D
 from ..export import read_curves
+from . import style
+from .style import plt
 
 XT = [m * 10.0**e for e in range(-3, 4) for m in (1, 2, 5)]  # 1-2-5 ticks for any band
 
@@ -245,6 +245,7 @@ def pair_figures(cfg, disp_path, out_dir, n):
     with the most rejected candidate points and as many with the largest median deviation of their accepted phase
     velocities from the per-frequency median."""
     import glob
+
     from .. import paths
 
     os.makedirs(out_dir, exist_ok=True)

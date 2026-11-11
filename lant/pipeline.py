@@ -17,20 +17,22 @@ A step after a confirmation point does not run before `lant confirm <step>` (lan
 """
 
 import json
-import shutil
 import os
+import shutil
 
 import numpy as np
 
-from . import paths, records
-from . import clean as CLEAN
 from . import cc as CC
-from . import stack as STACK
-from . import reference as REF
+from . import clean as CLEAN
 from . import disp as DISP
-from . import qc as QC
 from . import export as EXPORT
-from .inversion import start as START, project as PROJ, run as RUN
+from . import paths, records
+from . import qc as QC
+from . import reference as REF
+from . import stack as STACK
+from .inversion import project as PROJ
+from .inversion import run as RUN
+from .inversion import start as START
 
 STEPS = ["clean", "cc", "stack", "reference", "disp", "inversion", "run", "evaluate", "figures"]
 
@@ -364,6 +366,7 @@ FUNCS = {n: globals()["step_" + n] for n in STEPS}
 def run_step(cfg, name, **kw):
     """Run one step: only when every earlier step stands (lant.manifest.gate); the run is written to the manifest."""
     import time
+
     from . import auto, confirm, manifest, provenance, report
 
     if name not in FUNCS:

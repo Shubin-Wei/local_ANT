@@ -31,12 +31,11 @@ The group velocity is measured only to find the arrival the phase is read at (no
 import os
 from multiprocessing import Pool
 
-from .progress import track
-
 import h5py
 import numpy as np
 
 from . import signal as S
+from .progress import track
 
 VEL = None  # velocity axis, set from dispersion.vmin/vmax/dv by init_worker
 PHI0 = np.pi / 4

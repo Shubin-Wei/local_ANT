@@ -23,9 +23,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 
 
 def main():
+    from make_stack import pattern
+
     from lant.inversion.run import read_model
     from lant.signal import local_xy_km
-    from make_stack import pattern
 
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--output", required=True)

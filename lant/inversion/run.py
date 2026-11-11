@@ -15,11 +15,12 @@ import subprocess
 import sys
 import tempfile
 import threading
-from ..processes import run as run_process, workers
-from ..progress import track
 
 import numpy as np
 
+from ..processes import run as run_process
+from ..processes import workers
+from ..progress import track
 from ..tools import solver_binary
 
 INPUTS = ("DSurfTomo.in", "MOD", "MOD.true", "surfdata.dat")
@@ -106,6 +107,7 @@ def set_aside_unfinished(cfg, dirs):
     """Move the solver output of interrupted projects to one .lant/backups directory, so that they run again from
     their inputs (nothing is deleted) -> {project: backup}."""
     import datetime
+
     from .. import records
 
     root = cfg["project"]["output_dir"]

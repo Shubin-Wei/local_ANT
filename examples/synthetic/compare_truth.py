@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 
 def main():
     import argparse
+
     from lant.export import read_curves
     from lant.inversion.run import read_model
 

@@ -6,8 +6,8 @@ plots.formats.  On failure the script is kept and its path reported (set LANT_KE
 """
 
 import os
-import shutil
 import shlex
+import shutil
 import subprocess
 import tempfile
 

@@ -120,6 +120,7 @@ def test_observed_iteration_handles_missing_and_buffered_logs(tmp_path):
 
 def test_solver_run_captures_output_and_reports_observed_iteration(tmp_path, monkeypatch):
     import sys
+
     from lant import progress
     from lant.inversion.run import run_one
 

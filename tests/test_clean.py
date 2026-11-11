@@ -4,15 +4,15 @@ import os
 
 import numpy as np
 import pytest
+from util import REQ, make_raw, write_cfg
 
 from lant import config
-from util import REQ, write_cfg, make_raw
 
 
 def test_clean_mixed_formats(tmp_path):
     """miniSEED and SAC in nested folders: duplicates dropped, records off the sample grid shifted or interpolated,
     names matched, the clean-step rules applied."""
-    from lant import clean, auto
+    from lant import auto, clean
 
     make_raw(tmp_path)
     p = write_cfg(
@@ -43,7 +43,9 @@ def test_clean_long_names_nan_polarity(tmp_path):
     """Station names longer than miniSEED allows are archived under codes and read back; NaN samples are gaps; a
     downward vertical sensor (SAC cmpinc 180) is turned over."""
     import obspy
-    from lant import clean, data as D
+
+    from lant import clean
+    from lant import data as D
 
     t0 = obspy.UTCDateTime(2024, 1, 1)
     raw = tmp_path / "raw"
@@ -85,6 +87,7 @@ def test_other_input_formats(tmp_path):
     """GSE2 records and a StationXML station table go through the clean step like miniSEED and a CSV table."""
     import obspy
     from obspy.core.inventory import Inventory, Network, Station
+
     from lant import pipeline
 
     raw = tmp_path / "raw"
@@ -113,6 +116,7 @@ def test_segy_input(tmp_path):
     32767 samples per trace), named from the file name and joined by the clean step; a file with one trace per
     channel at the same times is not named and is reported."""
     import obspy
+
     from lant import pipeline
 
     raw = tmp_path / "raw"
@@ -148,6 +152,7 @@ def test_segy_input(tmp_path):
     assert "72 records without a station code in the header: named" in rep and "1 files hold several records" in rep
     # without the archive the later steps read the raw files with the code of the file (empty), not the table's
     import json
+
     from lant import data as D
 
     p2 = write_cfg(
@@ -165,6 +170,7 @@ def test_segy_input(tmp_path):
 def test_snap_to_grid():
     """Records off the sample grid: the same placement for the archive and for direct reading (ceil when resampled)."""
     import obspy
+
     from lant.data import snap_to_grid
 
     t0 = 1.6e9
@@ -197,8 +203,9 @@ def test_response_removal():
     """Two sensors with different responses record the same ground motion: after lant.response.remove the two
     records agree in phase inside the pre-filter band."""
     import obspy
-    from obspy.core.inventory import Inventory, Network, Station, Channel
+    from obspy.core.inventory import Channel, Inventory, Network, Station
     from obspy.core.inventory.response import Response
+
     from lant import response as R
 
     fs, n = 100.0, 60000
@@ -244,6 +251,7 @@ def test_response_removal():
 def test_processing_day_labels():
     """Processing-day labels (data.day_label) and the processing-day windows."""
     import obspy
+
     from lant import data as D
 
     cfg = config.defaults("surface")

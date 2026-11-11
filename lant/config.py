@@ -17,8 +17,8 @@ defaults before the user's file is read.
 """
 
 import copy
-import os
 import math
+import os
 import re
 
 import yaml
@@ -397,19 +397,20 @@ def load(path):
             if not key.startswith("_"):
                 try:
                     _get(cfg, key.split("."))
-                except (KeyError, TypeError):
-                    raise ConfigError("confirmed.%s: unknown key %s" % (step, key))
+                except (KeyError, TypeError) as exc:
+                    raise ConfigError("confirmed.%s: unknown key %s" % (step, key)) from exc
     validate(cfg)
     marker = os.path.join(cfg["project"]["output_dir"], ".lant", "layout.json")
     if os.path.exists(marker):
         import json
+
         from .delivery import LAYOUT_VERSION
 
         try:
             with open(marker) as fh:
                 version = json.load(fh).get("version")
         except (ValueError, AttributeError) as exc:
-            raise ConfigError("invalid layout record %s: %s" % (marker, exc))
+            raise ConfigError("invalid layout record %s: %s" % (marker, exc)) from exc
         if version != LAYOUT_VERSION:
             raise ConfigError("unsupported project layout version: %r" % version)
     return cfg
@@ -420,9 +421,10 @@ def array_type_of(station_file, line=None):
     ELONGATION_*.  how: dict(given=False, elongation, clear, text).  An unreadable table gives surface (the clean
     step reports the table's problem)."""
     try:
+        import numpy as np
+
         from . import stations as ST
         from .signal import local_xy_km
-        import numpy as np
 
         rows, _ = ST.read_table(station_file)
         if line:
@@ -593,7 +595,7 @@ def validate(cfg):
 
         label_offset_s(cfg["data"].get("day_label"))
     except ValueError as exc:
-        raise ConfigError(str(exc))
+        raise ConfigError(str(exc)) from exc
     for k in ("start_date", "end_date"):
         v = cfg["data"][k]
         if v is not None:

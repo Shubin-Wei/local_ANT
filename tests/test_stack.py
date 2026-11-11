@@ -10,6 +10,7 @@ from lant import config
 def test_block_exclusion(tmp_path):
     """An entry for a sub-day block (YYYYDDD_hh) removes that block; a whole-day entry removes all its blocks."""
     import h5py
+
     from lant.stack import exclude_station_days
 
     p = str(tmp_path / "s.h5")
@@ -30,6 +31,7 @@ def test_station_diagnosis(tmp_path):
     """A station whose records are 0.03 s late in one sub-stack is the only candidate; the thresholds come from the
     distribution; with too few station sub-stacks nothing is judged."""
     import h5py
+
     from lant import stack as SK
 
     rng = np.random.default_rng(21)

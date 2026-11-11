@@ -43,7 +43,7 @@ def read_stations(path):
     try:
         rows, _ = ST.read_table(path)
     except ST.StationError as exc:
-        raise DataError(str(exc))
+        raise DataError(str(exc)) from exc
     out = {}
     for r in rows:
         net, sta = r["network"], r["station"]
@@ -127,6 +127,7 @@ def read_quiet(path, **kw):
     blocks that are not data (padding of pre-allocated files): the miniSEED reader skips them with one warning
     each, hundreds of thousands per file; they are counted, not printed."""
     import warnings
+
     import obspy
 
     with warnings.catch_warnings(record=True) as w:

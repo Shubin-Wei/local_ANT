@@ -1,9 +1,9 @@
 """Configuration: defaults, errors, integer keys, the parameter documentation and the template."""
 
 import pytest
+from util import REQ, tmp_dir, write_cfg
 
 from lant import config
-from util import REQ, write_cfg, tmp_dir
 
 
 def test_config_defaults_and_errors(tmp_path):
@@ -117,6 +117,7 @@ def test_params_documented_and_template(tmp_path):
     """Every configuration key has a description and a basis; `lant init` writes a file that loads once the
     required keys are filled in, and lists every key."""
     import yaml
+
     from lant import params
 
     keys = [k for k, _ in params.flat(config.DEFAULTS)]

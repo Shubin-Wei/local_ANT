@@ -34,15 +34,13 @@ import shutil
 from collections import Counter, defaultdict
 from multiprocessing import Pool
 
-from .progress import track
-
 import numpy as np
 
 from . import data as D
 from . import paths
 from . import pulse as PU
 from . import station_match as SM
-
+from .progress import track
 
 ARCHIVE_VERSION = 2  # raise when _clean_station_day changes what it writes: older station-days are redone
 
@@ -285,7 +283,7 @@ def instruments(cfg, used, rows):
         try:
             inv = R.load(path)
         except R.ResponseError as exc:
-            raise D.DataError(str(exc))
+            raise D.DataError(str(exc)) from exc
         ids, miss = {}, []
         for name, rr in rows.items():
             r = rr[0]

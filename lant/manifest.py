@@ -31,7 +31,6 @@ import os
 
 from . import records
 
-
 # keys that set only the computing resources (processes, threads, task size, disk margin): changing them does not
 # change any result, so a step does not become out of date (and its confirmation stands)
 RESOURCE_KEYS = {

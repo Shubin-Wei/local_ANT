@@ -47,7 +47,7 @@ def table_rows(cfg, traces, out, rep):
     try:
         rows, how = ST.read_table(d["station_file"], D.label_offset_s(d.get("day_label")))
     except ST.StationError as exc:
-        raise D.DataError(str(exc))
+        raise D.DataError(str(exc)) from exc
     rep.append("  station table %s: %d rows; %s" % (d["station_file"], len(rows), how))
     lines = sorted({r["line"] for r in rows if r.get("line")})
     if len(lines) > 1 and not d["line"]:
@@ -87,7 +87,7 @@ def match(cfg, traces, out, rep, rows):
     try:
         timed, other, tcoords, rows, trep = ST.assign_by_serial(rows, traces, nets.pop() if len(nets) == 1 else "XX")
     except ST.StationError as exc:
-        raise D.DataError(str(exc))
+        raise D.DataError(str(exc)) from exc
     if trep:
         if not cfg["clean"]["write_archive"]:
             raise D.DataError("a station table with serial numbers needs clean.write_archive: true")
@@ -198,6 +198,7 @@ def geometry_check(used):
     """The methods use a local plane around the array and a regular longitude-latitude grid.  Refused: an array
     across the date line, beyond MAX_LATITUDE, or with two stations at the same place."""
     from scipy.spatial import cKDTree
+
     from .signal import local_xy_km
 
     names = sorted(used)

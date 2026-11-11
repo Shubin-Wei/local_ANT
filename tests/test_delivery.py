@@ -118,6 +118,7 @@ def _evaluated_project(tmp_path, monkeypatch):
 
 def test_rebuilding_the_inversion_keeps_the_evaluated_model(tmp_path, monkeypatch):
     import shutil
+
     from lant import artifacts
 
     cfg, inv, finished = _evaluated_project(tmp_path, monkeypatch)
@@ -185,8 +186,9 @@ def test_publication_refuses_to_remove_unregistered_retained_files(tmp_path, mon
 
 
 def test_moving_project_keeps_clean_state_and_archive_readable(tmp_path):
-    from lant import data, manifest, pipeline, report
     from util import make_raw
+
+    from lant import data, manifest, pipeline, report
 
     make_raw(tmp_path)
     root = tmp_path / "project"
