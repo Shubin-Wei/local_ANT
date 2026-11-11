@@ -14,8 +14,8 @@
   6_checkerboard_*       checkerboard input and recovery: maps (areal), sections along the line (line) (GMT)
   6_recovery             recovery slope and correlation with depth
   6_residuals            travel-time residuals of the starting and final model
-Figures of the processing steps are written by the steps themselves (01_clean/coverage.png,
-03_stack/station_qc/station_qc.png, 04_reference/fj.png).
+Figures of the processing steps are written by the steps themselves (work/01_clean/coverage.png,
+work/03_stack/station_qc/station_qc.png, work/04_reference/fj.png).
 """
 import json
 import os

@@ -8,7 +8,7 @@ stack.h5 holds, for every pair of the station list:
   dist_km, az_deg, lon1, lat1, lon2, lat2, pairs
 
 Diagnosis (station_qc; areal arrays and lines alike; nothing is removed automatically: the candidates go to
-03_stack/candidates.txt and are judged by the user, `lant confirm stack [--exclude-candidates]`):
+work/03_stack/candidates.txt and are judged by the user, `lant confirm stack [--exclude-candidates]`):
   every sub-stack of a pair is compared with the stack of all the OTHER sub-stacks of that pair (leave-one-out, so
   that a sub-stack is not compared with itself): the correlation coefficient and the time shift (peak of their
   cross-correlation, parabolic interpolation between samples), over the whole correlation band, in the lag window

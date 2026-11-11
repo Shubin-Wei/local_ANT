@@ -43,8 +43,8 @@ def test_cleanup_rejects_parent_symlink(tmp_path):
     outside = tmp_path / "outside"
     cache.parent.rename(outside)
     cache.parent.symlink_to(outside, target_is_directory=True)
-    plan = artifacts.clean(cfg, ["cc"])
-    assert plan["protected"] == ["work/02_ccf/day.h5"]
+    with pytest.raises(RuntimeError, match="symlinks"):
+        artifacts.clean(cfg, ["cc"])
     assert (outside / "day.h5").read_text() == "original"
 
 
@@ -63,7 +63,6 @@ def test_cleanup_honors_lock_and_retains_deliverables(tmp_path, monkeypatch):
     artifacts.register(cfg, before)
     manifest._save(cfg, {"steps": {"cc": {}}})
     monkeypatch.setattr(manifest, "status", lambda *a, **k: {"evaluate": {"state": "done"}})
-    monkeypatch.setattr(artifacts, "write_report", lambda cfg: None, raising=False)
     import lant.delivery
 
     monkeypatch.setattr(lant.delivery, "write_report", lambda cfg: None)

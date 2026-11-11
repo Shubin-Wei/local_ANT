@@ -56,15 +56,15 @@ TUNE = {
 }
 
 LOOK_AT = {
-    "clean": ["01_clean/report.txt", "01_clean/coverage.png", "01_clean/stations.csv", "01_clean/processing_days.txt"],
-    "cc": ["02_ccf/"],
-    "stack": ["03_stack/candidates.txt", "03_stack/station_qc/station_qc.png", "03_stack/station_qc/station_qc.txt"],
-    "reference": ["04_reference/fj.png", "04_reference/fj.txt"],
-    "disp": ["05_dispersion/pair_figures/", "05_dispersion/median_vs_reference.txt"],
-    "inversion": ["06_inversion/average_curve.txt", "06_inversion/vs1d_fit.txt", "06_inversion/vs1d.txt"],
-    "run": ["06_inversion/main/run.log", "06_inversion/main/precheck.json"],
-    "evaluate": ["06_inversion/evaluation/evaluation.json"],
-    "figures": ["figures/"],
+    "clean": ["work/01_clean/report.txt", "work/01_clean/coverage.png", "work/01_clean/stations.csv", "work/01_clean/processing_days.txt"],
+    "cc": ["work/02_ccf/"],
+    "stack": ["work/03_stack/candidates.txt", "work/03_stack/station_qc/station_qc.png", "work/03_stack/station_qc/station_qc.txt"],
+    "reference": ["work/04_reference/fj.png", "work/04_reference/fj.txt"],
+    "disp": ["work/05_dispersion/pair_figures/", "work/05_dispersion/median_vs_reference.txt"],
+    "inversion": ["work/06_inversion/average_curve.txt", "work/06_inversion/vs1d_fit.txt", "work/06_inversion/vs1d.txt"],
+    "run": ["work/06_inversion/main/run.log", "work/06_inversion/main/precheck.json"],
+    "evaluate": ["work/06_inversion/evaluation/evaluation.json"],
+    "figures": ["results/figures/"],
 }
 
 RERUN = "after a change, run this step again and every step after it (`lant run all --from %s -c ...`)"

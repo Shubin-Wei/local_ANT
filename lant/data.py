@@ -8,12 +8,12 @@ The user gives only data.raw_dir and data.station_file.  Everything else is read
     with a single channel and nothing that says otherwise uses that channel (reported); one location / channel /
     rate per station (the one with most data);
   * names: the station table is read in whatever form it has and matched to the header codes (lant/stations.py);
-    from then on every station is NET.STA as written in 01_clean/stations.csv.
+    from then on every station is NET.STA as written in work/01_clean/stations.csv.
 One processing day runs from data.day_start_utc_hour UTC to the same hour on the next day (a fixed 24-h UTC window,
 kept as its UTC start t0).  Its label YYYYDDD (file names, start_date / end_date, stack.exclude_station_days) is the
 date of t0 by data.day_label: "utc_start" (the UTC date of the start; the default) or a fixed offset "UTC+8",
 "UTC-05:30" (the date of the start at that offset, e.g. the local date when the day starts at local midnight).
-Daylight-saving time is not followed: the windows stay fixed 24-h UTC windows.  01_clean/processing_days.txt lists
+Daylight-saving time is not followed: the windows stay fixed 24-h UTC windows.  work/01_clean/processing_days.txt lists
 every label with its UTC window.
 """
 import csv

@@ -110,7 +110,7 @@ def zone_references(cfg, stack, d, freqs, c, curve, support):
     """reference.zone_km: one F-J curve per square zone of that size, from the pairs whose path midpoint lies in
     the zone (local references where the structure changes across the array; a choice, not a literature value); every
     pair is then measured against the curve of its zone.  A zone whose image does not give a curve (too few
-    pairs, no clear ridge) uses the curve of the whole array.  Writes 04_reference/zones.npz, zones.txt, zones.png."""
+    pairs, no clear ridge) uses the curve of the whole array.  Writes work/04_reference/zones.npz, zones.txt, zones.png."""
     from .signal import local_xy_km
     r = cfg["reference"]
     size = float(r["zone_km"])

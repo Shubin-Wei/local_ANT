@@ -4,7 +4,7 @@
    SEISAN, ...); records of other channels (data.channel) are ignored; files that are not seismic data are listed;
 2. the vertical component of every station (data.channel = auto: channel ending in Z, or SAC cmpinc = 0);
 3. names: the station table (any common form) is matched to the header codes (lant/stations.py) and written as
-   01_clean/stations.csv; coordinates found in SAC headers go to stations_from_headers.csv and are compared
+   work/01_clean/stations.csv; coordinates found in SAC headers go to stations_from_headers.csv and are compared
    (lant/station_match.py, with the geometry checks);
    per station one sensor: one location/channel/sampling rate (the one with most data); the others are listed;
    instruments: with data.response the instrument responses are removed (lant/response.py; stations of different
@@ -20,7 +20,7 @@
      - traces shorter than data.min_trace_length_s dropped;
    gaps stay gaps (nothing is filled or interpolated across a gap); the sample values are not changed otherwise
    (no filtering, no resampling), except by the response removal when data.response is given;
-5. writes 01_clean/archive/NET.STA/NET.STA.LOC.CHA.YYYYDDD.mseed (one file per station-day; clean.encoding) and
+5. writes work/01_clean/archive/NET.STA/NET.STA.LOC.CHA.YYYYDDD.mseed (one file per station-day; clean.encoding) and
    archive_index.json, which every later step reads; report.txt / station_days.csv / coverage.png list what was
    found and done.  With clean.write_archive = false nothing is written and the later steps read the raw files
    through the index (steps 2-4 are then applied on the fly, except the overlap rule).
@@ -202,7 +202,7 @@ def storage_codes(names, rows):
 
 
 def write_input_list(index, path):
-    """01_clean/input_files.csv: every candidate file with size, modification time and what was read from it (the
+    """work/01_clean/input_files.csv: every candidate file with size, modification time and what was read from it (the
     identity of the input of this run; a changed file shows up as a changed size or time)."""
     recs = defaultdict(list)
     for t in index["traces"]:
@@ -346,7 +346,7 @@ def run(cfg):
             fh.write("%s  %s\n" % (lab, D.utc_window(t0)))
     if days:
         lab0, (t00, _) = next(iter(days.items()))
-        rep.append("  labels: data.day_label = %s, e.g. %s = %s (all in 01_clean/processing_days.txt)"
+        rep.append("  labels: data.day_label = %s, e.g. %s = %s (all in work/01_clean/processing_days.txt)"
                    % (cfg["data"].get("day_label", "utc_start"), lab0, D.utc_window(t00)))
     archive = os.path.join(out, "archive")
     summary = dict(day_label=cfg["data"].get("day_label", "utc_start"), day_start_utc_hour=cfg["data"]["day_start_utc_hour"],

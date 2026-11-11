@@ -93,15 +93,15 @@ def judgements(cfg, step, summary):
         c = s.get("candidates") or {}
         n = c.get("station_blocks", 0)
         if n > c.get("expected_by_chance", 0):       # as many as chance alone gives: listed in the report, no stop
-            out.append("%d station sub-stacks differ from the rest (03_stack/candidates.txt, station_qc/station_qc.png)"
+            out.append("%d station sub-stacks differ from the rest (work/03_stack/candidates.txt, station_qc/station_qc.png)"
                        ": remove them (`lant confirm stack --exclude-candidates`) or keep them (`lant confirm stack`)?"
                        % n)
     elif step == "reference":
         if s.get("source") == "fj":
-            out.append("do the F-J picks follow the fundamental-mode ridge (04_reference/fj.png)?  Only the fundamental "
+            out.append("do the F-J picks follow the fundamental-mode ridge (work/04_reference/fj.png)?  Only the fundamental "
                        "Rayleigh mode is measured; the strongest ridge can be a higher mode")
             if s.get("zones"):
-                out.append("zone references: %d of %d zones have their own curve (04_reference/zones.png, zones.txt): "
+                out.append("zone references: %d of %d zones have their own curve (work/04_reference/zones.png, zones.txt): "
                            "do the zone curves differ as the geology suggests, and none jumps to another ridge?"
                            % (s["zones"]["with_own_curve"], s["zones"]["zones"]))
             if cfg["project"].get("array_type") == "line" and \
@@ -116,7 +116,7 @@ def judgements(cfg, step, summary):
     elif step == "inversion":
         st = s.get("start") or {}
         seq = cfg["inversion"]["depth_sequence_km"]
-        out.append("starting model and its fit to the average curve (06_inversion/vs1d_fit.txt, figures/4_start_model): "
+        out.append("starting model and its fit to the average curve (work/06_inversion/vs1d_fit.txt, results/figures/4_start_model): "
                    "acceptable?")
         if isinstance(seq, (list, tuple)) and seq:
             out.append("depth nodes down to %.3g km (%d nodes): deep enough, and not deeper than the data constrain?"

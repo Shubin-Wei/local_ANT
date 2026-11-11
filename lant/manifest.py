@@ -148,7 +148,10 @@ def status(cfg, check_inputs=True):
         changed = sorted(k for k in set(now) | set(r["params"]) if now.get(k) != r["params"].get(k)
                          and k not in RESOURCE_KEYS)
         again = [u for u in order[:order.index(s)] if u in steps and r["upstream"].get(u) != steps[u]["run"]]
-        missing = [p for p in r.get("outputs", []) if not os.path.exists(os.path.join(cfg["project"]["output_dir"], p))]
+        from .artifacts import is_cache
+        missing = [p for p in r.get("outputs", [])
+                   if not (r.get("cache_cleaned") and is_cache(p, ["archive", "cc"]))
+                   and not os.path.exists(os.path.join(cfg["project"]["output_dir"], p))]
         why = None
         if missing:
             why = "required products missing: " + ", ".join(missing)
@@ -172,12 +175,13 @@ def status(cfg, check_inputs=True):
 
 def next_action(cfg, st):
     """(command, why) of the next thing to do, or (None, "everything is done")."""
-    c = cfg.get("_config_file", "CONFIG")
+    import shlex
+    c = shlex.quote(cfg.get("_config_file", "CONFIG"))
     for s, e in st.items():
         if e["state"] == "done":
             continue
         if e["state"] == "to confirm":
-            return ("lant confirm %s -c %s" % (s, c),
+            return ('lant confirm %s -c %s --reason "USER_DECISION_AND_EVIDENCE"' % (s, c),
                     "step %s leaves judgements to you: read .lant/steps/%s.md first" % (s, s))
         if e["state"] == "partial":
             return ("lant run all -c %s" % c, "step %s is incomplete (%s): repair or exclude what failed, then run "

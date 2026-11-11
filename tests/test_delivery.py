@@ -52,6 +52,20 @@ def test_failed_publication_preserves_previous_tree(tmp_path, monkeypatch):
     assert (target / "model").read_text() == "previous"
 
 
+def test_publication_refuses_to_remove_unregistered_retained_files(tmp_path):
+    cfg = project(tmp_path)
+    root = Path(cfg["project"]["output_dir"])
+    source = root / "work/06_inversion/main"
+    source.mkdir(parents=True)
+    (source / "model").write_text("new")
+    target = root / "results/model"
+    target.mkdir(parents=True)
+    (target / "user-note.txt").write_text("keep")
+    with pytest.raises(RuntimeError, match="unregistered retained files"):
+        delivery.publish(cfg, "run")
+    assert (target / "user-note.txt").read_text() == "keep"
+
+
 def test_moving_project_keeps_clean_state_and_archive_readable(tmp_path):
     from lant import data, manifest, pipeline, report
     from util import make_raw

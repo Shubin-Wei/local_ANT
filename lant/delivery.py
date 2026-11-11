@@ -75,6 +75,22 @@ def _replace_tree(source, target):
         shutil.rmtree(str(staging))
 
 
+def _publish_tree(cfg, source, target):
+    from .artifacts import load
+
+    root = Path(cfg["project"]["output_dir"])
+    owned = load(cfg)
+    target = Path(target)
+    unknown = [
+        p.relative_to(root).as_posix()
+        for p in target.rglob("*")
+        if p.is_file() and p.relative_to(root).as_posix() not in owned
+    ]
+    if unknown:
+        raise RuntimeError("unregistered retained files are protected: " + ", ".join(unknown[:5]))
+    _replace_tree(source, target)
+
+
 def publish(cfg, step):
     """Retain complete scientific products before cache cleanup becomes available."""
     root = Path(cfg["project"]["output_dir"])
@@ -83,13 +99,13 @@ def publish(cfg, step):
     if step == "disp":
         source = Path(paths.P(cfg, paths.DISP))
         target = dest / "dispersion"
-        _replace_tree(source, target)
+        _publish_tree(cfg, source, target)
     if step in ("inversion", "run", "evaluate"):
         if (inv / "main").exists():
-            _replace_tree(inv / "main", dest / "model")
+            _publish_tree(cfg, inv / "main", dest / "model")
         for name in ("checkerboards", "controls", "evaluation"):
             if (inv / name).exists():
-                _replace_tree(inv / name, dest / "validation" / name)
+                _publish_tree(cfg, inv / name, dest / "validation" / name)
         reproduce = dest / "reproduce"
         reproduce.mkdir(parents=True, exist_ok=True)
         for p in inv.iterdir():

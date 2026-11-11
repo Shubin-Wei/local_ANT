@@ -1,5 +1,5 @@
 """The UTC-locked 1-s periodic signal (the timing pulse of some loggers, Takagi et al. 2015): its detection in the
-clean step (fold test of every station-day, summary per station in 01_clean/pulse_1s.csv) and its removal in the cc
+clean step (fold test of every station-day, summary per station in work/01_clean/pulse_1s.csv) and its removal in the cc
 step (correlation.remove_1s_comb).
 """
 import csv
@@ -55,7 +55,7 @@ def fold_1s(pieces, fs):
 
 def pulse_summary(stats, path):
     """Stations with a 1-s periodic signal: the fold test (fold_1s) is passed in more than half of their days.
-    Writes 01_clean/pulse_1s.csv (station, days tested, days with the signal, median F, median limit, median share
+    Writes work/01_clean/pulse_1s.csv (station, days tested, days with the signal, median F, median limit, median share
     of the variance)."""
     by = defaultdict(list)
     for s in stats:

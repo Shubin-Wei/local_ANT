@@ -161,7 +161,7 @@ def pick_max(cfg, freqs, c, img, npair):
         clear &= freqs <= r["fj_fit_fmax"] * (1 + 1e-9)
     k = trusted_run(cfj, clear)
     if k.size < 5:
-        raise RuntimeError("the F-J image has only %d clear picks that follow each other (04_reference/fj.png): check the "
+        raise RuntimeError("the F-J image has only %d clear picks that follow each other (work/04_reference/fj.png): check the "
                            "stack (too few pairs or days?) or borrow a reference (reference.source = file)" % k.size)
     good = np.zeros(len(freqs), bool)
     good[k] = True
@@ -205,7 +205,7 @@ def track_start(cfg, freqs, c, img, npair, lam_min_km=None):
             pass
         lo *= 2 ** (1 / 3)
     if best is None:
-        raise RuntimeError("F-J image: no ridge to start from at any frequency (04_reference/fj.png); borrow a "
+        raise RuntimeError("F-J image: no ridge to start from at any frequency (work/04_reference/fj.png); borrow a "
                            "reference (reference.source = file)")
     return best[1]
 
@@ -262,7 +262,7 @@ def pick_track(cfg, freqs, c, img, min_peak=0.5, min_track=0.3, step=0.05, max_m
     use = np.isfinite(pick)
     if use.sum() < (MIN_TRACK if need is None else need):
         raise RuntimeError("the F-J ridge could be followed over only %d frequencies from %.3g-%.3g Hz (at least %d "
-                           "are needed for a curve): look at 04_reference/fj.png; say where the fundamental mode is "
+                           "are needed for a curve): look at work/04_reference/fj.png; say where the fundamental mode is "
                            "clear (reference.track_start_band_hz), narrow data.velocity_range_kms to the velocities "
                            "of the area, or borrow a curve (reference.source = file)" % (use.sum(), s0, s1, MIN_TRACK))
     x = np.log(freqs)

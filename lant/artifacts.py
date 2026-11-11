@@ -15,6 +15,11 @@ def check_roots(cfg):
     for name in MANAGED:
         if (root / name).is_symlink():
             raise RuntimeError("managed directory must not be a symlink: %s" % (root / name))
+        for directory, dirs, files in os.walk(str(root / name), followlinks=False):
+            for entry in dirs + files:
+                candidate = Path(directory) / entry
+                if candidate.is_symlink():
+                    raise RuntimeError("managed paths must not be symlinks: %s" % candidate)
 
 
 def snapshot(cfg):
@@ -132,9 +137,14 @@ def required(cfg, step):
         "cc": [paths.P(cfg, paths.CCF)],
         "stack": [paths.stack_product(cfg)],
         "reference": [paths.P(cfg, paths.REFERENCE, "reference.npz")],
-        "disp": [paths.P(cfg, paths.DISP, "disp.h5")],
+        "disp": [paths.P(cfg, paths.DISP, "disp.h5"), paths.P(cfg, paths.DISP, "curves.csv")],
         "inversion": [paths.P(cfg, paths.INV, "main", "DSurfTomo.in")],
         "run": [paths.P(cfg, paths.INV, "main", "DSurfTomo.inMeasure.dat")],
         "evaluate": [paths.P(cfg, paths.INV, "evaluation", "evaluation.json")],
     }
-    return [os.path.relpath(p, cfg["project"]["output_dir"]) for p in table.get(step, [])]
+    selected = table.get(step, [])
+    if step == "cc":
+        selected += [str(p) for p in Path(paths.P(cfg, paths.CCF)).glob("day_*.h5")]
+    if step == "clean":
+        selected += [str(p) for p in Path(paths.P(cfg, "01_clean", "archive")).rglob("*.mseed")]
+    return [os.path.relpath(p, cfg["project"]["output_dir"]) for p in selected]

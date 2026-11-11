@@ -85,7 +85,13 @@ def main():
     fig.tight_layout()
     p = os.path.join(out, "results", "figures", "truth_comparison.png")
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    fig.savefig(p, dpi=150)
+    from lant import artifacts, records
+    from lant.provenance import Lock
+    cfg = {"project": {"output_dir": os.path.abspath(out)}}
+    with Lock(records.rec_dir(cfg)):
+        before = artifacts.snapshot(cfg)
+        fig.savefig(p, dpi=150)
+        artifacts.register(cfg, before)
     print("\nwrote", p)
 
 

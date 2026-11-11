@@ -59,7 +59,7 @@ DEFAULTS = {
         "end_date": None,
     },
     "clean": {
-        "write_archive": True,            # write the cleaned day files (01_clean/archive); False = later steps read the raw files
+        "write_archive": True,            # write the cleaned day files (work/01_clean/archive); False = later steps read the raw files
         "nproc": 4,
         "encoding": "FLOAT32",            # miniSEED encoding of the archive (FLOAT32 keeps integer and float data exactly
                                           # up to 2**24 counts; use INT32 or STEIM2 for integer data to save space)
@@ -356,6 +356,17 @@ def load(path):
                 except (KeyError, TypeError):
                     raise ConfigError("confirmed.%s: unknown key %s" % (step, key))
     validate(cfg)
+    marker = os.path.join(cfg["project"]["output_dir"], ".lant", "layout.json")
+    if os.path.exists(marker):
+        import json
+        from .delivery import LAYOUT_VERSION
+        try:
+            with open(marker) as fh:
+                version = json.load(fh).get("version")
+        except (ValueError, AttributeError) as exc:
+            raise ConfigError("invalid layout record %s: %s" % (marker, exc))
+        if version != LAYOUT_VERSION:
+            raise ConfigError("unsupported project layout version: %r" % version)
     return cfg
 
 
@@ -541,10 +552,11 @@ def dump(cfg, path):
         value = _get(out, keys)
         if isinstance(value, str) and os.path.isabs(value) and os.path.commonpath([root, value]) == root:
             _set(out, keys, os.path.relpath(value, os.path.dirname(os.path.abspath(path))))
-    if cfg.get("_confirmed"):
-        out["confirmed"] = copy.deepcopy(cfg["_confirmed"])
     with open(path, "w") as fh:
         yaml.safe_dump(out, fh, sort_keys=False, allow_unicode=True)
+    if cfg.get("_confirmed"):
+        from .confirm import _write_block
+        _write_block(path, cfg["_confirmed"])
 
 
 def phase_constant(cfg):

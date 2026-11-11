@@ -88,3 +88,21 @@ def test_lock_is_exclusive(tmp_path):
     r = subprocess.run([sys.executable, "-c", "from lant.provenance import Lock\nwith Lock(%r): pass" % str(tmp_path)],
                        capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     assert r.returncode == 0
+
+
+def test_missing_cache_is_stale_until_explicitly_marked_cleaned(tmp_path):
+    from lant import manifest, report
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    clean = tmp_path / "work/01_clean"
+    (clean / "archive").mkdir(parents=True)
+    for name in ("archive_index.json", "stations.csv", "archive/day.mseed"):
+        (clean / name).write_text("test")
+    manifest.record(cfg, "clean", "done", params=report.used_params(cfg, "clean"))
+    (clean / "archive/day.mseed").unlink()
+    assert manifest.status(cfg, check_inputs=False)["clean"]["state"] == "out of date"
+    m = manifest.load(cfg)
+    m["steps"]["clean"]["cache_cleaned"] = True
+    manifest._save(cfg, m)
+    state = manifest.status(cfg, check_inputs=False)["clean"]
+    assert state["state"] == "done" and state["cache_cleaned"]

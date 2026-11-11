@@ -1,7 +1,7 @@
 """Which station of the table each record of the clean step belongs to, and whether the array geometry suits the
 methods: the rows of the station table (of data.line), records without codes named from their files, header codes
 matched to the table names (lant/stations.py) or records assigned by serial number and deployment window, the
-coordinates of the headers compared with the table, and the geometry checks.  Writes 01_clean/stations.csv and
+coordinates of the headers compared with the table, and the geometry checks.  Writes work/01_clean/stations.csv and
 stations_from_headers.csv.
 """
 import os
@@ -32,7 +32,7 @@ def table_rows(cfg, traces, out, rep):
         rep.append("  coordinates found in the headers of %d stations -> stations_from_headers.csv" % len(hc))
     if not d["station_file"]:
         raise D.DataError("data.station_file is not set%s" % (
-            "; the headers hold coordinates: check 01_clean/stations_from_headers.csv and use it as the station file" if hc else ""))
+            "; the headers hold coordinates: check work/01_clean/stations_from_headers.csv and use it as the station file" if hc else ""))
     try:
         rows, how = ST.read_table(d["station_file"], D.label_offset_s(d.get("day_label")))
     except ST.StationError as exc:
@@ -59,7 +59,7 @@ def table_rows(cfg, traces, out, rep):
 
 
 def match(cfg, traces, out, rep, rows):
-    """Header codes -> canonical NET.STA of the station table rows; writes 01_clean/stations.csv."""
+    """Header codes -> canonical NET.STA of the station table rows; writes work/01_clean/stations.csv."""
     from . import stations as ST
     d = cfg["data"]
     nets = {t["net"] for t in traces if t["net"]} | {r["network"] for r in rows if r["network"]}

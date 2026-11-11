@@ -6,7 +6,7 @@
   all_curves    every exported phase-velocity curve in grey, mean and standard deviation (>= 20 curves), period axis on
                 top
   pair_figures  the pair example for pairs spread evenly over distance and for the conspicuous ones - the most
-                rejected points and the largest deviation from the median curve - (05_dispersion/pair_figures:
+                rejected points and the largest deviation from the median curve - (work/05_dispersion/pair_figures:
                 spread_*, rejected_*, deviating_*), for checking the picks by eye without looking only at good results
 """
 import os

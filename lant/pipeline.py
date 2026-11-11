@@ -154,7 +154,7 @@ def short_path_note(curves):
 
 
 def check_dirs(cfg):
-    """The check projects built for the present configuration (06_inversion/checks.json), not every directory that
+    """The check projects built for the present configuration (work/06_inversion/checks.json), not every directory that
     happens to be there."""
     p = inv_dir(cfg, "checks.json")
     if not os.path.exists(p):
@@ -164,7 +164,7 @@ def check_dirs(cfg):
 
 def checkerboard_noise(cfg, main):
     """inversion.noise auto: the relative rms of the residuals of the final main model that DSurfTomo's rejection
-    rule keeps (one forward run; kept in 06_inversion/checkerboard_noise.json while the main model is unchanged)."""
+    rule keeps (one forward run; kept in work/06_inversion/checkerboard_noise.json while the main model is unchanged)."""
     p = inv_dir(cfg, "checkerboard_noise.json")
     model = os.path.join(main, "DSurfTomo.inMeasure.dat")
     stamp = os.path.getmtime(model)
@@ -185,7 +185,7 @@ def checkerboard_noise(cfg, main):
 def _run_batch(cfg, dirs, main):
     invalid = precheck_projects(cfg, [d for d in dirs if RUN.status(d) == "new"])
     if main in invalid:
-        raise RuntimeError("the main project cannot be inverted: %s (06_inversion/main/precheck.json); check the starting "
+        raise RuntimeError("the main project cannot be inverted: %s (work/06_inversion/main/precheck.json); check the starting "
                            "model and the data" % "; ".join(invalid[main]))
     res = RUN.run_projects(cfg, [d for d in dirs if d not in invalid])
     res["invalid"] = invalid
@@ -318,6 +318,7 @@ def run_step(cfg, name, **kw):
                 raise RuntimeError("parameters %s are 'auto' and not resolved yet: run `lant run reference -c %s` first"
                                    % (", ".join(left), cfg["_config_file"]))
     with records.Step(cfg, name) as st:
+        manifest.gate(report.resolved(cfg), name)
         code = provenance.record(records.rec_dir(cfg))
         inputs = manifest.raw_inputs(cfg) if name == "clean" else None
         t0 = time.time()
@@ -347,6 +348,11 @@ def run_step(cfg, name, **kw):
         except BaseException as exc:
             manifest.record(cfg, name, "failed", seconds=round(time.time() - t0, 1),
                             error="%s: %s" % (type(exc).__name__, exc), code=code, inputs=inputs)
+            try:
+                from .delivery import write_report
+                write_report(cfg)
+            except Exception as report_error:
+                records.log(cfg, step=name, event="report_failed", error=str(report_error))
             raise
         if st.failed:
             raise records.StepIncomplete(

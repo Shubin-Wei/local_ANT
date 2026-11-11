@@ -15,15 +15,15 @@ from .signal import geodesic_km, nearest_neighbour_km
 
 
 FIGURES = {
-    "clean": ["01_clean/report.txt", "01_clean/coverage.png", "01_clean/station_days.csv", "01_clean/processing_days.txt"],
-    "stack": ["03_stack/candidates.txt", "03_stack/station_qc/station_qc.png", "03_stack/station_qc/station_qc.txt",
-              "03_stack/removed.txt"],
-    "reference": ["04_reference/fj.png", "04_reference/fj.txt"],
-    "disp": ["05_dispersion/median_vs_reference.txt", "05_dispersion/pair_figures/", "figures/3_dispersion_curves.png"],
-    "inversion": ["06_inversion/average_curve.txt", "06_inversion/vs1d.txt", "06_inversion/main/DSurfTomo.in",
-                  "figures/4_start_model.png"],
-    "evaluate": ["06_inversion/evaluation/evaluation.json", "figures/6_residuals.png", "figures/6_recovery.png"],
-    "figures": ["figures/"],
+    "clean": ["work/01_clean/report.txt", "work/01_clean/coverage.png", "work/01_clean/station_days.csv", "work/01_clean/processing_days.txt"],
+    "stack": ["work/03_stack/candidates.txt", "work/03_stack/station_qc/station_qc.png", "work/03_stack/station_qc/station_qc.txt",
+              "work/03_stack/removed.txt"],
+    "reference": ["work/04_reference/fj.png", "work/04_reference/fj.txt"],
+    "disp": ["work/05_dispersion/median_vs_reference.txt", "work/05_dispersion/pair_figures/", "results/figures/3_dispersion_curves.png"],
+    "inversion": ["work/06_inversion/average_curve.txt", "work/06_inversion/vs1d.txt", "work/06_inversion/main/DSurfTomo.in",
+                  "results/figures/4_start_model.png"],
+    "evaluate": ["work/06_inversion/evaluation/evaluation.json", "results/figures/6_residuals.png", "results/figures/6_recovery.png"],
+    "figures": ["results/figures/"],
 }
 
 
