@@ -116,35 +116,62 @@ class StepIncomplete(RuntimeError):
 
 
 class Step:
-    """Context manager around one pipeline step: logs start / end / failure with the duration."""
+    """Own the write lock, detailed stdout log and progress for an entire step."""
 
     def __init__(self, cfg, name):
         self.cfg, self.name = cfg, name
 
     def __enter__(self):
+        import contextlib
+        import logging
+        import sys
+        from logging.handlers import RotatingFileHandler
+        from .progress import Progress
         from .provenance import Lock, record
-        self.lock = Lock(rec_dir(self.cfg)).__enter__()
-        save_config(self.cfg)
-        self.t = time.time()
-        log(self.cfg, step=self.name, event="start", config=self.cfg.get("_config_file"),
-            provenance=record(rec_dir(self.cfg)))
-        print("[lant] step %s ..." % self.name, flush=True)
-        return self
+        self.context = contextlib.ExitStack()
+        try:
+            self.context.enter_context(Lock(rec_dir(self.cfg)))
+            save_config(self.cfg)
+            self.t = time.time()
+            log(self.cfg, step=self.name, event="start", config=self.cfg.get("_config_file"),
+                provenance=record(rec_dir(self.cfg)))
+            handler = RotatingFileHandler(os.path.join(rec_dir(self.cfg), "lant.log"),
+                                          maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8")
+            self.context.callback(handler.close)
+            verbose = self.cfg.get("_verbose", False)
+
+            class Output:
+                def write(self, text):
+                    if text.strip():
+                        handler.emit(logging.LogRecord("lant", logging.INFO, "", 0, text.rstrip(), (), None))
+                    if verbose:
+                        sys.stderr.write(text)
+                    return len(text)
+
+                def flush(self):
+                    handler.flush()
+
+            self.context.enter_context(contextlib.redirect_stdout(Output()))
+            print("[lant] step %s started" % self.name, flush=True)
+            self.context.enter_context(Progress(self.name))
+            return self
+        except BaseException:
+            self.context.close()
+            raise
 
     def __exit__(self, et, ev, tb):
+        import sys
         dt = round(time.time() - self.t, 1)
         failed = getattr(self, "failed", None)
-        if et is None and failed:
-            log(self.cfg, step=self.name, event="partial", seconds=dt, params=getattr(self, "params", None),
-                failed=failed[:200], n_failed=len(failed))
-            print("[lant] step %s INCOMPLETE (%.0f s): %d items failed, e.g. %s" % (self.name, dt, len(failed),
-                                                                                  "; ".join(failed[:3])), flush=True)
-        elif et is None:
-            log(self.cfg, step=self.name, event="done", seconds=dt, params=getattr(self, "params", None))
-            print("[lant] step %s done (%.0f s)" % (self.name, dt), flush=True)
-        else:
-            log(self.cfg, step=self.name, event="failed", seconds=dt, error="%s: %s" % (et.__name__, ev),
-                traceback=traceback.format_exception(et, ev, tb)[-3:])
-            print("[lant] step %s FAILED after %.0f s: %s" % (self.name, dt, ev), flush=True)
-        self.lock.__exit__()
+        event = "failed" if et else ("partial" if failed else "done")
+        extra = dict(error="%s: %s" % (et.__name__, ev), traceback=traceback.format_exception(et, ev, tb)) if et else {}
+        if failed:
+            extra.update(failed=failed, n_failed=len(failed))
+        try:
+            log(self.cfg, step=self.name, event=event, seconds=dt, **extra)
+            print("[lant] step %s %s (%.0fs)" % (self.name, event, dt), flush=True)
+        finally:
+            self.context.__exit__(et, ev, tb)
+        print("[lant] %s %s (%.0fs); details: %s" % (self.name, event, dt,
+              os.path.join(rec_dir(self.cfg), "lant.log")), file=sys.stderr, flush=True)
         return False

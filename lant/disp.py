@@ -30,6 +30,8 @@ The group velocity is measured only to find the arrival the phase is read at (no
 import os
 from multiprocessing import Pool
 
+from .progress import track
+
 import h5py
 import numpy as np
 
@@ -481,7 +483,7 @@ def measure(cfg, stack, reference, out):
     os.environ["OMP_NUM_THREADS"] = "1"
     with Pool(int(d["nproc"]), initializer=init_worker, initargs=(opt,)) as pool:
         done = 0
-        for idx, res in pool.imap_unordered(process_chunk, chunks):
+        for idx, res in track(pool.imap_unordered(process_chunk, chunks), len(chunks), "pair batches"):
             for k in out_d:
                 out_d[k][idx] = res[k]
             done += len(idx)

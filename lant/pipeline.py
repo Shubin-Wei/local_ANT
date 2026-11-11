@@ -317,33 +317,34 @@ def run_step(cfg, name, **kw):
             if left:
                 raise RuntimeError("parameters %s are 'auto' and not resolved yet: run `lant run reference -c %s` first"
                                    % (", ".join(left), cfg["_config_file"]))
-    code = provenance.record(records.rec_dir(cfg))
-    inputs = manifest.raw_inputs(cfg) if name == "clean" else None
-    t0 = time.time()
-    try:
-        with records.Step(cfg, name) as st:
+    with records.Step(cfg, name) as st:
+        code = provenance.record(records.rec_dir(cfg))
+        inputs = manifest.raw_inputs(cfg) if name == "clean" else None
+        t0 = time.time()
+        try:
             s = FUNCS[name](cfg, **kw)
             records.write_summary(cfg, name, s)
             st.failed = list(s.get("failed") or []) if isinstance(s, dict) else []
-    except Exception as exc:
-        manifest.record(cfg, name, "failed", seconds=round(time.time() - t0, 1), error="%s: %s" % (type(exc).__name__, exc),
-                        code=code, inputs=inputs)
-        raise
-    dropped = name in confirm.VALUE_KEYS and name not in cfg.get("_confirmed", {})
-    rcfg = report.resolved(cfg, without=name if dropped else None)   # the record holds what the step really used
-    items = confirm.judgements(rcfg, name, s) if name in confirm.CONFIRM_STEPS else []
-    rec = manifest.record(
-        cfg, name, "partial" if st.failed else "done", seconds=round(time.time() - t0, 1),
-        params=report.used_params(rcfg, name), to_confirm=items, basis=confirm.basis(rcfg, name, items),
-        error="%d items failed, e.g. %s" % (len(st.failed), "; ".join(st.failed[:3])) if st.failed else None,
-        code=code, inputs=inputs)
-    try:
-        report.write_step_report(rcfg, name, s, rec)
-    except Exception as exc:                             # a report must never fail a finished step
-        print("  (step report not written: %s)" % exc, flush=True)
-    if st.failed:
-        raise records.StepIncomplete(
-            "step %s: %d items failed (listed in records/summary/%s.json, 'failed'), e.g. %s.  Repair or remove the "
-            "files, or leave the stations / days out (data.exclude_stations, data.start_date / end_date), then\n"
-            "  lant run all -c %s" % (name, len(st.failed), name, "; ".join(st.failed[:3]), cfg["_config_file"]))
+            dropped = name in confirm.VALUE_KEYS and name not in cfg.get("_confirmed", {})
+            rcfg = report.resolved(cfg, without=name if dropped else None)
+            items = confirm.judgements(rcfg, name, s) if name in confirm.CONFIRM_STEPS else []
+            rec = manifest.record(
+                cfg, name, "partial" if st.failed else "done", seconds=round(time.time() - t0, 1),
+                params=report.used_params(rcfg, name), to_confirm=items, basis=confirm.basis(rcfg, name, items),
+                error="%d items failed, e.g. %s" % (len(st.failed), "; ".join(st.failed[:3])) if st.failed else None,
+                code=code, inputs=inputs)
+            try:
+                report.write_step_report(rcfg, name, s, rec)
+            except Exception as exc:
+                records.log(cfg, step=name, event="report_failed", error=str(exc))
+                import sys
+                print("[lant] report failed: %s; see run_log.jsonl" % exc, file=sys.stderr)
+        except BaseException as exc:
+            manifest.record(cfg, name, "failed", seconds=round(time.time() - t0, 1),
+                            error="%s: %s" % (type(exc).__name__, exc), code=code, inputs=inputs)
+            raise
+        if st.failed:
+            raise records.StepIncomplete(
+                "step %s: %d items failed (listed in the step summary); repair or exclude failed inputs, then "
+                "run lant run all -c %s" % (name, len(st.failed), cfg["_config_file"]))
     return s

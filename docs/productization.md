@@ -27,3 +27,7 @@ Cleanup previews by default, holds the project lock when executing, removes only
 ## Acceptance
 
 Use the same raw synthetic inputs for old/new comparison. Compare measurement grids, accepted masks, rejection codes and solver input semantics. Random solver checks use scientific diagnostics, not bitwise comparisons or seed patches. Test relocation, missing outputs, locks, cleanup, interrupt recovery, JSON isolation and installation outside the source tree. Record actual validation and limitations with the final review handoff.
+
+## Progress and logs
+
+`lant run ... -v` shows detailed output. Normally, step stdout goes to the managed `lant.log` (10 MiB per file, three backups); stderr carries progress and the final summary. `LANT_PROGRESS=off` disables progress. Long stages without a reliable total emit a heartbeat; ETA is approximate and shown only after counted work has started.

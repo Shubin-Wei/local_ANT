@@ -22,6 +22,8 @@ import os
 import time
 from multiprocessing import Pool
 
+from .progress import track
+
 import h5py
 import numpy as np
 from scipy.ndimage import uniform_filter1d
@@ -312,7 +314,7 @@ def run(cfg):
         os.environ[v] = str(c["threads_per_process"])
     msgs, failed, skipped = {}, [], []
     with Pool(nproc) as pool:
-        for day, msg, fails in pool.imap_unordered(process_day, tasks):
+        for day, msg, fails in track(pool.imap_unordered(process_day, tasks), len(tasks), "days"):
             print("  %s %s" % (day, msg), flush=True)
             msgs[day] = msg
             failed += ["%s %s" % (day, f) for f in fails]

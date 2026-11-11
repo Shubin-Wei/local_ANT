@@ -98,6 +98,7 @@ def resolved(cfg, without=None):
         return cfg
     if without:
         new["_confirmed"].pop(without, None)
+    new["_verbose"] = cfg.get("_verbose", False)
     return auto.apply(new)
 
 
@@ -462,7 +463,9 @@ def write_step_report(cfg, step, summary, rec=None):
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "%s.md" % step), "w") as fh:
         fh.write("```\n" + txt.strip("\n") + "\n```\n")
-    print(txt, flush=True)
+    if cfg.get("_verbose"):
+        import sys
+        print(txt, file=sys.stderr, flush=True)
     return txt
 
 

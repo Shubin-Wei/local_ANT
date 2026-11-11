@@ -33,6 +33,8 @@ import shutil
 from collections import Counter, defaultdict
 from multiprocessing import Pool
 
+from .progress import track
+
 import numpy as np
 
 from . import data as D
@@ -377,12 +379,10 @@ def run(cfg):
             tasks.append((s, rr, t0, opt))
     stats, new_rows = [], []
     with Pool(nproc) as pool:
-        for k, (name, rr, stat) in enumerate(pool.imap_unordered(_clean_station_day, tasks, chunksize=4)):
+        for k, (name, rr, stat) in enumerate(track(pool.imap_unordered(_clean_station_day, tasks, chunksize=4), len(tasks), "station-days")):
             stats.append(stat)
             if rr:
                 new_rows.extend(rr)
-            if (k + 1) % 200 == 0:
-                print("  cleaned %d / %d station-days" % (k + 1, len(tasks)), flush=True)
     reused = sum(1 for s in stats if s.pop("reused", 0))
     if reused:
         rep.append("  %d of %d station-days taken from the archive of an earlier run (same raw files and settings); "

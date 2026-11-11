@@ -183,6 +183,7 @@ def cmd_run(a):
             sys.exit(max(codes))
         a.config = cfgs[0]
     cfg = _cfg(a.config)
+    cfg["_verbose"] = a.verbose
     chain = a.steps == ["all"]
     steps = a.steps
     if chain:
@@ -305,6 +306,7 @@ def main(argv=None):
     q.add_argument("--from", dest="from_step")
     q.add_argument("--to", dest="to_step")
     q.add_argument("--what", default="all", choices=("main", "checks", "all"))
+    q.add_argument("-v", "--verbose", action="store_true", help="show detailed step output")
     q.add_argument("--debug", action="store_true")
     q.add_argument("--rebuild", action="store_true", help="move the old results of the steps run to *_old first")
     q.set_defaults(fn=cmd_run)
