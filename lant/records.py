@@ -4,7 +4,7 @@
     <output>/.lant/config_history/        earlier versions, kept whenever the configuration changed
     <output>/.lant/run_log.jsonl          one line per step: start, end, status, duration, outputs, messages
     <output>/.lant/summary/<step>.json    the key numbers of each step (what `lant inspect` reports)
-    <output>/.lant/decisions.md           parameter choices and their reasons (written by the user or the AI)
+    <output>/notes.md                     parameter choices and their reasons (appended through lant)
     <output>/.lant/provenance/<id>.json   code version and environment of the runs (lant/provenance.py)
     <output>/.lant/lock                   the process writing to the output directory
 """
@@ -107,10 +107,11 @@ class Step:
         from .provenance import Lock, record
         self.context = contextlib.ExitStack()
         try:
-            from .artifacts import check_roots, snapshot
+            from .artifacts import check_roots, protect_step_outputs, snapshot
             check_roots(self.cfg)
             self.context.enter_context(Lock(rec_dir(self.cfg, create=True)))
             self.before = snapshot(self.cfg)
+            protect_step_outputs(self.cfg, self.name)
             from .delivery import initialize
             initialize(self.cfg)
             save_config(self.cfg)

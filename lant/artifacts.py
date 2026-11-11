@@ -61,6 +61,28 @@ def audit(cfg: dict) -> dict:
     return dict(unregistered=unknown, missing=missing, modified=changed)
 
 
+def protect_step_outputs(cfg, step):
+    """Do not let name-based exporters or figure cleanup overwrite an unregistered file."""
+    directories = {
+        "clean": "01_clean",
+        "cc": paths.CCF,
+        "stack": paths.STACK,
+        "reference": paths.REFERENCE,
+        "disp": paths.DISP,
+        "inversion": paths.INV,
+        "run": paths.INV,
+        "evaluate": paths.INV,
+        "figures": paths.FIG,
+    }
+    prefix = os.path.relpath(paths.P(cfg, directories[step]), cfg["project"]["output_dir"]) + "/"
+    conflicts = [p for p in audit(cfg)["unregistered"] if p.startswith(prefix)]
+    if conflicts:
+        raise RuntimeError(
+            "unregistered files in this step's output directory are protected; relocate them before "
+            "rerunning: " + ", ".join(conflicts[:5])
+        )
+
+
 def is_cache(relative, selection):
     p = PurePosixPath(relative)
     if p.is_absolute() or ".." in p.parts:

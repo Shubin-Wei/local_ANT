@@ -75,3 +75,14 @@ def test_unsafe_inventory_paths_cannot_become_cache():
     assert not artifacts.is_cache("../work/02_ccf/file", ["cc"])
     assert not artifacts.is_cache("/work/02_ccf/file", ["cc"])
     assert not artifacts.is_cache("results/model/file", ["cc", "archive"])
+
+
+def test_step_cannot_overwrite_an_unregistered_figure(tmp_path):
+    cfg = setup_project(tmp_path)
+    figure = tmp_path / "results/figures/2_ccf_moveout_custom.png"
+    figure.parent.mkdir(parents=True)
+    figure.write_bytes(b"user figure")
+    with pytest.raises(RuntimeError, match="protected"):
+        with records.Step(cfg, "figures"):
+            pytest.fail("the exporter must not start")
+    assert figure.read_bytes() == b"user figure"
