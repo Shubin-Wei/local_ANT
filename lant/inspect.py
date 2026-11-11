@@ -122,4 +122,8 @@ def status(cfg):
     cmd, why = manifest.next_action(rcfg, st)
     from .artifacts import audit
     from .delivery import RULES
-    return dict(steps=st, next=dict(command=cmd, why=why), artifacts=audit(cfg), rules=RULES)
+    from .provenance import active_writer
+    writer = active_writer(records.rec_dir(cfg))
+    if writer:
+        cmd, why = None, "a writer is active; wait for it and follow the progress log"
+    return dict(steps=st, next=dict(command=cmd, why=why), artifacts=audit(cfg), rules=RULES, writer=writer)

@@ -106,3 +106,19 @@ def test_missing_cache_is_stale_until_explicitly_marked_cleaned(tmp_path):
     manifest._save(cfg, m)
     state = manifest.status(cfg, check_inputs=False)["clean"]
     assert state["state"] == "done" and state["cache_cleaned"]
+
+
+def test_status_reports_active_writer_without_trusting_stale_pid(tmp_path):
+    from lant import inspect, records
+    from lant.provenance import Lock
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    rec = records.rec_dir(cfg, create=True)
+    with Lock(rec):
+        state = inspect.status(cfg)
+        assert state["writer"]["pid"] == os.getpid()
+        assert state["next"]["command"] is None
+        with open(os.path.join(rec, "lock"), "w") as fh:
+            fh.write("{")
+        assert inspect.status(cfg)["writer"] == {"state": "starting"}
+    assert inspect.status(cfg)["writer"] is None

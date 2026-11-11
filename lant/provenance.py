@@ -128,3 +128,22 @@ class Lock:
             fh.close()
             del Lock._held[self.path]
         return False
+
+
+def active_writer(rec_dir):
+    """Read-only probe: a stale PID record is not evidence that a writer still holds the lock."""
+    import fcntl
+    p = os.path.join(rec_dir, "lock")
+    try:
+        with open(p) as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                text = fh.read().strip()
+                try:
+                    return json.loads(text) if text else {"state": "starting"}
+                except ValueError:
+                    return {"state": "starting"}  # The owner may still be writing its small PID record.
+    except FileNotFoundError:
+        pass
+    return None
