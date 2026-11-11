@@ -1,0 +1,33 @@
+# Tests and the quick synthetic example on every push and pull request.
+# The quick example runs the chain up to the DSurfTomo project (the inversion itself takes minutes and needs no
+# check here beyond the unit tests of the interface); the gates are confirmed automatically because the data are
+# synthetic - never do this with real data.
+name: tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: system packages
+        run: sudo apt-get update && sudo apt-get install -y gfortran make
+      - name: install
+        run: |
+          pip install -e . pytest
+          bash tools/install_external.sh dsurftomo
+      - name: unit tests
+        run: python -m pytest tests -q
+      - name: quick synthetic example (to the inversion project)
+        run: |
+          python examples/synthetic/make_synthetic.py --quick --out /tmp/quick
+          C=/tmp/quick/synthetic.yaml
+          for gate in clean stack reference inversion; do
+            lant run all -c $C --to inversion || true
+            lant confirm $gate -c $C || true
+          done
+          lant run all -c $C --to inversion
+          lant status -c $C --json
+          python examples/synthetic/compare_truth.py --dir /tmp/quick
