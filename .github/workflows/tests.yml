@@ -29,7 +29,7 @@ jobs:
       - name: lint
         run: ruff check lant tests tools examples
       - name: format new infrastructure
-        run: ruff format --check lant/progress.py lant/delivery.py lant/artifacts.py lant/resources.py lant/processes.py tools/run_synthetic.py tests/test_progress.py tests/test_delivery.py tests/test_artifacts.py tests/test_resources.py tests/test_export.py tests/test_processes.py
+        run: ruff format --check lant/progress.py lant/delivery.py lant/artifacts.py lant/resources.py lant/processes.py tools/run_synthetic.py tests/test_progress.py tests/test_delivery.py tests/test_artifacts.py tests/test_resources.py tests/test_export.py tests/test_processes.py tests/test_cli.py
       - name: build distributions
         run: python -m build
       - name: install wheel outside checkout

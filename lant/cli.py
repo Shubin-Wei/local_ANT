@@ -198,7 +198,15 @@ def cmd_run(a):
             codes = []
             for c in cfgs:
                 print("\n[lant] ===== project %s" % c, flush=True)
-                codes.append(subprocess.call([sys.executable, "-m", "lant", "run"] + a.steps + ["-c", c]))
+                flags = ["--what", a.what]
+                for option, value in (("--from", a.from_step), ("--to", a.to_step)):
+                    if value:
+                        flags += [option, value]
+                for option, enabled in (("--debug", a.debug), ("--verbose", a.verbose),
+                                        ("--rebuild", a.rebuild), ("--yes", a.yes)):
+                    if enabled:
+                        flags.append(option)
+                codes.append(subprocess.call([sys.executable, "-m", "lant", "run"] + a.steps + ["-c", c] + flags))
             sys.exit(max(codes))
         a.config = cfgs[0]
     cfg = _cfg(a.config)
@@ -323,7 +331,10 @@ def cmd_install_external(a):
         if not shutil.which(exe):
             raise RuntimeError("external installation needs %s on PATH" % exe)
     env = dict(os.environ, LANT_EXTERNAL=external_path())
-    subprocess.run(["bash", script] + a.programs, env=env, check=True)
+    result = subprocess.run(["bash", script] + a.programs, env=env)
+    if result.returncode:
+        raise RuntimeError("external compilation failed (exit %d); inspect the compiler output and verify "
+                           "git, make and gfortran before retrying" % result.returncode)
 
 
 def cmd_note(a):
