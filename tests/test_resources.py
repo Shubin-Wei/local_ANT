@@ -32,3 +32,21 @@ def test_preflight_rejects_shortage_without_changing_priors(tmp_path, monkeypatc
     monkeypatch.setattr(resources.shutil, "disk_usage", lambda d: usage(100, 90, 10))
     with pytest.raises(RuntimeError, match="additional storage"):
         resources.preflight(cfg, estimate, tmp_path)
+
+
+def test_inactive_page_cache_counts_as_available(tmp_path):
+    proc, group = tmp_path / "proc", tmp_path / "cgroup"
+    (proc / "self").mkdir(parents=True)
+    (proc / "meminfo").write_text("MemAvailable: 80000000 kB\n")
+    (proc / "self/cgroup").write_text("0::/job\n")
+    (group / "job").mkdir(parents=True)
+    (group / "job/memory.max").write_text("8000000000")
+    (group / "job/memory.current").write_text("7900000000")  # mostly cache from reading the raw files
+    (group / "job/memory.stat").write_text("anon 900000000\ninactive_file 6000000000\n")
+    assert resources.available_memory(proc, group) == 6100000000
+
+
+def test_clean_stage_shortages_are_reported_not_raised(tmp_path, monkeypatch):
+    monkeypatch.setattr(resources, "available_memory", lambda: 1000000000)
+    found = resources.shortages(dict(memory_per_process_gb=2, disk_gb=0), tmp_path)
+    assert len(found) == 1 and "one cc process" in found[0]

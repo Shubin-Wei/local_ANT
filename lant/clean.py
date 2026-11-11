@@ -333,9 +333,16 @@ def run(cfg):
     coords = {n: (v["lon"], v["lat"]) for n, v in D.used_stations(cfg).items()}
     npair = CC.pair_indices(sorted(rows), coords, cfg["correlation"]["max_distance_km"])[0].size
     res = CC.resources(cfg, len(rows), npair, len(days))
-    from .resources import preflight
-    preflight(cfg, res, out, est_bytes if cfg["clean"]["write_archive"] else 0)
-    if cfg["project"]["array_type"] == "line" and cfg["data"]["velocity_range_kms"] == [0.1, 5.0]:
+    from .resources import shortages
+    # Advance notice only: clean itself needs neither, memory may be freed before cc, and the clean report is the
+    # evidence for deciding.  cc checks again and refuses; the archive's own disk check follows below.
+    for problem in shortages(res, out, est_bytes if cfg["clean"]["write_archive"] else 0):
+        import sys
+        print("[lant] before cc: %s" % problem, file=sys.stderr)
+        rep.append("  WARNING before cc: %s" % problem)
+    from .config import DEFAULTS
+    if cfg["project"]["array_type"] == "line" and \
+            list(cfg["data"]["velocity_range_kms"]) == list(DEFAULTS["data"]["velocity_range_kms"]):
         import sys
         print("[lant] line array uses the broad default velocity prior; review its scientific suitability "
               "and resource estimate before cc. No prior was changed.", file=sys.stderr)
