@@ -92,7 +92,7 @@ def test_checkerboard_noise_from_the_main_fit(tmp_path, monkeypatch):
 def test_failed_figure_refresh_keeps_previous_complete_image(tmp_path):
     from lant.plotting.figures import _Figures
     figure = _Figures.__new__(_Figures)
-    figure.out, figure.done, figure.skipped = str(tmp_path), {}, {}
+    figure.out, figure.done, figure.skipped, figure.failed = str(tmp_path), {}, {}, set()
     old = tmp_path / "model.png"
     old.write_bytes(b"previous complete image")
     def fail():
@@ -110,3 +110,37 @@ def test_failed_figure_refresh_keeps_previous_complete_image(tmp_path):
     assert old.read_bytes() == b"new complete image"
     assert figure.done["replacement"] == [str(old)]
     assert sorted(p.name for p in tmp_path.iterdir()) == ["model.png"]
+
+
+def test_nothing_to_draw_is_not_a_failure_and_obsolete_variants_go(tmp_path):
+    from lant.plotting.figures import _Figures
+    figure = _Figures.__new__(_Figures)
+    figure.out, figure.done, figure.skipped, figure.failed = str(tmp_path), {}, {}, set()
+    figure.todo = ["ccf_moveout", "recovery"]
+    figure.attempt("recovery", lambda: None)              # no checkerboards: nothing to draw
+    assert figure.skipped["recovery"] == "nothing to draw" and not figure.failed
+    stale = tmp_path / "2_ccf_moveout_7-10Hz.png"         # a band without measurements in the present data
+    stale.write_bytes(b"figure of an earlier run")
+    figure.skipped["2_ccf_moveout_7-10Hz"] = "no phase velocity was measured in this band"
+    figure.remove_old()
+    assert not stale.exists()
+    kept = tmp_path / "2_ccf_moveout_1-2Hz.png"
+    kept.write_bytes(b"previous complete image")
+    figure.attempt("2_ccf_moveout_1-2Hz", lambda: (_ for _ in ()).throw(RuntimeError("GMT failed")))
+    figure.remove_old()
+    assert kept.exists()                                  # a failed group keeps its previous figures
+
+
+def test_figure_with_numbers_keeps_them_and_its_staged_files(tmp_path):
+    from lant.plotting.figures import _Figures
+    figure = _Figures.__new__(_Figures)
+    figure.out, figure.done, figure.skipped, figure.failed = str(tmp_path), {}, {}, set()
+    def stack_time():                                     # like ccf.stack_time: files and key numbers
+        path = figure.path("2_ccf_stack_time_1.png")
+        open(path, "wb").write(b"image")
+        return dict(files=[path], snr_final=12.5)
+    figure.attempt("ccf_stack_time_1", stack_time)
+    assert figure.done["ccf_stack_time_1"] == dict(files=[str(tmp_path / "2_ccf_stack_time_1.png")], snr_final=12.5)
+    figure.todo = ["ccf_stack_time"]
+    figure.remove_old()
+    assert (tmp_path / "2_ccf_stack_time_1.png").exists()

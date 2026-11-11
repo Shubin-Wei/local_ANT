@@ -85,7 +85,7 @@ class _Figures:
         ev_path = paths.P(cfg, paths.INV, "evaluation", "evaluation.json")
         self.ev = json.load(open(ev_path)) if os.path.exists(ev_path) else None
         self.line = cfg["project"]["array_type"] == "line"
-        self.done, self.skipped = {}, {}
+        self.done, self.skipped, self.failed = {}, {}, set()
         self.excluded = {}
         try:
             allst = D.read_canonical(D.canonical_table(cfg["project"]["output_dir"]))
@@ -111,7 +111,10 @@ class _Figures:
         try:
             with tempfile.TemporaryDirectory(prefix=".draw-", dir=destination) as staging:
                 self.out = staging
-                produced = fn()
+                result = fn()  # file list, dict(files=..., numbers...), or None: nothing to draw for these data
+                produced = result.get("files", []) if isinstance(result, dict) else (result or [])
+                if not produced:
+                    self.skipped[n] = "nothing to draw"
                 for path in produced:
                     if not os.path.isfile(path) or not os.path.getsize(path):
                         raise RuntimeError("figure output is missing or empty: %s" % path)
@@ -122,22 +125,25 @@ class _Figures:
                     target = os.path.join(destination, os.path.basename(path))
                     os.replace(path, target)
                     targets.append(target)
-                self.done[n] = targets
+                if targets:
+                    self.done[n] = dict(result, files=targets) if isinstance(result, dict) else targets
             from ..progress import detail
             detail("%d figure tasks completed" % len(self.done))
         except Exception as exc:
             self.skipped[n] = "%s: %s" % (type(exc).__name__, exc)
+            self.failed.add(n)
             print("  figure %s not drawn: %s" % (n, exc), flush=True)
         finally:
             self.out = destination
 
     def remove_old(self):
-        """Remove obsolete variants only after successful replacement; failed groups keep their previous figures."""
+        """Remove obsolete variants after the group was drawn again.  A group with a failed figure keeps its previous
+        ones; a variant left out for the present data (a band without measurements) is obsolete and removed."""
         import glob
-        drawn = {path for files in self.done.values() for path in files}
+        drawn = {path for r in self.done.values() for path in (r["files"] if isinstance(r, dict) else r)}
         for name, pattern in MULTI.items():
             failed = any(key == name or key.startswith(name) or key.startswith(pattern.rstrip("*")) or
-                         (name == "checkerboards" and key.startswith("checkerboard_")) for key in self.skipped)
+                         (name == "checkerboards" and key.startswith("checkerboard_")) for key in self.failed)
             if name in self.todo and not failed:
                 for file in glob.glob(os.path.join(self.out, pattern)):
                     if file not in drawn:
