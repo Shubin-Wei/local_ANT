@@ -30,7 +30,7 @@ def main():
     out = a.output or os.path.join(a.dir, "output")
     td = np.loadtxt(os.path.join(a.dir, "true_dispersion.txt"))
     tm = np.loadtxt(os.path.join(a.dir, "true_model.txt"))
-    curves = read_curves(os.path.join(out, "work", "05_dispersion", "curves"), "C")
+    curves = read_curves(os.path.join(out, "work", "05_dispersion", "curves.csv"), "C")
     acc = {}
     for c in curves:
         for t, v in zip(c["T"], c["v"]):

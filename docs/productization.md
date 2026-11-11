@@ -41,3 +41,7 @@ Use the same raw synthetic inputs for old/new comparison. Compare measurement gr
 ## Resource preflight
 
 Clean estimates memory and storage before writing the archive; cc rechecks immediately before allocating workers. Effective available memory includes readable Linux cgroup limits. The existing 70% memory reserve is retained; only worker count changes. Storage estimates are conservative full-output bounds including replacement space; quotas and future load cannot be guaranteed. A broad line-array velocity prior is flagged without adding a confirmation gate or changing the prior.
+
+## Dispersion table
+
+`work/05_dispersion/curves.csv` is the solver-facing table, retained under `results/dispersion/`. It stores measured values, QC acceptance and inversion selection separately. The inversion columns deliberately preserve the former text export's rounding (period: six decimals, velocity: five, SNR: three, uncertainty: five, coordinates: eight). `disp.h5` retains rejection codes and full diagnostics. One-segment selection and missing-value semantics are unchanged.

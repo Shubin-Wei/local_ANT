@@ -90,7 +90,7 @@ def inv_dir(cfg, *p):
 
 
 def step_inversion(cfg):
-    curves_dir = paths.P(cfg, paths.DISP, "curves")
+    curves_dir = paths.P(cfg, paths.DISP, "curves.csv")
     _need(curves_dir, "disp")
     d = paths.mk(inv_dir(cfg))
     main = inv_dir(cfg, "main")

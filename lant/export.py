@@ -1,24 +1,20 @@
-"""Export of the QC'd dispersion curves.
+"""A single dispersion table with explicit QC/selection flags and solver rounding.
 
-  05_dispersion/logf/CDisp.PAIR.txt           every accepted sample on the measurement (log-frequency) grid:
-                                               freq_Hz period_s velocity_km/s snr uncertainty_km/s
-  05_dispersion/curves/CDisp.PAIR.txt         the curves used by the inversion, on the MEASURED periods (1/f of the
-                                               measurement grid between export.tmin_s and tmax_s; nothing interpolated):
-                                               two header lines "lon lat" of the two stations, then
-                                               period_s velocity_km/s snr uncertainty_km/s   (velocity 0 = no value)
-With export.one_segment, each phase-velocity curve keeps only its longest contiguous run on the measurement grid
-(a tie goes to the higher mean SNR; EGFAnalysisTimeFreq manual, Yao 2015, p. 9: "select only the most continuous
-part with higher SNR"); the samples left out are written as unmeasured rows.
-Uncertainty = the jackknife standard deviation over the sub-stacks: a conditional, uncalibrated measure of the
-repeatability in time (it does not include the reference, the cycle count or the noise directivity), and not used
-by DSurfTomo (every travel time has the same weight).
+The HDF5 measurement remains the full audit product. The CSV retains measured values
+and separate inversion columns matching the previous text export exactly. Jackknife
+uncertainty is conditional, uncalibrated and not used as a weight by DSurfTomo.
 """
+import csv
 import os
 
 import h5py
 import numpy as np
 
 from .signal import runs_of
+
+FIELDS = ("pair", "lon1", "lat1", "lon2", "lat2", "frequency_hz", "period_s", "velocity_kms", "snr",
+          "uncertainty_kms", "accepted_qc", "used_in_inversion", "inversion_period_s", "inversion_velocity_kms",
+          "inversion_snr", "inversion_uncertainty_kms")
 
 
 def longest_run(ok, snr):
@@ -36,58 +32,59 @@ def export(cfg, disp_path, stack_path, out_dir):
     with h5py.File(disp_path, "r") as h:
         freqs = h["freqs"][:]
         pairs = [p.decode() for p in h["pairs"][:]]
-        vc, snr, jc, okc = h["vc"][:], h["snr"][:], h["jk_c"][:], h["ok_c"][:]
+        vc, snr, jc, okc = (h[k][:] for k in ("vc", "snr", "jk_c", "ok_c"))
     with h5py.File(stack_path, "r") as h:
-        lon1, lat1, lon2, lat2 = (h[k][:] for k in ("lon1", "lat1", "lon2", "lat2"))
+        coords = [h[k][:] for k in ("lon1", "lat1", "lon2", "lat2")]
     inside = (1 / freqs >= e["tmin_s"] - 1e-9) & (1 / freqs <= e["tmax_s"] + 1e-9)
-    order = np.argsort(1 / freqs)
-    order = order[inside[order]]
-    for sub in ("logf", "curves"):
-        d = os.path.join(out_dir, sub)
-        os.makedirs(d, exist_ok=True)
-        for old in os.listdir(d):
-            os.remove(os.path.join(d, old))
-    n = {"C": 0, "C_points": 0, "C_points_dropped": 0, "C_two_or_more_segments": 0}
-    for i, p in enumerate(pairs):
-        for kind, v, ok, jk0, sn in (("C", vc, okc, jc, snr),):
-            m = ok[i] & inside
-            if not m.any():
+    ncurves, npoints, dropped, several = 0, 0, 0, 0
+    os.makedirs(out_dir, exist_ok=True)
+    target = os.path.join(out_dir, "curves.csv")
+    with open(target + ".tmp", "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(FIELDS)
+        for i, pair in enumerate(pairs):
+            selected = okc[i] & inside
+            if e["one_segment"]:
+                keep = longest_run(selected, snr[i])
+                if len(runs_of(selected)) > 1:
+                    several += 1
+                    dropped += int(selected.sum() - keep.sum())
+                selected = keep
+            ncurves += int(selected.any())
+            npoints += int(selected.sum())
+            geometry = ["%.8f" % a[i] for a in coords]
+            for k, f in enumerate(freqs):
+                used = bool(selected[k])
+                writer.writerow([pair] + geometry + [repr(float(f)), repr(float(1 / f)), repr(float(vc[i, k])),
+                    repr(float(snr[i, k])), repr(float(jc[i, k])), int(okc[i, k]), int(used),
+                    "%.6f" % (1 / f), "%.5f" % vc[i, k] if used else "0.000",
+                    "%.3f" % snr[i, k] if used else "0.000", "%.5f" % jc[i, k] if used else "0.0000"])
+    os.replace(target + ".tmp", target)
+    return dict(phase_curves=ncurves, phase_points=npoints, curves_with_several_segments=several,
+                points_dropped_by_one_segment=dropped)
+
+
+def read_curves(table, kind="C", tmin=0.0, tmax=99.0):
+    """Return solver-ready curves from selected rows, preserving legacy rounding and order."""
+    if kind != "C":
+        raise ValueError("only phase-velocity curves (C) are supported")
+    grouped = {}
+    with open(table, newline="") as fh:
+        for row in csv.DictReader(fh):
+            if row["used_in_inversion"] != "1":
                 continue
-            if kind == "C" and e["one_segment"]:
-                keep = longest_run(m, sn[i])
-                if len(runs_of(m)) > 1:
-                    n["C_two_or_more_segments"] += 1
-                    n["C_points_dropped"] += int(m.sum() - keep.sum())
-                m = keep
-            jk = jk0[i]
-            head = "%.8f    %.8f\n%.8f    %.8f\n" % (lon1[i], lat1[i], lon2[i], lat2[i])
-            with open(os.path.join(out_dir, "logf", "%sDisp.%s.txt" % (kind, p)), "w") as fh:
-                fh.write(head)
-                for k in np.where(m)[0]:
-                    fh.write("%.5f %.6f %.4f %.2f %.4f\n" % (freqs[k], 1 / freqs[k], v[i, k], sn[i, k], jk[k]))
-            with open(os.path.join(out_dir, "curves", "%sDisp.%s.txt" % (kind, p)), "w") as fh:
-                fh.write(head)
-                for k in order:
-                    if m[k]:
-                        fh.write("%.6f  %.5f  %.3f  %.5f\n" % (1 / freqs[k], v[i, k], sn[i, k], jk[k]))
-                    else:
-                        fh.write("%.6f  0.000  0.000  0.0000\n" % (1 / freqs[k]))
-            n[kind] += 1
-            if kind == "C":
-                n["C_points"] += int(m.sum())
-    return dict(phase_curves=n["C"], phase_points=n["C_points"],
-                curves_with_several_segments=n["C_two_or_more_segments"], points_dropped_by_one_segment=n["C_points_dropped"])
-
-
-def read_curves(curve_dir, kind="C", tmin=0.0, tmax=99.0):
-    """-> list of dict(name, lon1, lat1, lon2, lat2, T [n], v [n]) for the exported curves (velocity > 0 only)."""
-    import glob
-    out = []
-    for f in sorted(glob.glob(os.path.join(curve_dir, "%sDisp.*.txt" % kind))):
-        L = [l.split() for l in open(f) if l.strip()]
-        a = np.array(L[2:], float) if len(L) > 2 else np.zeros((0, 4))
-        m = (a[:, 1] > 0) & (a[:, 0] >= tmin - 1e-9) & (a[:, 0] <= tmax + 1e-9) if len(a) else np.zeros(0, bool)
-        if m.any():
-            out.append(dict(name=os.path.basename(f)[6:-4], lon1=float(L[0][0]), lat1=float(L[0][1]),
-                            lon2=float(L[1][0]), lat2=float(L[1][1]), T=a[m, 0], v=a[m, 1], snr=a[m, 2], unc=a[m, 3]))
-    return out
+            t = float(row["inversion_period_s"])
+            if not (tmin - 1e-9 <= t <= tmax + 1e-9):
+                continue
+            name = row["pair"]
+            curve = grouped.setdefault(name, dict(name=name, **{k: float(row[k]) for k in ("lon1", "lat1", "lon2", "lat2")},
+                                                  values=[]))
+            curve["values"].append((t, float(row["inversion_velocity_kms"]), float(row["inversion_snr"]),
+                                    float(row["inversion_uncertainty_kms"])))
+    curves = []
+    for name in sorted(grouped):
+        curve = grouped[name]
+        values = np.array(sorted(curve.pop("values")))
+        curve.update(zip(("T", "v", "snr", "unc"), values.T))
+        curves.append(curve)
+    return curves

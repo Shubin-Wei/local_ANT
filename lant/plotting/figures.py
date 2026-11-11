@@ -170,7 +170,7 @@ def _example_pairs(F):
 
 
 def _curves_and_start(F):
-    curves = paths.P(F.cfg, paths.DISP, "curves")
+    curves = paths.P(F.cfg, paths.DISP, "curves.csv")
     if F.want("dispersion_curves", [curves]):
         F.attempt("dispersion_curves", lambda: dispersion.all_curves(F.cfg, curves, F.path("3_dispersion_curves")))
     vs1d = paths.P(F.cfg, paths.INV, "vs1d.txt")
