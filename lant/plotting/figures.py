@@ -1,4 +1,4 @@
-"""The standard figure set -> <output>/figures (each figure can also be drawn alone: `lant plot <name>`).
+"""The standard figure set -> <output>/results/figures (each can be drawn alone: `lant plot <name>`).
 
   1_stations             station map over coloured relief, excluded stations as red crosses (GMT)
   2_ccf_moveout_<band>   cross-correlations against distance, one figure per band (the measurement band cut at
@@ -26,7 +26,7 @@ from . import gmt as G
 
 NAMES = ["stations", "ccf_moveout", "ccf_stack_time", "dispersion_pair", "dispersion_curves", "start_model", "kernels",
          "depth_slices", "slices_3d", "sections", "checkerboards", "recovery", "residuals"]
-# figures that exist in several numbered or banded copies: removed before they are drawn again
+# Groups with numbered or banded copies: discard obsolete copies only after successful rendering.
 MULTI = {"ccf_moveout": "2_ccf_moveout*", "ccf_stack_time": "2_ccf_stack_time*", "dispersion_pair": "3_dispersion_pair*",
          "checkerboards": "6_checkerboard_*", "depth_slices": "5_depth_slices*", "slices_3d": "5_slices_3d*"}
 

@@ -1,7 +1,7 @@
 """Step reports and the plan: what a step did (in order, with counts), the key numbers, every parameter it used
 with its value, what the value rests on (lant.params) and where it comes from (written by the user, confirmed,
 derived by a rule with the numbers of the present data, or the default), what to look at, what is left for the user
-to judge, and what to change - printed after the step and kept in <output>/.lant/steps/<step>.md.
+to judge, and what to change - kept in <output>/.lant/steps/<step>.md (printed with -v).
 `lant plan` shows the same parameter table for every step before anything runs.
 
 Nothing here changes a result.

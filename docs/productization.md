@@ -4,6 +4,8 @@
 
 Review baseline: `23b2361` (v1.4.0). Changes are separate, reviewable commits on the existing branch; no publication is implied.
 
+Implementation and validation are recorded in the [review notes](review_notes.md), including checks not performed.
+
 ## Output ownership
 
 | Product | Consumer | Retention |

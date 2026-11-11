@@ -1,4 +1,4 @@
-"""Locations of the external programs built by tools/install_external.sh (inside the repository, git-ignored)."""
+"""Locations of the external programs built by lant install-external (user cache or source checkout)."""
 import os
 import shutil
 

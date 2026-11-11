@@ -9,10 +9,10 @@
   lant plan -c CFG                            what every step will do, with which values and where they come from
   lant run all -c CFG                         run the chain from the first step that does not stand; stops where a
                                               judgement is yours (--from STEP: run again from there; --to STEP;
-                                              --rebuild: move the old results of the steps run to *_old first)
+                                              --rebuild: keep prior step outputs in unique .lant/backups directories)
   lant run STEP [STEP ...] -c CFG             run single steps (clean cc stack reference disp inversion run evaluate figures)
   lant run run -c CFG --what main|checks|all  which DSurfTomo projects to run (default all)
-  lant confirm STEP -c CFG                    confirm what a step left for you to judge (stack: --exclude-candidates)
+  lant confirm STEP -c CFG --reason TEXT      confirm what a step left for you to judge (stack: --exclude-candidates)
   lant status -c CFG [--json]                 the state of every step, why, and the next command
   lant inspect TOPIC -c CFG                   key numbers of a step (TOPIC: data or a step name), as JSON
   lant plot [NAME ...] -c CFG                 draw the figures (default all; names: see lant.plotting.figures)
@@ -395,7 +395,7 @@ def main(argv=None):
     q.add_argument("-v", "--verbose", action="store_true", help="show detailed step output")
     q.add_argument("--debug", action="store_true")
     q.add_argument("--yes", action="store_true", help="acknowledge the displayed rebuild impact")
-    q.add_argument("--rebuild", action="store_true", help="move the old results of the steps run to *_old first")
+    q.add_argument("--rebuild", action="store_true", help="keep prior step outputs in unique .lant/backups directories")
     q.set_defaults(fn=cmd_run)
     q = sub.add_parser("confirm")
     q.add_argument("step", choices=("clean", "stack", "reference", "inversion"))

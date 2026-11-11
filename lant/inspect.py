@@ -2,7 +2,7 @@
 
 Topics: data (station geometry, record length, sampling), auto (the parameters derived from the data and their
 reasons), and every step name (its summary
-plus derived quantities).  The output is JSON (printed, and written to .lant/summary/inspect_<topic>.json), with
+plus derived quantities).  The output is JSON (printed without writing files), with
 the files and figures of the step to look at.  Nothing here changes a result.
 """
 import json
