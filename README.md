@@ -9,9 +9,9 @@
 
 [中文](README.zh.md) | English
 
-![Synthetic dispersion and shear-velocity model](docs/assets/synthetic-result.png)
+![Overview of a synthetic test with a known answer](docs/assets/overview.png)
 
-<sub>**Synthetic test with a known answer** (laterally uniform medium): measured phase velocities and their median against the true dispersion (left); true model, 1-D starting model and horizontally averaged inverted Vs (right). It illustrates the workflow and its output, not the general 3-D resolution.</sub>
+<sub>**Synthetic test with a known answer** (reproducible with `python tools/readme_figure.py`). A random array of 36 stations over a ±6 % chequer pattern of shear velocity with 3-km cells and 2 % incoherent noise. (a) Input pattern and the 612 station pairs used by the inversion. (b) Lateral Vs anomaly recovered by lant at 0.6 km depth. (c) Two-station phase velocities, the reference curve of the array and the true background. (d) True background, 1-D starting model and the horizontal mean and spread of the 3-D model. Recovery weakens towards the edge of the ray coverage; read real models together with their checkerboard tests.</sub>
 
 ## Overview
 
