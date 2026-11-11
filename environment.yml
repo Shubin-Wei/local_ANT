@@ -1,4 +1,5 @@
-# conda env create -f environment.yml && conda activate lant && pip install -e .
+# conda env create -f environment.yml && conda activate lant     (installs lant itself from this checkout)
+# then: lant install-external && lant check
 name: lant
 channels:
   - conda-forge
@@ -19,3 +20,5 @@ dependencies:
   - git
   - pytest
   - pip
+  - pip:
+      - -e .

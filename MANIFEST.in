@@ -1,4 +1,4 @@
-include LICENSE README.md README.zh.md CITATION.cff
+include LICENSE README.md README.zh.md CITATION.cff CONTRIBUTING.md CONTRIBUTING.zh.md environment.yml
 recursive-include lant/_external *.sh *.patch *.f90
 recursive-include docs *.md *.png
 recursive-include config *.yaml

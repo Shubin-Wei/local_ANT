@@ -8,11 +8,32 @@ version = "1.4.0"
 description = "High-frequency ambient-noise surface-wave tomography for dense nodal arrays (raw data to 3-D Vs)"
 readme = "README.md"
 license = {text = "MIT"}
+authors = [{name = "local_ANT contributors"}]
 requires-python = ">=3.8"
+keywords = ["ambient noise", "surface-wave tomography", "seismology", "dense array", "nodal array",
+            "phase velocity", "shear velocity", "DSurfTomo"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = ["numpy>=1.19", "scipy>=1.5", "h5py>=2.10", "obspy>=1.2", "matplotlib>=3.5", "pyyaml>=6.0", "openpyxl>=3.1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7,<9", "pytest-cov>=4,<6", "ruff==0.14.0", "build>=1.2,<1.3"]
+
+[project.urls]
+Homepage = "https://github.com/Shubin-Wei/local_ANT"
+Documentation = "https://github.com/Shubin-Wei/local_ANT/tree/main/docs"
+Issues = "https://github.com/Shubin-Wei/local_ANT/issues"
+Changelog = "https://github.com/Shubin-Wei/local_ANT/blob/main/docs/history.md"
 
 [project.scripts]
 lant = "lant.cli:main"
