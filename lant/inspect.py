@@ -174,7 +174,13 @@ def status(cfg):
         cmd, why = None, "a writer is active (%s); wait for it and follow the progress log" % (what or "unknown")
         if what in st:
             st[what] = dict(st[what], state="running", recorded_state=st[what]["state"])
-        files = dict(unregistered=[], missing=[], modified=[], deferred="checked when no writer is active")
+        files = dict(
+            unregistered=[],
+            missing=[],
+            modified=[],
+            deferred="checked when no writer is active",
+            scratch=dict(files=0, bytes=0),
+        )
     else:
         from .artifacts import interrupted
 

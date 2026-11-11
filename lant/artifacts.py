@@ -30,22 +30,74 @@ def check_roots(cfg):
                     raise RuntimeError("managed paths must not be symlinks: %s" % candidate)
 
 
+SCRATCH = "scratch"  # the one place for temporary scripts, extracts and figures; not audited, safe to delete
+
+
+def _users(cfg, root):
+    """Relative paths at the top of the project that belong to the user, not to lant: the notes, and the
+    configuration, station table and raw directory when they were put inside the project."""
+    out = {"notes.md"}
+    for value in (cfg.get("_config_file"), cfg.get("data", {}).get("station_file"), cfg.get("data", {}).get("raw_dir")):
+        if value:
+            rel = os.path.relpath(os.path.abspath(value), os.path.abspath(str(root)))
+            if not rel.startswith(".."):
+                out.add(Path(rel).as_posix())
+    return out
+
+
 def snapshot(cfg):
+    """Every file of the project lant could have written: the managed directories, and anything else at the top of
+    the project (where stray files of a person or an assistant would land), except the user's own files and
+    scratch/."""
     root = Path(cfg["project"]["output_dir"])
+    users = _users(cfg, root)
     found = {}
-    for name in MANAGED:
+    trees = list(MANAGED)
+    if root.is_dir():
+        for entry in sorted(os.scandir(str(root)), key=lambda e: e.name):
+            if entry.name in MANAGED or entry.name == SCRATCH or entry.name in users:
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                trees.append(entry.name)
+            else:
+                try:
+                    found[entry.name] = signature(os.lstat(entry.path))
+                except FileNotFoundError:
+                    pass
+    for name in trees:
         for directory, dirs, files in os.walk(str(root / name), followlinks=False):
             # Include links as unknown files, but never traverse them.
             files += [d for d in dirs if (Path(directory) / d).is_symlink()]
-            dirs[:] = [d for d in dirs if not (Path(directory) / d).is_symlink()]
+            dirs[:] = [
+                d
+                for d in dirs
+                if not (Path(directory) / d).is_symlink()
+                and (Path(directory) / d).relative_to(root).as_posix() not in users
+            ]
             for file in files:
                 p = Path(directory) / file
+                rel = p.relative_to(root).as_posix()
+                if rel in users:
+                    continue
                 try:
                     st = p.lstat()
                 except FileNotFoundError:  # renamed or removed by a writer after the listing
                     continue
-                found[p.relative_to(root).as_posix()] = signature(st)
+                found[rel] = signature(st)
     return found
+
+
+def scratch_usage(cfg):
+    """Files and bytes under scratch/ (reported so that it is cleared when no longer needed)."""
+    n = size = 0
+    for directory, _, files in os.walk(str(Path(cfg["project"]["output_dir"]) / SCRATCH), followlinks=False):
+        for file in files:
+            try:
+                size += os.lstat(os.path.join(directory, file)).st_size
+                n += 1
+            except FileNotFoundError:
+                pass
+    return dict(files=n, bytes=size)
 
 
 def signature(st):
@@ -76,7 +128,7 @@ def audit(cfg: dict) -> dict:
     unknown = sorted(p for p in current if p not in owned and p not in INTERNAL)
     missing = sorted(p for p in owned if p not in current)
     changed = sorted(p for p in owned if p in current and owned[p] != current[p] and p not in INTERNAL)
-    return dict(unregistered=unknown, missing=missing, modified=changed)
+    return dict(unregistered=unknown, missing=missing, modified=changed, scratch=scratch_usage(cfg))
 
 
 def _pending(cfg):

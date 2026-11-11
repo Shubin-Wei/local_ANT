@@ -411,6 +411,12 @@ def cmd_status(a):
         files = st["artifacts"][key]
         if files:
             print("%s files: %d (%s)" % (key, len(files), ", ".join(files[:5])))
+    scratch = st["artifacts"].get("scratch") or {}
+    if scratch.get("files"):
+        print(
+            "scratch/: %d temporary files (%.1f MB); delete them when no longer needed"
+            % (scratch["files"], scratch["bytes"] / 1e6)
+        )
     if st["artifacts"].get("deferred"):
         print("file audit: %s" % st["artifacts"]["deferred"])
     nxt = st["next"]

@@ -246,3 +246,14 @@ def test_report_opens_with_state_numbers_judgements_and_figures(tmp_path, monkey
         "![5_depth_slices](results/figures/5_depth_slices.png)",
         "![6_checkerboard_cb_1](results/figures/6_checkerboard_cb_1.png)",
     ]
+
+
+def test_a_new_project_carries_the_rules_for_assistants(tmp_path):
+    cfg = project(tmp_path)
+    root = Path(cfg["project"]["output_dir"])
+    cfg["_config_file"] = str(root / "config.yaml")
+    delivery.initialize(cfg)
+    rules = (root / "AGENTS.md").read_text()
+    assert "scratch/" in rules and "lant note" in rules and "lant status -c config.yaml --json" in rules
+    assert (root / "CLAUDE.md").read_text() == "@AGENTS.md\n"  # Claude Code reads CLAUDE.md before AGENTS.md
+    assert "scratch/" in (root / "README.md").read_text()

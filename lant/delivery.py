@@ -14,7 +14,8 @@ RULES = [
     "Read REPORT.md, the step report and its evidence before continuing.",
     "The user decides scientific judgements; assistants must not confirm on their own.",
     "Do not loosen QC or alter scientific priors for more points or prettier figures.",
-    "Append notes with lant note; do not create scripts or extra logs inside managed directories.",
+    "Write no files of your own into this project except notes (lant note) and temporary files under scratch/; "
+    "lant status lists every other file it did not write.",
     "Configuration changes require a recorded reason; --yes is not scientific authorization.",
 ]
 
@@ -52,6 +53,42 @@ def initialize(cfg: dict) -> None:
     readme = root / "README.md"
     if not readme.exists():
         atomic_text(readme, PROJECT_README + "\n".join("- " + r for r in RULES) + "\n")
+    config = cfg.get("_config_file") or "CONFIG"
+    if config != "CONFIG":
+        rel = os.path.relpath(os.path.abspath(config), os.path.abspath(str(root)))
+        config = rel if not rel.startswith("..") else os.path.abspath(config)
+    if not (root / "AGENTS.md").exists():  # read by Codex and other coding agents in this directory
+        atomic_text(root / "AGENTS.md", PROJECT_AGENTS.replace("CONFIG", config))
+    if not (root / "CLAUDE.md").exists():  # Claude Code reads CLAUDE.md first; the import brings in AGENTS.md
+        atomic_text(root / "CLAUDE.md", "@AGENTS.md\n")
+
+
+PROJECT_AGENTS = """# Rules for AI assistants in this lant project
+
+This directory is written by lant.  Start with REPORT.md and `lant status -c CONFIG --json`.
+
+## Files
+
+- Create files only in two ways: notes with `lant note "text" -c CONFIG`, and temporary scripts, extracts or
+  figures under `scratch/` (create it when needed; delete what you no longer need).  Nowhere else in this
+  directory, and not in the raw-data directory or the lant repository.
+- Do not edit or delete anything under `work/`, `results/` or `.lant/`, nor REPORT.md, README.md or this file;
+  lant writes them.  Change the configuration only when the user asks, and record the reason with `lant note`.
+- `lant status -c CONFIG --json` lists under `artifacts.unregistered` every file lant did not write; it should hold
+  only what the user put here.
+
+## Decisions
+
+- When `next.requires_user` is true, show the user the items and figures of `.lant/steps/<step>.md` and wait.  Record
+  the user's decision with `lant confirm STEP -c CONFIG --reason "the user's decision and evidence"`.
+- Do not loosen quality control or change scientific priors to get more points or nicer figures.
+- Report numbers and figures, and say what was not checked.
+
+## Running
+
+- `lant run all -c CONFIG` continues from the first step that does not stand; after an interruption run it again.
+- While `writer` is set in the status, a step is running: wait, do not start another lant command that writes.
+"""
 
 
 PROJECT_README = """# lant project
@@ -69,6 +106,8 @@ figures and links to everything below.
 | `work/` | processing files of every step; caches can be removed with `lant clean-work` |
 | `.lant/` | state, step reports, configuration history, provenance and logs (written by lant only) |
 | `notes.md` | your notes and decisions (`lant note "text" -c CONFIG`) |
+| `scratch/` | temporary files of people and assistants (optional; not checked, safe to delete) |
+| `AGENTS.md`, `CLAUDE.md` | the rules for AI assistants working in this directory |
 
 `vs_model.csv` columns: `longitude_deg`, `latitude_deg` (WGS84), `depth_km` (below the surface of the model),
 `vs_km_s`.  The values are those DSurfTomo wrote (`reproduce/DSurfTomo.inMeasure.dat`), sorted by depth, latitude

@@ -178,3 +178,18 @@ def test_archived_copy_keeps_the_audit_clean(tmp_path):
     shutil.copytree(str(tmp_path / "a"), str(tmp_path / "b"))  # copy2: keeps modification times
     copy = setup_project(tmp_path / "b")
     assert artifacts.audit(copy)["modified"] == []
+
+
+def test_stray_files_at_the_top_of_the_project_are_reported(tmp_path):
+    cfg = setup_project(tmp_path)
+    cfg["_config_file"] = str(tmp_path / "config.yaml")
+    (tmp_path / "config.yaml").write_text("project: {output_dir: .}\n")  # the user's own files
+    (tmp_path / "notes.md").write_text("# Notes\n")
+    (tmp_path / "check_dispersion.py").write_text("print(1)\n")  # what an assistant may leave behind
+    (tmp_path / "tmp_plots").mkdir()
+    (tmp_path / "tmp_plots/a.png").write_bytes(b"png")
+    (tmp_path / "scratch").mkdir()
+    (tmp_path / "scratch/extract.py").write_text("print(2)\n")  # the place for temporary files
+    found = artifacts.audit(cfg)
+    assert found["unregistered"] == ["check_dispersion.py", "tmp_plots/a.png"]
+    assert found["scratch"] == dict(files=1, bytes=9)
