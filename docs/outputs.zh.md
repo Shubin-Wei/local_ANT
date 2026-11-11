@@ -4,9 +4,18 @@
 
 全部结果写在配置的 `project.output_dir` 下，原始数据不会被改动。下面按目录列出每个文件是什么、由哪一步写出、什么时候需要看它。标 ★ 的是每次运行都建议看的文件。
 
-## 工程入口
+## 总览
 
 先打开 `REPORT.md`：每一步的状态和下一条命令、关键数字、留给你判断的事项、主要图件，以及保留成果的链接和各自来自哪次运行。`README.md` 说明各目录和操作规则。`notes.md` 是你的笔记和决定（`lant note`）。
+
+| 文件 | 内容 |
+|---|---|
+| `REPORT.md`、`README.md` | 报告和目录说明（lant 写） |
+| `AGENTS.md`、`CLAUDE.md` | 给在这里工作的 AI 助手的规则（`CLAUDE.md` 引入 `AGENTS.md`） |
+| `notes.md` | 你的笔记和决定（`lant note`） |
+| `scratch/` | 可选：人和助手的临时文件；`lant status` 不检查其中文件（只报告大小），可以随时删除 |
+
+这里以及 `work/`、`results/`、`.lant/` 中任何不是 lant 写的文件，`lant status` 都会列为未登记；lant 不会删除或覆盖它们。
 
 ## results/：保留成果
 
@@ -24,17 +33,6 @@
 | `reproduce/` | `effective.yaml`（含全部取值的配置）、`stations.csv`、平均曲线和一维起始模型，以及求解器文件 `DSurfTomo.in`、`surfdata.dat`、`MOD`、`DSurfTomo.inMeasure.dat` |
 
 逐台对的诊断图留在 `work/05_dispersion/pair_figures/`；棋盘、对照工程及其恢复模型留在 `work/06_inversion/`。
-
-## 输出目录顶层
-
-| 文件 | 内容 |
-|---|---|
-| `REPORT.md`、`README.md` | 报告和目录说明（lant 写） |
-| `AGENTS.md`、`CLAUDE.md` | 给在这里工作的 AI 助手的规则（`CLAUDE.md` 引入 `AGENTS.md`） |
-| `notes.md` | 你的笔记和决定（`lant note`） |
-| `scratch/` | 可选：人和助手的临时文件；`lant status` 不检查其中文件（只报告大小），可以随时删除 |
-
-这里以及 `work/`、`results/`、`.lant/` 中任何不是 lant 写的文件，`lant status` 都会列为未登记；lant 不会删除或覆盖它们。
 
 ## .lant/：运行记录
 

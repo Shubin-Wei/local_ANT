@@ -2,85 +2,101 @@
 
 [中文](quickstart.zh.md) | English
 
-This guide takes about half an hour: installation, a complete run on a small synthetic data set with a known answer, then the switch to your own data. For the principles of each step see [methods.md](methods.md); for the details of operation see [tutorial.md](tutorial.md).
+This guide covers installation, a first run on synthetic data with a known answer, and the setup of a project with your own data; allow about half an hour. Details of every step are in the [tutorial](tutorial.md), the principles in [methods](methods.md).
 
 ## 1. Installation (about 10 minutes)
 
-You need Linux, conda (or mamba) and git.
+Requirements: Linux, conda (or mamba) and git.
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant     # also installs lant from this checkout
-lant install-external      # downloads and builds DSurfTomo and pDSurfTomo
-lant check                          # everything should read ok; missing pieces come with their install command
+conda env create -f environment.yml && conda activate lant   # also installs lant from this checkout
+lant install-external                                        # downloads and builds DSurfTomo and pDSurfTomo
+lant check                                                   # every line should read ok
 ```
 
-## 2. A first run on synthetic data (about 10 minutes)
+`lant check` names the install command for anything missing.
 
-The synthetic data are a noise field of plane Rayleigh waves in a known 1-D model, so the results can be compared with the truth.
-
-**In one command:**
+## 2. Verify the installation with the demo (about 5 minutes)
 
 ```bash
-lant demo --out ~/lant_demo        # writes the data, runs the whole chain, prints where the report is
+lant demo --out ~/lant_demo
 ```
 
-The demo confirms the judgement points itself, which is right only because it made the data; it refuses to work in a directory it did not create. Open `~/lant_demo/output/REPORT.md` when it is done.
+The demo generates a small synthetic array (plane Rayleigh waves in a known 1-D model), runs the whole chain and prints the location of the report, `~/lant_demo/output/REPORT.md`. It confirms the judgement points itself, which is legitimate only because it generated the data; it refuses to run in a directory it did not create.
 
-**Step by step**, to see where the chain stops for you:
+## 3. A run step by step
+
+To see where the chain stops for the user, generate the same data and run them yourself:
 
 ```bash
-python -m lant.synthetic --quick --out ~/lant_quick     # 10 stations, 6 hours, about 1 minute
+python -m lant.synthetic --quick --out ~/lant_quick          # 10 stations, 6 hours, about 1 minute
 lant run all -c ~/lant_quick/synthetic.yaml
 ```
 
-The chain stops where a scientific judgement is needed and prints the files to look at and the next command. The answer of synthetic data is known, so you can confirm directly; **on real data, decide each point yourself after looking at the figures**.
+The chain stops where a scientific judgement is needed and prints the files to look at and the command that continues. With synthetic data the answer is known; **with real data, each decision is yours, made after looking at the figures**.
 
-| Stops at | Question to answer | Look at | On the synthetic data |
+| Step | Question | Evidence | Answer for the synthetic data |
 |---|---|---|---|
-| clean | without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | yes: `lant confirm clean -c … --reason "synthetic data with a known answer"` |
-| stack (when there are candidates) | remove the station sub-stacks listed? | `work/03_stack/station_qc/station_qc.png` | there are no faulty stations, keep them: `lant confirm stack -c … --reason "synthetic data with a known answer"` |
-| reference | do the F-J picks follow the fundamental-mode ridge? | `work/04_reference/fj.png` | yes: `lant confirm reference -c … --reason "synthetic data with a known answer"` |
-| inversion | are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | yes: `lant confirm inversion -c … --reason "synthetic data with a known answer"` |
+| `clean` | Without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | Yes |
+| `stack` (when candidates are listed) | Remove the listed station sub-stacks? | `work/03_stack/station_qc/station_qc.png` | No faulty stations: keep them |
+| `reference` | Do the F-J picks follow the fundamental-mode ridge? | `work/04_reference/fj.png` | Yes |
+| `inversion` | Are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | Yes |
 
-After each confirmation run `lant run all -c ~/lant_quick/synthetic.yaml` again; it continues where it stopped. At any time
+Record each decision and run the chain again; it continues where it stopped:
 
 ```bash
-lant status -c ~/lant_quick/synthetic.yaml     # state of each step, reason and next command
+lant confirm reference -c ~/lant_quick/synthetic.yaml --reason "synthetic data with a known answer"
+lant run all -c ~/lant_quick/synthetic.yaml
+lant status -c ~/lant_quick/synthetic.yaml                     # state of every step and the next command
 ```
 
-When it is done, compare with the truth:
+When the chain has finished, compare the result with the truth:
 
 ```bash
 python examples/synthetic/compare_truth.py --dir ~/lant_quick
 ```
 
-It gives the difference between measured and true phase velocity at each frequency, and between the inverted and the true model. These quick data hold only 6 hours of records, so the numbers are rougher than those of the full example (see [validation.md](validation.md)); for the full example leave out `--quick` (16 stations, 3 days, about 300 MB, about an hour of processing).
+It reports the difference between measured and true phase velocity per frequency, and between the inverted and the true model. Six hours of records give rougher numbers than the full example (16 stations, 3 days, about 300 MB and an hour of processing; leave out `--quick`); see [validation](validation.md).
 
-## 3. Your own data
+## 4. Your own data
 
-Only two things are needed:
+Two inputs are needed:
 
-- **A raw-data directory**: any folder structure and file names, any format ObsPy reads (miniSEED, SAC, …), mixed if you like.
-- **A station table**: CSV, text or Excel with at least station name, longitude and latitude (English and Chinese column names are recognised). For nodes that were moved, add serial numbers and deployment start and end ([tutorial.md](tutorial.md), section 2.2).
+- **Raw records**: one directory with any folder structure and file names, in any format ObsPy reads (miniSEED, SAC, …), formats may be mixed.
+- **Station table**: CSV, text or Excel with at least station name, longitude and latitude; English and Chinese column names are recognised. For nodes that were moved, add serial numbers and deployment times ([tutorial](tutorial.md), section 2.2).
+
+Write a configuration and review it before the first run:
 
 ```bash
-lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
+lant init -o /data/result/config.yaml --raw /data/raw --stations /data/stations.csv --out /data/result
+lant validate -c /data/result/config.yaml      # reads the configuration, the station table and the raw directory
+lant plan -c /data/result/config.yaml          # what every step will do, with which values
 ```
 
-This writes `/data/result/config.yaml` and starts the run. Two settings are worth changing before you start:
+Two settings deserve attention:
 
-- `data.velocity_range_kms`: the approximate range of surface-wave phase velocities in the area. The default 0.1–5 km/s covers soft soil to hard rock, but the lag window is inversely proportional to the slowest velocity, so a wide range makes the correlations much more expensive in time and disk.
-- `data.response`: give the instrument response files if you have them; without them all stations must be of the same model.
+- `data.velocity_range_kms`: the approximate range of surface-wave phase velocities in the area. The default 0.1–5 km/s covers soft soil to hard rock; the lag window is inversely proportional to the slowest velocity, so a range wider than necessary costs computing time and disk. Narrow it only on independent knowledge of the area.
+- `data.response`: instrument response files, if available; without them all stations must be of one instrument model.
 
-Then `lant run all -c /data/result/config.yaml`. The stops are the same as in the synthetic example, but at each one the judgement is yours; [troubleshooting.md](troubleshooting.md) helps with problems on the way, and [outputs.md](outputs.md) explains the result files.
+Then start the chain; the stops are those of section 3:
 
-## 4. Files worth a look after every run
+```bash
+lant run all -c /data/result/config.yaml
+```
 
-| File | Why |
+`lant run all --raw /data/raw --stations /data/stations.csv --out /data/result` writes the same configuration and starts at once. Problems on the way are covered in [troubleshooting](troubleshooting.md).
+
+## 5. After a run
+
+Start with `REPORT.md` in the output directory: the state of every step, key numbers, the items left for you and the main figures, with links to the results. Then check:
+
+| File | Purpose |
 |---|---|
-| `.lant/steps/<step>.md` | what each step did, which parameters it used (value and source), what is left for your judgement |
-| `work/01_clean/coverage.png` | how much data each station has |
-| `work/04_reference/fj.png` | whether the reference curve follows the fundamental mode |
-| `results/figures/3_dispersion_curves.png` | all dispersion curves and the reference |
-| `results/figures/5_depth_slices.png`, `5_slices_3d.png` (lines: `5_sections.png`), `6_checkerboard_*.png` | the model and the scales it can resolve (look at them together) |
+| `.lant/steps/<step>.md` | What each step did, the parameters it used (value and source), what is left for your judgement |
+| `work/01_clean/coverage.png` | Data available per station and day |
+| `work/04_reference/fj.png` | Whether the reference curve follows the fundamental mode |
+| `results/figures/3_dispersion_curves.png` | All dispersion curves and the reference |
+| `results/figures/5_depth_slices.png`, `5_sections.png`, `6_checkerboard_*.png` | The model and the scales it resolves; read them together |
+
+Every output file is described in [output files](outputs.md).

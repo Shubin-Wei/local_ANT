@@ -1,94 +1,122 @@
 # local_ANT
 
+**面向密集节点台阵的高频背景噪声面波成像：从原始记录到三维横波速度模型。**
+
 [![tests](https://github.com/Shubin-Wei/local_ANT/actions/workflows/tests.yml/badge.svg)](https://github.com/Shubin-Wei/local_ANT/actions/workflows/tests.yml)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Development](https://img.shields.io/badge/status-development-orange)](docs/history.md)
+[![release](https://img.shields.io/github/v/release/Shubin-Wei/local_ANT)](https://github.com/Shubin-Wei/local_ANT/releases)
+[![Python](https://img.shields.io/badge/python-3.8%20%7C%203.10%20%7C%203.12-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 中文 | [English](README.md)
 
-密集（节点）台阵高频背景噪声面波成像的完整流程：从原始记录到三维横波速度模型。一个命令行入口 `lant`，一份配置文件；每一步都写出报告，说明做了什么、用了哪些数值、哪些事留给你判断。
-
 ![合成算例频散与横波速度模型](docs/assets/synthetic-result.png)
 
-*已知真值的合成算例：左侧为频散，右侧为横向平均 Vs。这是横向均匀介质示例，不代表一般三维分辨率验证。*
+<sub>**已知真值的合成检验**（横向均匀介质）：实测相速度及其中位数与真实频散的比较（左）；真实模型、一维起始模型与水平平均的反演 Vs（右）。此图用于说明流程及其输出，不代表一般三维分辨率。</sub>
 
-先打开 `OUT/REPORT.md`。科学成果在 `results/`，计算文件在 `work/`，状态和轮转日志在 `.lant/`。手动运行在 stderr 显示进度，`lant run ... -v` 查看详情。见[输出说明](docs/outputs.zh.md)。
+## 概述
 
+lant 是用于密集台阵（面状台阵和测线）高频背景噪声成像的命令行流程。输入为任意目录结构、ObsPy 可读的任意格式的连续原始记录，输出为三维 Vs 模型及其频散数据、分辨率检验和运行报告。
+
+- **三项输入。** 原始数据目录、台站表、输出目录。其余参数均有成文的默认值，或按成文规则由数据推出；每一步的报告列出推导过程及所代入的本数据数值。
+- **科学判断由使用者作出。** 流程只在需要科学判断处停止（例如拾取的脊是否为基阶），给出应查看的图件，并记录决定及其理由。
+- **方法均有依据。** 每一步依据已发表的方法，并注明适用条件；没有文献依据的默认值标为经验值。
+- **可追溯、可续算。** 每一步记录输入、参数、代码版本和输出；参数改变后，受影响的步骤自动标为过时；运行中断后从中断处继续。
+- **成果清晰。** `REPORT.md` 给出各步骤状态、关键数字、待判断事项和主要图件；`results/` 中为表格形式的模型、频散数据、图件和检验结果。
+
+## 处理流程
+
+```mermaid
+flowchart LR
+    A[原始记录] --> B[clean] --> C[cc] --> D[stack] --> E[reference] --> F[disp]
+    F --> G[inversion] --> H[run] --> I[evaluate] --> J[figures]
 ```
-原始记录 ─ clean ─ cc ─ stack ─ reference ─ disp ─ inversion ─ run ─ evaluate ─ figures
-```
 
-| 步骤 | 做什么 | 方法依据 |
+| 步骤 | 内容 | 方法依据 |
 |---|---|---|
-| `clean` | 读任意目录结构、ObsPy 能读的任意格式；把台站表与记录对上；切出处理日；给了响应文件就去仪器响应；检验有没有每秒一次的授时脉冲 | Bensen et al. (2007)；Takagi et al. (2015) |
+| `clean` | 读取记录并与台站表对应，划分处理日；提供响应文件时去除仪器响应；检验每秒一次的授时脉冲 | Bensen et al. (2007)；Takagi et al. (2015) |
 | `cc` | 垂直分量逐小时互相干 | Xu et al. (2021) |
-| `stack` | 叠加和子叠加；台站诊断（留一法的相关系数和时移） | Stehly et al. (2007)；Sens-Schönfelder (2008) |
-| `reference` | 由本台阵的频率—贝塞尔谱得到参考相速度曲线 | Wang et al. (2019) |
-| `disp` | 两台法相速度（相位匹配滤波）、刀切误差、质量控制 | Yao et al. (2006)；Levshin & Ritzwoller (2001)；Bensen et al. (2007) |
-| `inversion`、`run` | 一维起始模型；用 DSurfTomo（或 pDSurfTomo）由走时直接反演三维 Vs | Fang et al. (2015) |
-| `evaluate`、`figures` | 残差、棋盘恢复、对照反演；平面图、剖面等成果图 | Lévêque et al. (1993)；Rawlinson & Spakman (2016) |
-
-## 你给什么，程序定什么
-
-你只需要给三个路径：原始数据、台站表、输出目录。其余参数要么有默认值，要么按写明的规则由数据推出，步骤报告里把每条推导连同代入的数写出来。程序只在需要你做科学判断的地方停下（例如：拾取的是不是基阶），并告诉你看哪张图、下一条命令是什么。
-
-## 适用范围与限制
-
-- 只做垂直分量（ZZ，基阶 Rayleigh 波）。支持面状台阵和线状台阵（一条测线一个项目）。
-- 假定噪声场接近各向同性；噪声方向性带来的偏差没有检验。
-- 只支持 Linux。台站坐标用经纬度（不支持投影坐标）。跨日界线或纬度高于 80° 的台阵会被拒绝。
-- DSurfTomo 最多 60 个周期（pDSurfTomo 80 个）；台距小于约 200 m 的台对，受其单精度坐标影响有测距误差。
-- 不给响应文件时，全部台站必须是同一型号。同型号的个体之间仍有公差，会留下量级为走时 0.1–1 % 的随机相位误差。
-- 合成检验的数字见 [docs/validation.zh.md](docs/validation.zh.md)。
+| `stack` | 叠加与子叠加；以留一法相关系数和时移诊断台站 | Stehly et al. (2007)；Sens-Schönfelder (2008) |
+| `reference` | 由台阵频率—贝塞尔谱得到参考相速度曲线 | Wang et al. (2019) |
+| `disp` | 两台法相速度：相位匹配滤波、刀切法误差、质量控制 | Yao et al. (2006)；Levshin & Ritzwoller (2001)；Bensen et al. (2007) |
+| `inversion`、`run` | 一维起始模型；用 DSurfTomo 或 pDSurfTomo 由走时直接反演三维 Vs | Fang et al. (2015) |
+| `evaluate`、`figures` | 残差、棋盘恢复与对照反演；平面图、剖面和频散图 | Lévêque et al. (1993)；Rawlinson & Spakman (2016) |
 
 ## 安装
 
-lant 从本仓库安装，不在 PyPI 上（`pip install lant` 装到的是同名的无关软件包）。
+环境要求：Linux、conda（或 mamba）、git。lant 从本仓库安装，不在 PyPI 上（PyPI 上的 `lant` 是无关的软件包）。
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6、gfortran 和 lant 本身
-lant install-external                                  # DSurfTomo 和 pDSurfTomo（固定版本）
-lant check                                                      # 缺什么、怎么装，都会列出
-lant demo                                                       # 已知答案的合成台阵，几分钟跑完
+conda env create -f environment.yml && conda activate lant   # Python、ObsPy、GMT 6、编译器及 lant 本身
+lant install-external                                        # 编译固定版本的 DSurfTomo 和 pDSurfTomo
+lant check                                                   # 列出缺失项及其安装方法
 ```
 
 ## 快速开始
+
+先在已知答案的合成台阵上运行完整流程（数分钟）：
+
+```bash
+lant demo --out ~/lant_demo
+```
+
+处理自己的数据：
 
 ```bash
 lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
 ```
 
-这条命令写出 `/data/result/config.yaml` 并开始运行。停下时会打印要看的文件和下一条命令，例如
+该命令写出 `/data/result/config.yaml` 并开始运行。需要科学判断时，流程停止并给出应查看的文件和下一条命令：
 
 ```bash
-lant confirm reference -c /data/result/config.yaml --reason "拾取沿基阶脊（fj.png）"
-lant run all -c /data/result/config.yaml          # 从第一个不成立的步骤接着跑
+lant status -c /data/result/config.yaml        # 各步骤状态及下一条命令
+lant confirm reference -c /data/result/config.yaml --reason "拾取沿 fj.png 中的基阶脊"
+lant run all -c /data/result/config.yaml       # 从第一个不成立的步骤继续
 ```
 
-`lant status -c 配置` 给出每一步的状态和下一条命令；`lant plan -c 配置` 在运行前列出每一步将要做什么。想先在已知答案的数据上试一遍：[docs/quickstart.zh.md](docs/quickstart.zh.md)（约半小时，含安装）。
+`lant plan -c CONFIG` 在运行之前列出每一步将要执行的内容及所用数值。完整的入门过程见[快速上手](docs/quickstart.zh.md)。
+
+## 输出
+
+```text
+/data/result/
+├── REPORT.md     状态、关键数字、待判断事项、主要图件
+├── results/      model/vs_model.csv、dispersion/、figures/、validation/、reproduce/
+├── work/         各步骤的处理文件
+├── .lant/        状态、步骤报告、配置历史、来源记录、日志
+└── notes.md      使用者的笔记与决定
+```
+
+各文件的说明见 [docs/outputs.zh.md](docs/outputs.zh.md)。
+
+## 适用范围与限制
+
+- 仅处理垂直分量（ZZ，基阶 Rayleigh 波）；支持面状台阵和测线（每条测线一个工程）。
+- 假定噪声场接近各向同性；噪声方向性引起的偏差未经检验。
+- 仅支持 Linux。台站坐标须为经纬度；跨越日界线或纬度高于 80° 的台阵不予处理。
+- DSurfTomo 最多支持 60 个周期（pDSurfTomo 为 80 个）；台距小于约 200 m 的台对受其单精度坐标影响存在测距误差。
+- 不提供响应文件时，所有台站须为同一型号仪器；同型号仪器之间的公差会引入约为走时 0.1–1 % 的随机相位误差。
+- 合成检验的具体数字见 [docs/validation.zh.md](docs/validation.zh.md)。
 
 ## 文档
 
-| | |
+| 文档 | 内容 |
 |---|---|
-| [docs/quickstart.zh.md](docs/quickstart.zh.md) | 快速上手：安装，在合成数据上跑完一遍，换成自己的数据 |
-| [docs/tutorial.zh.md](docs/tutorial.zh.md) | 教程：数据准备、每一步的目的、做法、参数和要看的图 |
-| [docs/methods.zh.md](docs/methods.zh.md) | 方法：每一步的原理、公式、文献依据和适用条件 |
-| [docs/outputs.zh.md](docs/outputs.zh.md) | 每个输出文件的内容和什么时候看 |
-| [docs/troubleshooting.zh.md](docs/troubleshooting.zh.md) | 按步骤排列的常见问题与处理 |
-| [docs/parameters.zh.md](docs/parameters.zh.md) | 每个配置键：默认值、含义、默认值的依据 |
-| [docs/ai_workflow.zh.md](docs/ai_workflow.zh.md) | 借助 AI 助手运行流程 |
-| [docs/validation.zh.md](docs/validation.zh.md) | 合成检验及其数字 |
-| [docs/history.zh.md](docs/history.zh.md) | 各版本的变化 |
-| [CONTRIBUTING.zh.md](CONTRIBUTING.zh.md) | 报告问题、开发规范和检查 |
-| [AGENTS.zh.md](AGENTS.zh.md) | 给在本仓库里工作的 AI 助手的说明 |
+| [快速上手](docs/quickstart.zh.md) | 安装、合成数据试运行、处理自己的数据 |
+| [教程](docs/tutorial.zh.md) | 数据准备及每一步的目的、做法、参数和检查要点 |
+| [方法](docs/methods.zh.md) | 原理、公式、文献依据和适用条件 |
+| [参数](docs/parameters.zh.md) | 每个配置键的默认值、含义和依据 |
+| [输出文件](docs/outputs.zh.md) | 每个输出文件的内容及查看时机 |
+| [常见问题](docs/troubleshooting.zh.md) | 按步骤排列的常见问题与处理方法 |
+| [验证](docs/validation.zh.md) | 合成检验及其数字 |
+| [AI 助手](docs/ai_workflow.zh.md) | 借助 AI 助手运行流程 |
+| [版本记录](docs/history.zh.md) | 各版本的变化 |
+| [参与贡献](CONTRIBUTING.zh.md) | 问题报告、开发规范和检查 |
 
 ## 引用
 
-使用本流程时，请引用它所依据的方法（见上表，完整文献在 [docs/parameters.zh.md](docs/parameters.zh.md)）和第三方程序 DSurfTomo（Fang et al. 2015, GJI 201:1251）、pDSurfTomo（Zhu et al. 2026, arXiv:2604.11920，用到时），以及 ObsPy 和 GMT。
+请引用本流程所依据的方法（见上表，完整文献见 [docs/parameters.zh.md](docs/parameters.zh.md)），以及 DSurfTomo（Fang et al. 2015, *Geophys. J. Int.* 201, 1251–1263）、使用时的 pDSurfTomo（Zhu et al. 2026, arXiv:2604.11920）、ObsPy 和 GMT。本软件的引用信息见 [CITATION.cff](CITATION.cff)。
 
 ## 许可
 
-MIT（见 `LICENSE`）。第三方程序由 `lant install-external` 下载编译，保留各自的许可（DSurfTomo MIT、pDSurfTomo GPL-3），不包含在本仓库中。
+MIT，见 [LICENSE](LICENSE)。DSurfTomo（MIT）和 pDSurfTomo（GPL-3）由 `lant install-external` 下载编译，各自保留其许可，不包含在本仓库中。

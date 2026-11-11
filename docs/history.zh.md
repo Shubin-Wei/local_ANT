@@ -21,7 +21,7 @@
 - 内存检查计入作业和容器的限制；`lant clean-work` 按需删除已完成工程的可重建缓存；步骤运行期间也能用 `lant note`。
 
 **上手**
-- `lant demo` 几分钟内用已知答案的合成台阵跑完整条流程；`lant --version`；完整的帮助；配置键拼错时给出建议；出错信息写明下一条命令。
+- `lant demo` 在数分钟内用已知答案的合成台阵运行完整流程；`lant --version`；完整的帮助；配置键拼错时给出建议；出错信息写明下一条命令。
 - `conda env create -f environment.yml` 同时安装 lant；安装的 wheel 自带编译求解器所需的资源。
 
 **AI 助手**

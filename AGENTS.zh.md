@@ -19,7 +19,7 @@
 
 ## 修改本项目代码时
 
-- 结构：`lant/`（每步一个模块：`clean` `cc` `stack` `reference` `disp` `qc` `export`；`pipeline.py` 串起来；`manifest.py` 记录哪些结果成立；`auto.py` 是规则；`confirm.py` 是判断事项；`report.py` 是步骤报告；`params.py` 是每个键的含义和依据；另有 `response.py`、`stations.py`（台站表）、`station_match.py`（记录对应台站）、`pulse.py`（1 s 授时脉冲）、`fj.py`（F-J 谱和脊线）、`inversion/`、`plotting/`；工程基础设施：`paths.py`（目录布局）、`records.py`（步骤上下文、日志）、`artifacts.py`（文件登记、写锁上下文、缓存清理）、`delivery.py`（成果、REPORT、工程规则）、`progress.py`、`processes.py`（求解进程组、进程池看门狗）、`resources.py`（内存和磁盘）、`synthetic.py` 与 `demo.py`（已知答案的数据），`_external/`（第三方程序的编译脚本、补丁、fwd1d 源码）），`config/example.yaml`（由 `lant init` 写出），`docs/`，`examples/synthetic/`（与已知答案的比较），`tests/`（每个模块一个文件，公用函数在 `tests/util.py`）。
+- 结构：`lant/`（每步一个模块：`clean` `cc` `stack` `reference` `disp` `qc` `export`；`pipeline.py` 串起来；`manifest.py` 记录哪些结果成立；`auto.py` 是规则；`confirm.py` 是判断事项；`report.py` 是步骤报告；`params.py` 是每个键的含义和依据；另有 `response.py`、`stations.py`（台站表）、`station_match.py`（记录对应台站）、`pulse.py`（1 s 授时脉冲）、`fj.py`（F-J 谱和脊线）、`inversion/`、`plotting/`；工程基础设施：`paths.py`（目录布局）、`records.py`（步骤上下文、日志）、`artifacts.py`（文件登记、写锁上下文、缓存清理）、`delivery.py`（成果、REPORT、工程规则）、`progress.py`、`processes.py`（求解进程组、进程池看门狗）、`resources.py`（内存和磁盘）、`synthetic.py` 与 `demo.py`（已知答案的数据），`_external/`（第三方程序的编译脚本、补丁、fwd1d 源码）），`config/example.yaml`（完整模板，即 `lant init --full` 写出的内容），`docs/`，`examples/synthetic/`（与已知答案的比较），`tests/`（每个模块一个文件，公用函数在 `tests/util.py`）。
 - 默认值只放在 `lant/config.py`；每个键都要在 `lant/params.py` 里有说明（有测试检查）。改了默认值或方法，要同步改两种语言的 `docs/parameters`（`python tools/make_parameter_doc.py`）、`docs/tutorial` 和 `docs/methods`，并在 `docs/history` 里记下改动。
 - 代码、配置、图中文字用英文。每份文档都有英文版（`x.md`）和中文版（`x.zh.md`），两版逐节对应。
 - 每个模块一个明确的职责，名字说明它做什么。约 500 行时检查是否混入了几个职责（混入了就拆；默认值表不算）；200 行以内不为凑小文件而拆。
@@ -27,8 +27,6 @@
 - 不改 DSurfTomo 和 pDSurfTomo（只有安装脚本里 pDSurfTomo 的内存预留补丁）。
 - 方法和默认值要有出处：文献、理论，或明确标为“经验值”。不要自己造门限。
 
-## 操作与开发边界
+## 处理数据与开发仓库
 
-处理数据时，先读 `REPORT.md`、`lant status --json` 及所指证据；程序产物只通过 lant 生成，笔记用 `lant note "内容" -c CONFIG` 追加。用户授权的配置修改需记录理由。科学确认必须来自用户决定，并通过 `lant confirm STEP -c CONFIG --reason "用户决定及依据"` 留痕；终端类型不证明身份。未登记文件只提示，不删除。清理先用 `lant clean-work -c CONFIG` 预览，实际清理需要 `--execute --yes`。处理数据规则不禁止用户明确授权的仓库开发。
-
-开发遵循[十二条规范](docs/engineering.zh.md)。
+使用者明确要求开发仓库时，处理数据的规则不妨碍开发。记录的理由、交互终端或 `--yes` 都不能证明使用者已作决定；只有使用者的决定才能使确认有效。开发遵循[开发规范](docs/engineering.zh.md)。

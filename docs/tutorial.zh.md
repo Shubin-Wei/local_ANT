@@ -2,7 +2,7 @@
 
 中文 | [English](tutorial.md)
 
-每一步的目的、方法、依据和要看的东西。半小时走一遍见 [quickstart.zh.md](quickstart.zh.md)。原理和公式见 [methods.zh.md](methods.zh.md)；参数的默认值和依据见 [parameters.zh.md](parameters.zh.md)；每个输出文件见 [outputs.zh.md](outputs.zh.md)；遇到问题见 [troubleshooting.zh.md](troubleshooting.zh.md)；与 AI 助手一起运行见 [ai_workflow.zh.md](ai_workflow.zh.md)；合成检验的数字见 [validation.zh.md](validation.zh.md)。
+本文逐步说明每一步的目的、方法、依据和检查要点。初次运行见 [quickstart.zh.md](quickstart.zh.md)。原理和公式见 [methods.zh.md](methods.zh.md)；参数的默认值和依据见 [parameters.zh.md](parameters.zh.md)；每个输出文件见 [outputs.zh.md](outputs.zh.md)；遇到问题见 [troubleshooting.zh.md](troubleshooting.zh.md)；与 AI 助手一起运行见 [ai_workflow.zh.md](ai_workflow.zh.md)；合成检验的数字见 [validation.zh.md](validation.zh.md)。
 
 ## 1. 安装
 
@@ -39,7 +39,7 @@ lant check          # 逐项列出 Python 包、GMT、DSurfTomo、fwd1d 的状�
 
 ### 1.4 先跑合成算例
 
-`lant demo` 生成一个小的合成台阵，几分钟跑完整条流程（见 quickstart.zh.md）。用完整算例逐步运行：
+`lant demo` 生成一个小型合成台阵，在数分钟内运行完整流程（见 quickstart.zh.md）。逐步运行完整算例：
 
 ```bash
 python examples/synthetic/make_synthetic.py              # 16 台、3 天，5–20 分钟，约 300 MB
@@ -52,7 +52,7 @@ python examples/synthetic/compare_truth.py               # 与已知答案比较
 
 ## 2. 准备数据
 
-只需要两样东西：原始数据目录和台站表。不需要整理目录、改文件名、转格式、切天或合并。
+所需输入只有两项：原始数据目录和台站表。无需整理目录、重命名文件、转换格式、按天切分或合并记录。
 
 ### 2.1 原始记录
 
@@ -110,7 +110,7 @@ lant validate -c my.yaml        # 检查配置和台站表
 lant plan -c my.yaml            # 每一步将做什么、用什么值、值从哪里来
 ```
 
-值得一开始就看一眼的键：`data.velocity_range_kms`（默认 0.1–5 km/s，覆盖软土到硬岩；知道本区大致范围时写窄，时延窗和 F-J 扫描都会变小，计算更快）、`data.response`、`data.day_label`（默认 UTC）。其余都有默认值或由数据推出。
+开始前建议检查以下键：`data.velocity_range_kms`（默认 0.1–5 km/s，覆盖软土到硬岩；对研究区有独立认识时可以收窄，时延窗和 F-J 扫描随之变小，计算更快）、`data.response`、`data.day_label`（默认 UTC）。其余都有默认值或由数据推出。
 
 ## 4. 运行
 

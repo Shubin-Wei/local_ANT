@@ -81,14 +81,12 @@ Confirmations are written by `lant confirm` into the `confirmed:` section at the
 | What you see | What to do |
 |---|---|
 | Configuration error (also for removed old keys) | the message names the key and the reason; follow it |
-| A step fails | read the last entry of `run_log.jsonl` and the traceback with `--debug`; a data problem: ask the user; a defect of the program: stop and report |
+| A step fails | read the message, the end of `.lant/lant.log` and, with `--debug`, the traceback; a data problem: ask the user; a defect of the program: stop and report |
 | A step is stale | the configuration or an earlier result changed; run again from the step `next` names; confirmations have to be given again |
 | The output directory is locked | another run is active; do not delete the lock file, find that process first. Notes can still be added with `lant note` |
 | A run was interrupted (Ctrl-C, kill, closed terminal) | run `lant run all -c CONFIG` again: the interrupted step is recorded as failed and solver projects restart from their inputs; do not delete files by hand |
 | The result looks unreasonable | do not "repair" it with parameters; report what you see, the numbers and possible causes, and ask the user |
 
-## Operating and development boundaries
+## 7. Data processing and repository development
 
-For data processing, read `REPORT.md`, `lant status --json` and the linked evidence. Produce managed outputs through lant; append notes with `lant note "text" -c CONFIG`. Record reasons for authorized configuration edits. Scientific confirmation must reflect the user's decision: `lant confirm STEP -c CONFIG --reason "user decision and evidence"`. Terminal mode is not identity verification. Unknown files are reported, never deleted. Preview with `lant clean-work -c CONFIG`; execution requires `--execute --yes`. Data-processing restrictions do not prohibit explicitly authorized repository development.
-
-Follow the [twelve development rules](engineering.md).
+The rules above apply when the assistant processes data. A recorded reason, an interactive terminal or `--yes` are not proof that the user decided; only the user's decision makes a confirmation valid. Files lant did not write are reported, never deleted; `lant clean-work` previews by default and removes caches only with `--execute --yes`. These restrictions do not prevent development of the repository when the user explicitly asks for it; development follows the [development rules](engineering.md).

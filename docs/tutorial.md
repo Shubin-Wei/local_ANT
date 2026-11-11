@@ -2,7 +2,7 @@
 
 [中文](tutorial.zh.md) | English
 
-Purpose, method, basis and what to look at, step by step. A first run in half an hour: [quickstart.md](quickstart.md). Principles and formulas: [methods.md](methods.md); defaults and what they rest on: [parameters.md](parameters.md); every output file: [outputs.md](outputs.md); problems: [troubleshooting.md](troubleshooting.md); running with an AI assistant: [ai_workflow.md](ai_workflow.md); numbers of the synthetic tests: [validation.md](validation.md).
+This tutorial describes the purpose, method, basis and checks of every step. For a first run see [quickstart.md](quickstart.md). Principles and formulas: [methods.md](methods.md); defaults and what they rest on: [parameters.md](parameters.md); every output file: [outputs.md](outputs.md); problems: [troubleshooting.md](troubleshooting.md); running with an AI assistant: [ai_workflow.md](ai_workflow.md); numbers of the synthetic tests: [validation.md](validation.md).
 
 ## 1. Installation
 
@@ -52,7 +52,7 @@ The data are a sum of plane Rayleigh waves of a known 1-D model arriving from ra
 
 ## 2. Preparing the data
 
-You need two things: the raw-data directory and a station table. No sorting into folders, renaming, format conversion, cutting into days or merging.
+Two inputs are needed: the raw-data directory and a station table. The records need no sorting into folders, renaming, format conversion, cutting into days or merging.
 
 ### 2.1 Raw records
 
@@ -110,7 +110,7 @@ lant validate -c my.yaml        # checks the configuration and the station table
 lant plan -c my.yaml            # what every step will do, with which values, and where they come from
 ```
 
-Keys worth a look at the start: `data.velocity_range_kms` (default 0.1–5 km/s, from soft soil to hard rock; a narrower range you know makes the lag window and the F-J scan smaller and the run faster), `data.response`, `data.day_label` (default UTC). Everything else has a default or is derived from the data.
+Keys to review before the first run: `data.velocity_range_kms` (default 0.1–5 km/s, from soft soil to hard rock; a narrower range based on independent knowledge of the area makes the lag window and the F-J scan smaller and the run faster), `data.response`, `data.day_label` (default UTC). Everything else has a default or is derived from the data.
 
 ## 4. Running
 

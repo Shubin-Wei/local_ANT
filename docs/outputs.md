@@ -4,9 +4,18 @@
 
 All results are written under `project.output_dir` of the configuration; the raw data are never changed. The tables below list, directory by directory, what each file holds, which step writes it and when you need it. Files marked ★ are worth a look after every run.
 
-## Project entry points
+## Overview
 
 Open `REPORT.md` first: the state of every step and the next command, key numbers, the items left for you to judge, the main figures, and links to the retained results with the run each comes from. `README.md` explains the directories and the operating rules. `notes.md` holds your notes and decisions (`lant note`).
+
+| File | Content |
+|---|---|
+| `REPORT.md`, `README.md` | the report and the guide to the directory (written by lant) |
+| `AGENTS.md`, `CLAUDE.md` | rules for AI assistants working here (`CLAUDE.md` imports `AGENTS.md`) |
+| `notes.md` | your notes and decisions (`lant note`) |
+| `scratch/` | optional: temporary files of people and assistants; not checked by `lant status` (which reports its size), safe to delete |
+
+Any other file here, or in `work/`, `results/` or `.lant/`, that lant did not write is listed by `lant status` as unregistered; lant never deletes or overwrites it.
 
 ## results/: retained results
 
@@ -24,17 +33,6 @@ Open `REPORT.md` first: the state of every step and the next command, key number
 | `reproduce/` | `effective.yaml` (configuration with every value), `stations.csv`, the average curve and 1-D starting model, and the solver files `DSurfTomo.in`, `surfdata.dat`, `MOD`, `DSurfTomo.inMeasure.dat` |
 
 The per-pair diagnostic figures stay in `work/05_dispersion/pair_figures/`; the checkerboard and control projects with their recovered models stay in `work/06_inversion/`.
-
-## Top of the output directory
-
-| File | Content |
-|---|---|
-| `REPORT.md`, `README.md` | the report and the guide to the directory (written by lant) |
-| `AGENTS.md`, `CLAUDE.md` | rules for AI assistants working here (`CLAUDE.md` imports `AGENTS.md`) |
-| `notes.md` | your notes and decisions (`lant note`) |
-| `scratch/` | optional: temporary files of people and assistants; not checked by `lant status` (which reports its size), safe to delete |
-
-Any other file here, or in `work/`, `results/` or `.lant/`, that lant did not write is listed by `lant status` as unregistered; lant never deletes or overwrites it.
 
 ## .lant/: the run record
 
@@ -98,7 +96,7 @@ One `day_YYYYDDD.h5` per processing day: `hourly [24, pairs, lags]`, the number 
 |---|---|
 | `disp.h5` | per pair and measured frequency: phase velocity `vc`, group velocity `vg`, signal-to-noise ratio, jackknife error, number of cycles, accepted `ok_c`, bit mask of rejection reasons `reason`; band-edge ratios `band_amp` |
 | ★ `median_vs_reference.txt` | per frequency, median of the accepted points minus the reference; a systematic offset points to a problem with the reference curve or the number of cycles |
-| `curves.csv` | Measured samples with QC and inversion-selection flags; separate inversion columns preserve six-decimal periods and five-decimal velocities |
+| `curves.csv` | every pair and measurement frequency: measured values, QC and inversion flags, and the values given to DSurfTomo (periods to six decimals, velocities to five, as before) |
 | `pair_figures/` | single-pair figures (`export.curve_figures` pairs spread evenly over distance, plus the pairs with most rejected points and with the largest departure from the median): velocity–frequency image, picks, rejection reasons |
 
 Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group velocity off the reference, 16 path too short, 32 side lobe, 64 number of cycles undetermined, 128 cycle skip, 512 jackknife error, 4096 group and phase velocities inconsistent, 8192 run too short, 16384 wavelength rule, 32768 no reference curve, 65536 band edge.
