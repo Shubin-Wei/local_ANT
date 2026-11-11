@@ -59,6 +59,7 @@ def cmd_init(a):
     given = {
         k: os.path.abspath(v) for k, v in (("raw_dir", a.raw), ("station_file", a.stations), ("output_dir", a.out)) if v
     }
+    os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True)  # e.g. inside the new output directory
     with open(a.output, "w") as fh:
         fh.write(params.template(full=a.full, **given))
     print(

@@ -91,7 +91,7 @@ def test_noise_derived_by_run_keeps_inversion_current():
 
 
 def test_lock_is_exclusive(tmp_path):
-    """records/lock: a second process cannot take it while the first holds it; nested steps of one process can."""
+    """.lant/lock: a second process cannot take it while the first holds it; nested steps of one process can."""
     import subprocess
     import sys
 

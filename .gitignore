@@ -1,4 +1,4 @@
-# third-party programs built by tools/install_external.sh
+# third-party programs built by lant install-external in a source checkout
 /external/
 # Python
 __pycache__/

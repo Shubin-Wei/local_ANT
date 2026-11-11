@@ -186,3 +186,9 @@ def test_demo_never_works_in_a_directory_it_did_not_make(tmp_path):
     with pytest.raises(RuntimeError, match="not a generated synthetic example"):
         demo.run_known_truth(tmp_path)
     assert sorted(p.name for p in tmp_path.iterdir()) == ["real.mseed"]
+
+
+def test_init_creates_the_directory_of_the_configuration(tmp_path, capsys):
+    config = tmp_path / "result" / "config.yaml"  # the output directory does not exist yet
+    cli.main(["init", "-o", str(config), "--out", str(tmp_path / "result"), "--raw", "raw", "--stations", "s.csv"])
+    assert config.is_file() and "output_dir" in config.read_text()

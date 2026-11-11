@@ -174,8 +174,8 @@ SECTIONS = [
     ),
     (
         "export",
-        "export: curves passed to the inversion (`05_dispersion/curves`)",
-        "export：交给反演的曲线（`05_dispersion/curves`）",
+        "export: curves passed to the inversion (`05_dispersion/curves.csv`)",
+        "export：交给反演的曲线（`05_dispersion/curves.csv`）",
     ),
     ("inversion", "inversion: DSurfTomo (`06_inversion`)", "inversion：DSurfTomo 反演（`06_inversion`）"),
     ("checks", "checks: checkerboards, controls, precheck", "checks：棋盘、对照、预检"),

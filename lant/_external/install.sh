@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Download and build the third-party programs into external/ (git-ignored; nothing of them is stored in this
-# repository).  Fixed versions, so that every installation runs the same code:
+# Download and build the third-party programs into $LANT_EXTERNAL (lant install-external sets it: external/ of a
+# source checkout, or ~/.cache/lant/external for an installed package; nothing of them is stored in this repository).  Fixed versions, so that every installation runs the same code:
 #   DSurfTomo   https://github.com/HongjianFang/DSurfTomo   a651faf (as is)     MIT      inversion, and the 1-D forward fwd1d
 #   pDSurfTomo  https://github.com/zshang825/pDSurfTomo   9956bbb + patch     GPL-3    optional parallel solver (Mode 2)
 #
-#   bash tools/install_external.sh                 both
-#   bash tools/install_external.sh dsurftomo       DSurfTomo + fwd1d only
-#   bash tools/install_external.sh pdsurftomo
+#   lant install-external                 both
+#   lant install-external dsurftomo       DSurfTomo + fwd1d only
+#   lant install-external pdsurftomo
+# (in a source checkout also bash tools/install_external.sh, which calls the same)
 # Needs git, make and gfortran (in the conda environment of environment.yml these are present).
 # The patch lant/_external/pdsurftomo-lowmem.patch only lowers the initial memory reserve per travel time
 # (0.25 -> 0.05 of the model size); the matrix written, and so the model, is the same.

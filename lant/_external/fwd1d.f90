@@ -1,6 +1,6 @@
 ! Forward 1-D Rayleigh dispersion using exactly the DSurfTomo v1.4 chain:
 ! Brocher (2005) Vp/rho from Vs, refineGrid2LayerMdl, surfdisp96.
-! Built by tools/install_external.sh against the unmodified DSurfTomo sources (external/DSurfTomo/src).
+! Built by lant install-external against the unmodified DSurfTomo sources (external/DSurfTomo/src).
 !
 !   fwd1d model.txt periods.txt igr minthk [iwave]
 !
