@@ -43,7 +43,7 @@ def cmd_init(a):
         sys.exit("%s exists (use --force to overwrite)" % a.output)
     given = {k: os.path.abspath(v) for k, v in (("raw_dir", a.raw), ("station_file", a.stations), ("output_dir", a.out)) if v}
     with open(a.output, "w") as fh:
-        fh.write(params.template(**given))
+        fh.write(params.template(full=a.full, **given))
     print("wrote %s\n  1. %s\n  2. lant validate -c %s\n  3. lant plan -c %s\n  4. lant run all -c %s"
           % (a.output, "the three paths are filled in" if len(given) == 3 else "fill in the three paths at its top",
              a.output, a.output, a.output))
@@ -348,6 +348,7 @@ def main(argv=None):
     for f, h in (("--raw", "raw data directory"), ("--stations", "station table"), ("--out", "output directory")):
         q.add_argument(f, help=h)
     q.add_argument("--force", action="store_true")
+    q.add_argument("--full", action="store_true", help="write all keys with their defaults and sources")
     q.set_defaults(fn=cmd_init)
     sub.add_parser("check").set_defaults(fn=cmd_check)
     for name, fn in (("validate", cmd_validate), ("status", cmd_status), ("plan", cmd_plan)):

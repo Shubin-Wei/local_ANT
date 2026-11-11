@@ -100,7 +100,7 @@ The shortest way needs no configuration file:
 lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
 ```
 
-It writes `/data/result/config.yaml` (the three paths and every default with its basis) and starts. To look first:
+It writes `/data/result/config.yaml` (the three paths and common settings; use `lant init --full` for all defaults and their basis) and starts. To look first:
 
 ```bash
 lant init -o my.yaml --raw /data/raw --stations /data/stations.csv --out /data/result
@@ -159,7 +159,7 @@ Every step prints a report and stores it in `.lant/steps/<step>.md`: what it did
 5. Quality control: every rejected sample carries its reasons (bit mask), counted in the report. Criteria include signal-to-noise ratio, jackknife error, a path of at least 2 of the sample's own wavelengths (Luo et al. 2015), run length, agreement of group and phase velocity, and the band edge (frequencies where the amplitude spectrum of the coherent signal, i.e. of the signal window minus the incoherent noise of late lags, over all pairs, is below half its mean inside the filter band are not measured); the basis of every threshold is in parameters.md, and those labelled "empirical" have no literature value.
 6. Export: per pair only the longest continuous segment, written as DSurfTomo input.
 
-**Look at**: `results/figures/3_dispersion_curves.png` (all curves and the reference), `pair_results/figures/` (single pairs: velocity spectrum, picks, reasons), `median_vs_reference.txt`.
+**Look at**: `results/figures/3_dispersion_curves.png` (all curves and the reference), `pair_figures/` (single pairs: velocity spectrum, picks, reasons), `median_vs_reference.txt`.
 
 **Do not loosen the quality control to get more points.** A changed threshold needs its reason in `.lant/decisions.md`.
 

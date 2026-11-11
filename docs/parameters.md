@@ -140,7 +140,7 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `qc.band_edge` | `0.5` | choice | a frequency is not measured where the amplitude spectrum of the coherent signal (all pairs together; signal window minus the later lags, so that the noise level does not matter) is below this fraction of its mean over the filter band (0.5 = -6 dB, the usual definition of a band edge): beyond the band the noise excites, the filter passes only energy of other frequencies (0 = not applied) |
 | `qc.snr_g` | `4.0` | empirical | first gate: the largest SNR of a frequency must reach this |
 
-## 9. export: curves passed to the inversion (`work/05_dispersion/curves`)
+## 9. export: curves passed to the inversion (`05_dispersion/curves`)
 
 | key | default | basis | meaning |
 |---|---|---|---|
@@ -196,7 +196,7 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 
 | key | default | basis | meaning |
 |---|---|---|---|
-| `formats` | `[png, pdf]` | choice | figure formats |
+| `formats` | `[png]` | choice | figure formats |
 | `dpi` | `300` | choice | resolution of the png figures |
 | `topography` | `auto` | choice | relief under the maps; auto: SRTM 1-arc-second tiles (Farr et al. 2007) from the GMT data server, kept in ~/.cache/lant/srtm1 (only the tile names are requested; maps up to 3 degrees wide); or a grid file / GMT remote grid; null: no relief |
 | `vs_range` | `auto` | rule | colour range; auto: 2nd-98th percentile of the model under the stations, to 0.1 km/s |

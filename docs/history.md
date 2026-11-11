@@ -139,3 +139,5 @@ Many parameters of v1.0 were still the values of the author's one array. Changes
 ## Productization (unreleased)
 
 New projects use `work/`, `results/` and `.lant/`, with README and total report entry points. Solver inputs, models and checks are retained separately from working caches. Internal archive paths and configuration snapshots are portable. Progress uses stderr and bounded detail logs; inspect/status no longer write inspection snapshots. No measurement or solver method changes.
+
+Compact `lant init` is now the default; `--full` retains all parameter descriptions. PNG is the default presentation format; add PDF explicitly with `plots.formats`. The dispersion CSV preserves legacy solver rounding and selection semantics.

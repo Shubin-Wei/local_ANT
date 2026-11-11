@@ -83,7 +83,7 @@ def test_params_documented_and_template(tmp_path):
     from lant import params
     keys = [k for k, _ in params.flat(config.DEFAULTS)]
     assert sorted(keys) == sorted(params.DOC) and all(v[0] in params.KINDS and v[1] for v in params.DOC.values())
-    t = params.template()
+    t = params.template(full=True)
     assert all(("%s:" % k.split(".")[-1]) in t for k in keys)
     (tmp_path / "c.yaml").write_text(t)
     config.load(str(tmp_path / "c.yaml"))
@@ -97,3 +97,15 @@ def test_params_documented_and_template(tmp_path):
         c = config.load(write_cfg(tmp_path, "project: {output_dir: o}\ndata: {raw_dir: r, station_file: %s.csv}" % name))
         assert c["project"]["array_type"] == kind and c["_array_type"]["clear"]
         assert (c["reference"]["fj_mode"] == "track_fundamental") == (kind == "line")
+
+
+def test_compact_and_full_templates_have_identical_effective_defaults(tmp_path):
+    from lant import params
+    compact = tmp_path / "compact.yaml"
+    full = tmp_path / "full.yaml"
+    compact.write_text(params.template())
+    full.write_text(params.template(full=True))
+    a, b = config.load(str(compact)), config.load(str(full))
+    assert {k: v for k, v in a.items() if not k.startswith("_")} == {k: v for k, v in b.items() if not k.startswith("_")}
+    assert len(compact.read_text().splitlines()) < 25
+    assert a["plots"]["formats"] == ["png"]

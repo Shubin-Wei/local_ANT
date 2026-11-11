@@ -100,7 +100,7 @@ CSV、空格或制表符分隔的文本（有无表头均可）、Excel、Statio
 lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
 ```
 
-它写出 `/data/result/config.yaml`（三个路径加全部默认值及其依据）并开始运行。想先看配置再跑：
+它写出 `/data/result/config.yaml`（三个路径和常改项；完整模板用 `lant init --full` 查看）并开始运行。想先看配置再跑：
 
 ```bash
 lant init -o my.yaml --raw /data/raw --stations /data/stations.csv --out /data/result
@@ -159,7 +159,7 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 5. 质控：每个被拒的点记录原因（位掩码），报告按原因统计。判据包括信噪比、刀切误差、路径不短于 2 个自身波长（Luo et al. 2015）、连续段长度、群速度与相速度的一致性、频带边缘（相干信号——信号窗减去后段时延的非相干噪声、全部台对合并——的振幅谱低于滤波带内均值一半的频率不测）等；每个门限的依据见 parameters.zh.md，标“经验值”的没有文献取值。
 6. 导出：每个台对只留最长的一段连续曲线，写成 DSurfTomo 的输入。
 
-**看什么**：`results/figures/3_dispersion_curves.png`（全部曲线与参考）、`pair_results/figures/`（单台对：速度谱、拾取、被拒原因）、`median_vs_reference.txt`。
+**看什么**：`results/figures/3_dispersion_curves.png`（全部曲线与参考）、`pair_figures/`（单台对：速度谱、拾取、被拒原因）、`median_vs_reference.txt`。
 
 **不要为了多出点放宽质控。** 门限改了要在 `.lant/decisions.md` 里写明理由。
 

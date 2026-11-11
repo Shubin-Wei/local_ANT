@@ -21,7 +21,7 @@ data:
 # To change a value: uncomment its line AND the section line above it (keep the indentation); keys of
 # `project` and `data` go into the sections above.
 # Line arrays (project.array_type line, or auto on an elongated array) use other defaults for:
-#   data.min_trace_length_s: 600.0, reference.fj_mode: track_fundamental, dispersion.njack: auto, dispersion.qc.dev_c: 0.0, inversion.median_min_pairs: 20, inversion.grid_refine: 1, inversion.line_strip_cells: 1.0, inversion.weight: 1.5, inversion.damp: 1.5, inversion.sparsity: 0.3, checks.controls: [reg_w0.75_d0.75, reg_w3_d3, start_grad0.05]
+#   data.min_trace_length_s: 600.0, reference.fj_mode: track_fundamental, dispersion.njack: auto, inversion.median_min_pairs: 20, inversion.grid_refine: 1, inversion.line_strip_cells: 1.0, inversion.weight: 1.5, inversion.damp: 1.5
 
 # project:
 #   # [choice] project name (figures and records only)
@@ -64,7 +64,7 @@ data:
 #   end_date: null
 
 # clean:
-#   # [technical] write the cleaned day files (about the size of the raw data); false: later steps read the raw files
+#   # [technical] write the cleaned day files (about the size of the raw data); false: later steps read the raw files, and the 1-s periodic signal is not tested (response removal and moved nodes need the archive)
 #   write_archive: true
 #   # [technical] processes
 #   nproc: 4
@@ -131,7 +131,7 @@ data:
 #   normal_dispersion: true
 #   # [empirical] pairs up to this many wavelengths enter the F-J spectrum of a frequency
 #   fj_rmax_lambda: 5.0
-#   # [rule] velocity that turns fj_rmax_lambda into a distance; auto: geometric mean of data.velocity_range_kms
+#   # [rule] velocity that turns fj_rmax_lambda into a distance; auto: the curve picked in a first pass with every pair (two passes)
 #   fj_c_nominal: auto
 #   # [rule] slowest scanned velocity; auto: 0.5 x the slowest of data.velocity_range_kms
 #   fj_cmin: auto
@@ -143,7 +143,7 @@ data:
 #   fj_nfft: auto
 #   # [rule] highest frequency of the fitted picks; auto: the top of the longest run of clear picks
 #   fj_fit_fmax: auto
-#   # [rule] where the ridge tracking starts; auto: the octave with the clearest picks
+#   # [rule] where the ridge tracking starts; auto: of starts every 1/3 octave, the one followed over the most frequencies (on a tie the slower)
 #   track_start_band_hz: auto
 
 # dispersion:
@@ -184,10 +184,6 @@ data:
 #     snr_c: 6.0
 #     # [empirical] jackknife standard error allowed, relative to the velocity
 #     jk_c_rel: 0.02
-#     # [empirical] deviation allowed from the reference curve where it is backed by picks (0 = off)
-#     dev_c: 0.2
-#     # [empirical] step of ln c between neighbouring frequencies allowed, relative to the reference's own step
-#     smooth_c: 0.03
 #     # [empirical] disagreement allowed between the measured group velocity and the one implied by the phase curve (0 = off)
 #     ucons_c: 0.25
 #     # [empirical] height of a competing envelope peak allowed, relative to the pick
@@ -198,7 +194,7 @@ data:
 #     lam_c: 2.0
 #     # [empirical] accepted samples must form runs of at least this many frequencies
 #     min_run: 6
-#     # [choice] a frequency is not measured where the amplitude spectrum of the correlations is below this fraction of its mean over the filter band (0.5 = -6 dB, the usual definition of a band edge): beyond the band the noise excites, the filter passes only energy of other frequencies
+#     # [choice] a frequency is not measured where the amplitude spectrum of the coherent signal (all pairs together; signal window minus the later lags, so that the noise level does not matter) is below this fraction of its mean over the filter band (0.5 = -6 dB, the usual definition of a band edge): beyond the band the noise excites, the filter passes only energy of other frequencies (0 = not applied)
 #     band_edge: 0.5
 #     # [empirical] first gate: the largest SNR of a frequency must reach this
 #     snr_g: 4.0
@@ -243,9 +239,9 @@ data:
 #     iterations: 14
 #     # [technical] 1-D forward: sublayers per node interval
 #     minthk: 3
-#   # [literature] DSurfTomo smoothing weight (Fang et al. 2015); usually below 10
+#   # [empirical] DSurfTomo smoothing weight (Fang et al. 2015); set by hand in the usual range (below 10, mostly below 5), not optimised; lines 1.5
 #   weight: 1.0
-#   # [literature] DSurfTomo damping (Fang et al. 2015); usually 0.5-1
+#   # [empirical] DSurfTomo damping (Fang et al. 2015); set by hand in the usual range 0.5-1.5, not optimised; lines 1.5
 #   damp: 1.0
 #   # [literature] DSurfTomo: sublayers between depth nodes for the kernels (its manual: 2-5)
 #   sublayers: 3
@@ -255,12 +251,12 @@ data:
 #   vmax: auto
 #   # [empirical] DSurfTomo iterations
 #   iterations: 10
-#   # [technical] DSurfTomo: fraction of nonzero kernel entries reserved (memory only)
-#   sparsity: 0.05
+#   # [rule] DSurfTomo: fraction of its matrix reserved for nonzero entries; auto: twice the filling estimated from the paths and the grid, at least 0.05 (too little makes DSurfTomo stop with a segmentation fault; more only costs memory)
+#   sparsity: auto
 #   # [empirical] DSurfTomo: residuals beyond this many quartiles get zero weight
 #   threshold: 3.0
-#   # [empirical] noise added to the synthetic data of the checkerboard tests (relative)
-#   noise: 0.02
+#   # [rule] Gaussian noise added to the synthetic travel times of the checkerboards, a fraction of each time; auto: the relative rms of the residuals of the final main model that DSurfTomo's rejection rule keeps, so that the synthetic data are as noisy as the real data fit (Rawlinson & Spakman 2016); the checkerboards then run after the main project
+#   noise: auto
 #   # [choice] dsurftomo (<= 60 periods) or pdsurftomo (parallel, <= 80 periods)
 #   solver: dsurftomo
 #   # [technical] threads per project
@@ -269,14 +265,14 @@ data:
 #   njobs: 1
 
 # checks:
-#   # [rule] horizontal checkerboards [{name, cell_km}]; auto: cells of 0.12, 0.18 and 0.25 x the aperture
+#   # [rule] horizontal checkerboards [{name, cell_km}]; auto: cells of 0.12, 0.18 and 0.25 x the aperture (lines: 0.165, 0.24, 0.34 x the line length, along the line)
 #   checkerboards: auto
 #   # [rule] depth-varying checkerboards; auto: cell 0.18 x aperture, sign reversals at 0.21, 0.46, 0.71 x the deepest updated node
 #   vertical: auto
 #   # [empirical] checkerboard perturbation, a fraction of the 1-D Vs of each depth
 #   amplitude: 0.1
 #   # [empirical] control inversions: reg_w<w>_d<d> other regularisation, start_grad<f> other starting model
-#   controls: [reg_w0.5_d0.5, reg_w2_d2, start_grad0.05]
+#   controls: [start_grad0.05]
 #   precheck:
 #     # [empirical] a project is invalid when DSurfTomo's rejection rule would keep less than this fraction of the data in the first iteration
 #     min_kept: 0.5
@@ -287,11 +283,11 @@ data:
 
 # plots:
 #   # [choice] figure formats
-#   formats: [png, pdf]
+#   formats: [png]
 #   # [choice] resolution of the png figures
 #   dpi: 300
-#   # [choice] GMT grid file or remote grid (@earth_relief_01s) for relief; none: no relief
-#   topography: null
+#   # [choice] relief under the maps; auto: SRTM 1-arc-second tiles (Farr et al. 2007) from the GMT data server, kept in ~/.cache/lant/srtm1 (only the tile names are requested; maps up to 3 degrees wide); or a grid file / GMT remote grid; null: no relief
+#   topography: auto
 #   # [rule] colour range; auto: 2nd-98th percentile of the model under the stations, to 0.1 km/s
 #   vs_range: auto
 #   # [choice] GMT colour table
@@ -306,5 +302,5 @@ data:
 #   contour_step: auto
 #   # [choice] font size factor
 #   font_scale: 1.0
-#   # [choice] pair drawn in the dispersion example (default: chosen automatically)
+#   # [choice] pair(s) of the single-pair figures (stack time, dispersion): a name or a list; default: three pairs at the 20 / 50 / 80 % quantiles of the distances of the pairs with long curves
 #   pair_example: null

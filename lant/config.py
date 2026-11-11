@@ -194,7 +194,7 @@ DEFAULTS = {
         "iteration_residuals": False,     # evaluate also the model of every iteration (one forward run each)
     },
     "plots": {
-        "formats": ["png", "pdf"],
+        "formats": ["png"],
         "dpi": 300,
         "topography": "auto",             # auto: SRTM 1" tiles from the GMT data server; a grid file; null = no relief
         "vs_range": "auto",               # auto: 2nd-98th percentile of the model under the stations, to 0.1 km/s

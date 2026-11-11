@@ -69,7 +69,7 @@ One `day_YYYYDDD.h5` per processing day: `hourly [24, pairs, lags]`, the number 
 | `disp.h5` | per pair and measured frequency: phase velocity `vc`, group velocity `vg`, signal-to-noise ratio, jackknife error, number of cycles, accepted `ok_c`, bit mask of rejection reasons `reason`; band-edge ratios `band_amp` |
 | ★ `median_vs_reference.txt` | per frequency, median of the accepted points minus the reference; a systematic offset points to a problem with the reference curve or the number of cycles |
 | `curves.csv` | Measured samples with QC and inversion-selection flags; separate inversion columns preserve six-decimal periods and five-decimal velocities |
-| `pair_results/figures/` | single-pair figures (`export.curve_figures` pairs spread evenly over distance, plus the pairs with most rejected points and with the largest departure from the median): velocity–frequency image, picks, rejection reasons |
+| `pair_figures/` | single-pair figures (`export.curve_figures` pairs spread evenly over distance, plus the pairs with most rejected points and with the largest departure from the median): velocity–frequency image, picks, rejection reasons |
 
 Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group velocity off the reference, 16 path too short, 32 side lobe, 64 number of cycles undetermined, 128 cycle skip, 512 jackknife error, 4096 group and phase velocities inconsistent, 8192 run too short, 16384 wavelength rule, 32768 no reference curve, 65536 band edge.
 
@@ -107,4 +107,4 @@ Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group
 | `6_residuals` | travel-time residuals of the starting and the final model: histogram and rms per period | all |
 
 A figure that cannot be drawn is listed in the figures report with the reason (e.g. a band without measurements, or no relief available offline).
-Every figure is written as png and pdf (`plots.formats`).
+PNG is the default; set `plots.formats: [png, pdf]` for vector PDF output as well.

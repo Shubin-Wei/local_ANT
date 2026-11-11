@@ -169,7 +169,7 @@ HEAD = {"en": """# Parameters
 
 [中文](parameters.zh.md) | English
 
-Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` writes the same information into the configuration file, and the step reports (`OUT/records/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
+Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` writes the same information into the configuration file, and the step reports (`OUT/.lant/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
 
 ## 1. How to read the tables
 
@@ -192,7 +192,7 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 
 中文 | [English](parameters.md)
 
-配置文件的每一个键：默认值、含义、默认值的依据。本文件由 `tools/make_parameter_doc.py` 根据 `lant/config.py`（默认值）和 `lant/params.py`（说明）生成；`lant init` 把同样的信息写进配置文件，步骤报告（`输出目录/records/steps/<步骤>.md`）给出每一步实际用的值，由规则推出的值还写出代入你的数据后的推导。
+配置文件的每一个键：默认值、含义、默认值的依据。本文件由 `tools/make_parameter_doc.py` 根据 `lant/config.py`（默认值）和 `lant/params.py`（说明）生成；`lant init` 把同样的信息写进配置文件，步骤报告（`输出目录/.lant/steps/<步骤>.md`）给出每一步实际用的值，由规则推出的值还写出代入你的数据后的推导。
 
 ## 1. 表格怎么读
 

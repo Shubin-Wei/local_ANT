@@ -260,7 +260,7 @@ def describe(key):
     return ("choice", "")
 
 
-def template(raw_dir="/path/to/raw_data", station_file="/path/to/stations.csv", output_dir="/path/to/output", line=None):
+def _full_template(raw_dir="/path/to/raw_data", station_file="/path/to/stations.csv", output_dir="/path/to/output", line=None):
     """Text of a full configuration file for `lant init`: the three required paths, then every other key with its
     default, commented out, with what it means and what its value rests on."""
     import yaml
@@ -315,3 +315,25 @@ def template(raw_dir="/path/to/raw_data", station_file="/path/to/stations.csv", 
             L.append("# %s# [%s] %s" % (ind, kind_, text))
             L.append("# %s%s: %s" % (ind, parts[-1], dump(v)))
     return "\n".join(L) + "\n"
+
+
+def template(raw_dir="/path/to/raw_data", station_file="/path/to/stations.csv", output_dir="/path/to/output", line=None,
+             full=False):
+    """A compact starting point; the complete template uses the same defaults and descriptions."""
+    if full:
+        return _full_template(raw_dir, station_file, output_dir, line)
+    import yaml
+    from . import config as C
+    cfg = C.defaults()
+    dump = lambda v: yaml.safe_dump(v, default_flow_style=True).strip().replace("\n...", "")
+    lines = ["# lant configuration: three required paths; uncomment optional settings as needed.",
+             "# Full template: lant init --full -o full.yaml. Effective values: lant plan -c THIS_FILE.",
+             "project:", "  output_dir: " + dump(output_dir),
+             "  # array_type: auto  # derive surface/line from station geometry",
+             "data:", "  raw_dir: " + dump(raw_dir), "  station_file: " + dump(station_file)]
+    if line:
+        lines.append("  line: " + dump(str(line)))
+    for key in ("velocity_range_kms", "day_label", "response", "exclude_stations", "start_date", "end_date"):
+        lines.append("  # %s: %s  # %s" % (key, dump(cfg["data"][key]), describe("data." + key)[1]))
+    lines += ["# plots:", "#   formats: " + dump(cfg["plots"]["formats"]) + "  # add pdf for vector output"]
+    return "\n".join(lines) + "\n"
