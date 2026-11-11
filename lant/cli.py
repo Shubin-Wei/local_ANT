@@ -225,13 +225,15 @@ def cmd_run(a):
                        ". Retained results will be refreshed; --rebuild keeps a unique working backup.", a.yes)
     if a.rebuild:
         _rebuild(cfg, [s for s in steps if s in forced])
-    for s in steps:
+    for k, s in enumerate(steps):
         kw = {"what": a.what} if s == "run" else {}
+        cfg["_position"] = "%d/%d" % (k + 1, len(steps)) if len(steps) > 1 else ""
         try:
             if chain and s not in forced:
                 st = manifest.status(report.resolved(cfg))[s]
                 if st["state"] == "done":
-                    print("[lant] step %s stands (run %s): not run again" % (s, st.get("time", "")), flush=True)
+                    print("[lant] [%s] step %s stands (run %s): not run again" % (cfg["_position"], s, st.get("time", "")),
+                          flush=True)
                     continue
                 if st["state"] == "to confirm":
                     manifest.gate(report.resolved(cfg), PL.STEPS[PL.STEPS.index(s) + 1])
@@ -248,6 +250,9 @@ def cmd_run(a):
         rc = report.resolved(cfg)
         cmd, why = manifest.next_action(rc, manifest.status(rc))
         print("\n[lant] %s%s" % (why, "\n  next: " + cmd if cmd else ""))
+        if not cmd:
+            from .delivery import finish_lines
+            print("\n".join(finish_lines(rc)))
         if cmd and cmd.startswith("lant confirm"):
             sys.exit(3)
 
@@ -338,13 +343,16 @@ def cmd_install_external(a):
 
 def cmd_note(a):
     from . import artifacts, records
-    from .delivery import atomic_text, initialize
+    from .delivery import append_note, initialize
+    from .provenance import active_writer
     cfg = _cfg(a.config)
+    line = "%s: %s" % (records._now(), a.text)
+    if os.path.isdir(records.rec_dir(cfg)) and active_writer(records.rec_dir(cfg)):
+        print(append_note(cfg, line))                # a step is running: the note does not wait for it
+        return
     with artifacts.writing(cfg, "note"):
         initialize(cfg)
-        file = os.path.join(cfg["project"]["output_dir"], "notes.md")
-        prior = open(file).read() if os.path.exists(file) else "# Notes and decisions\n"
-        atomic_text(file, prior + "\n- %s: %s\n" % (records._now(), a.text))
+        file = append_note(cfg, line)
         records.log(cfg, event="note", text=a.text)
     print(file)
 

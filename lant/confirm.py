@@ -225,12 +225,10 @@ def _confirm(cfg, step, exclude_candidates=False, reason=None, invocation=None):
 def confirm(cfg, step, exclude_candidates=False, reason=None, invocation=None):
     """Serialize configuration changes and bind decisions to current results."""
     from . import artifacts, records
-    from .delivery import atomic_text, write_report
+    from .delivery import append_note, write_report
     with artifacts.writing(cfg, "confirm"):
         entry, rerun = _confirm(cfg, step, exclude_candidates, reason, invocation)
-        note = os.path.join(cfg["project"]["output_dir"], "notes.md")
-        prior = open(note).read() if os.path.exists(note) else "# Notes and decisions\n"
-        atomic_text(note, prior + "\n- %s — %s: %s; evidence: .lant/steps/%s.md; basis: %s; invocation: %s\n" %
+        append_note(cfg, "%s — %s: %s; evidence: .lant/steps/%s.md; basis: %s; invocation: %s" %
                     (entry["_at"], step, entry["_reason"], step, entry["_basis"], entry["_invocation"]))
         records.log(cfg, event="confirmation", step=step, confirmation=entry)
         current = C.load(cfg["_config_file"])

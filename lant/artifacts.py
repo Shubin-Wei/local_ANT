@@ -10,7 +10,7 @@ from . import paths, records
 from .delivery import atomic_text
 
 MANAGED = ("work", "results", ".lant")
-INTERNAL = (".lant/artifacts.json", ".lant/lock", ".lant/pending.json")  # bookkeeping of the writer itself
+INTERNAL = (".lant/artifacts.json", ".lant/lock", ".lant/pending.json", ".lant/notes.lock")  # bookkeeping
 # Cache files by what the steps write; anything else in these directories is never cleaned.
 CACHES = {
     "archive": (("work", "01_clean", "archive"), ("*.mseed", "*.done.json")),

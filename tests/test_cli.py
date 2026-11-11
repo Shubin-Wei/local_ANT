@@ -109,3 +109,44 @@ def test_a_confirmation_is_marked_as_the_users_decision(monkeypatch):
     monkeypatch.setattr(lant.artifacts, "audit", lambda cfg: dict(unregistered=[], missing=[], modified=[]))
     st = inspect.status({"project": {"output_dir": "/nonexistent"}, "_config_file": "c.yaml"})
     assert st["next"]["command"].startswith("lant confirm stack") and st["next"]["requires_user"]
+
+
+def test_note_does_not_wait_for_a_running_step(tmp_path, capsys):
+    from lant.provenance import Lock
+
+    cfg, out = tmp_path / "config.yaml", tmp_path / "out"
+    cfg.write_text("project: {output_dir: out}\ndata: {raw_dir: raw, station_file: stations.csv}\n")
+    (out / ".lant").mkdir(parents=True)
+    with Lock(str(out / ".lant"), "cc"):  # a step is writing
+        cli.main(["note", "noise source seen near station A01", "-c", str(cfg)])
+        cli.main(["note", "second note", "-c", str(cfg)])
+    text = (out / "notes.md").read_text()
+    assert text.count("# Notes and decisions") == 1
+    assert text.index("noise source seen") < text.index("second note")
+    assert not (out / ".lant/run_log.jsonl").exists()  # managed records wait for the writer
+
+
+def test_finished_chain_says_where_to_look(tmp_path):
+    import json
+
+    from lant import delivery
+
+    rec = tmp_path / ".lant/summary"
+    rec.mkdir(parents=True)
+    summaries = {
+        "clean": {"stations": 10, "days": 1},
+        "disp": {"export": {"phase_curves": 35, "phase_points": 840}},
+        "evaluate": {
+            "residuals": {"final": {"rms_ms": 8.14, "n": 810}, "iterations": [{"model": "start", "rms_ms": 20.68}]},
+            "checkerboards": {"cb_1": {}},
+        },
+        "figures": {"drawn": {"stations": []}},
+    }
+    for step, data in summaries.items():
+        (rec / ("%s.json" % step)).write_text(json.dumps(data))
+    lines = delivery.finish_lines({"project": {"output_dir": str(tmp_path)}})
+    assert lines[0].endswith("REPORT.md") and "results" in lines[1]
+    assert lines[2] == (
+        "  10 stations, 1 processing day; 35 phase-velocity curves (840 points); residual rms of all 810 "
+        "travel times 20.7 -> 8.1 ms; 1 checkerboard test; 1 figure"
+    )

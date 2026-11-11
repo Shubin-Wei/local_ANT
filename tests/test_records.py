@@ -122,3 +122,14 @@ def test_status_reports_active_writer_without_trusting_stale_pid(tmp_path):
             fh.write("{")
         assert inspect.status(cfg)["writer"] == {"state": "starting"}
     assert inspect.status(cfg)["writer"] is None
+
+
+def test_step_progress_names_its_place_in_the_chain(tmp_path, capsys):
+    from lant import records
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    cfg["_position"] = "6/9"
+    with records.Step(cfg, "run"):
+        pass
+    assert "[lant] [6/9] run " in capsys.readouterr().err

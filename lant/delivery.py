@@ -229,3 +229,64 @@ def write_report(cfg: dict) -> None:
                 )
             )
     atomic_text(root / "REPORT.md", "\n".join(lines) + "\n")
+
+
+def key_numbers(cfg):
+    """A few numbers that tell what the run produced, from the step summaries (absent steps are left out)."""
+
+    def summary(step):
+        return records.read_summary(cfg, step) or {}
+
+    def count(n, word):
+        return "%d %s%s" % (n, word, "" if n == 1 else "s")
+
+    out = []
+    clean = summary("clean")
+    if clean.get("stations"):
+        out.append("%s, %s" % (count(clean["stations"], "station"), count(clean.get("days", 0), "processing day")))
+    export = summary("disp").get("export") or {}
+    if "phase_curves" in export:
+        out.append(
+            "%s (%s)" % (count(export["phase_curves"], "phase-velocity curve"), count(export["phase_points"], "point"))
+        )
+    residuals = summary("evaluate").get("residuals") or {}
+    start = next((r for r in residuals.get("iterations") or [] if r.get("model") == "start"), None)
+    final = residuals.get("final") or {}
+    if final.get("rms_ms") is not None:
+        out.append(
+            "residual rms of all %d travel times %s%.1f ms"
+            % (final.get("n", 0), "%.1f -> " % start["rms_ms"] if start else "", final["rms_ms"])
+        )
+    checks = summary("evaluate").get("checkerboards") or {}
+    if checks:
+        out.append(count(len(checks), "checkerboard test"))
+    drawn = summary("figures").get("drawn") or {}
+    if drawn:
+        out.append(count(len(drawn), "figure"))
+    return out
+
+
+def finish_lines(cfg):
+    """What a finished chain tells the user: where to look, and what it produced."""
+    root = Path(cfg["project"]["output_dir"])
+    lines = ["  report:  %s" % (root / "REPORT.md"), "  results: %s/" % (root / "results")]
+    numbers = key_numbers(cfg)
+    if numbers:
+        lines.append("  " + "; ".join(numbers))
+    return lines
+
+
+def append_note(cfg, line):
+    """Append one line to notes.md under its own small lock, not the project lock: notes can be written while a
+    step runs.  Appending keeps every earlier line; notes.md is the user's file, not a managed output."""
+    import fcntl
+
+    root = Path(cfg["project"]["output_dir"])
+    rec = Path(records.rec_dir(cfg, create=True))
+    file = root / "notes.md"
+    with open(str(rec / "notes.lock"), "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        new = not file.exists()
+        with open(str(file), "a", encoding="utf-8") as fh:
+            fh.write(("# Notes and decisions\n" if new else "") + "\n- %s\n" % line)
+    return file

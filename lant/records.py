@@ -134,7 +134,8 @@ class Step:
 
             self.context.enter_context(contextlib.redirect_stdout(Output()))
             print("[lant] step %s started" % self.name, flush=True)
-            self.context.enter_context(Progress(self.name))
+            position = self.cfg.get("_position")            # "6/9" within lant run all
+            self.context.enter_context(Progress("[%s] %s" % (position, self.name) if position else self.name))
             return self
         except BaseException:
             self.context.close()
