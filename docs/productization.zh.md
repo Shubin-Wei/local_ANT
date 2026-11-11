@@ -49,3 +49,5 @@ clean 在写归档前估算内存和空间，cc 分配任务前再次检查。�
 ## 安装资源
 
 `lant install-external [dsurftomo|pdsurftomo]` 使用 wheel 和源码发行包内的资源。安装包默认写入 `$XDG_CACHE_HOME/lant/external`（或 `~/.cache/lant/external`），源码工作区使用自身 `external/`；两者都可用 `LANT_EXTERNAL` 覆盖。源码脚本保留为便捷入口。编译输入及既有内存补丁移动至 `lant/_external/`，不改变科学实现。
+
+求解进度在日志可读时显示 DSurfTomo 日志末尾观测到的迭代次数。日志尚未刷新时退回耗时心跳，不把观测到的迭代数当作准确百分比或剩余时间保证。绘图显示已完成任务数。

@@ -16,6 +16,7 @@ class Progress:
         self.interval = interval if interval is not None else (1 if self.tty else 30)
         self.disabled = os.environ.get("LANT_PROGRESS", "auto").lower() in ("off", "0", "false")
         self.done, self.total, self.unit = 0, None, "tasks"
+        self.detail = ""
         self.started = time.monotonic()
         self.stop = threading.Event()
         self.guard = threading.Lock()
@@ -34,6 +35,8 @@ class Progress:
                 n = min(20, int(20 * self.done / self.total))
                 bar = "[" + "=" * n + " " * (20 - n) + "] "
             line = "[lant] %s %s%s, elapsed %.0fs%s" % (self.label, bar, count, elapsed, eta)
+            if self.detail:
+                line += "; " + self.detail
             self.stream.write(("\r\033[K" if self.tty else "") + line + ("" if self.tty else "\n"))
             self.stream.flush()
 
@@ -71,3 +74,10 @@ def track(items, total, unit):
         if p:
             with p.guard:
                 p.done += 1
+
+
+def detail(text):
+    """Observed substage information; it does not imply a percent or reliable ETA."""
+    if _current:
+        with _current.guard:
+            _current.detail = text

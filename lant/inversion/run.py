@@ -66,6 +66,20 @@ def status(d):
     return "unfinished"
 
 
+def observed_iteration(project):
+    """Read only a bounded log tail; buffered logs may have no iteration information yet."""
+    import re
+    path = os.path.join(project, "DSurfTomo.in.log")
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(max(0, os.path.getsize(path) - 65536))
+            text = fh.read().decode("utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+    matches = re.findall(r"(\d+)(?:st|nd|rd|th)\s+iteration", text, re.IGNORECASE)
+    return int(matches[-1]) if matches else None
+
+
 def run_one(d, binary, threads):
     st = status(d)
     if st == "done":
@@ -76,8 +90,23 @@ def run_one(d, binary, threads):
     if os.path.basename(binary) == "pDSurfTomo":
         open(os.path.join(d, "ParallelConfig.in"), "w").write(
             "tt_senK_lsmr = parallel, parallel, default\nThreadNum = %d\nInvResultDir = InvResult\n" % threads)
+    progress_errors = []
+
+    def show_iteration():
+        from ..progress import detail
+        try:
+            iteration = observed_iteration(d)
+        except OSError as exc:
+            if not progress_errors:
+                print("  iteration progress unavailable: %s" % exc, flush=True)
+                progress_errors.append(str(exc))
+            return
+        if iteration is not None:
+            detail("%s: observed iteration %d" % (os.path.basename(d), iteration))
+
     with open(os.path.join(d, "run.log"), "w") as fh:
-        rc = run_process([binary, "DSurfTomo.in"], cwd=d, env=env, stdout=fh, stderr=subprocess.STDOUT).returncode
+        rc = run_process([binary, "DSurfTomo.in"], cwd=d, env=env, stdout=fh,
+                         stderr=subprocess.STDOUT, on_poll=show_iteration).returncode
     if rc != 0:
         return d, "FAILED: exit status %d (see %s/run.log)" % (rc, d)
     if status(d) != "done":

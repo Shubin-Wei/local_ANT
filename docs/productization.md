@@ -49,3 +49,5 @@ Clean estimates memory and storage before writing the archive; cc rechecks immed
 ## Installation resources
 
 `lant install-external [dsurftomo|pdsurftomo]` uses resources bundled in the wheel and source distribution. Installed packages default to `$XDG_CACHE_HOME/lant/external` (or `~/.cache/lant/external`); a source checkout uses its `external/` directory. `LANT_EXTERNAL` overrides both. The source wrapper remains a convenience entry point. Compiler inputs and the existing memory-only patch moved into `lant/_external/` without scientific changes.
+
+Solver progress includes the last observed iteration from the bounded DSurfTomo log tail when available. Buffered logs fall back to elapsed-time heartbeats; observed iterations are not a guarantee of percentage or remaining time. Figure tasks report their completed count.

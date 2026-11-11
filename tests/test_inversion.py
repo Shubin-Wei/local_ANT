@@ -93,3 +93,13 @@ def test_forward_period_order():
     c = forward(z, vs, T)
     assert np.all(np.diff(c) < 0)                      # phase velocity decreases with frequency, no jump
     assert np.allclose(c, forward(z, vs, T[::-1])[::-1])
+
+
+def test_observed_iteration_handles_missing_and_buffered_logs(tmp_path):
+    from lant.inversion.run import observed_iteration
+    assert observed_iteration(str(tmp_path)) is None
+    log = tmp_path / "DSurfTomo.in.log"
+    log.write_text("initializing\n")
+    assert observed_iteration(str(tmp_path)) is None
+    log.write_text("1st iteration...\nresiduals\n 2th iteration...\n")
+    assert observed_iteration(str(tmp_path)) == 2

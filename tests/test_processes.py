@@ -35,3 +35,12 @@ def test_interrupt_terminates_running_solver(tmp_path):
     assert future.done() and not processes._active
     assert (result and result[0].returncode != 0) or isinstance(future.exception(), RuntimeError)
     assert processes.run([sys.executable, "-c", "pass"]).returncode == 0
+
+
+def test_file_backed_process_can_report_progress(tmp_path):
+    polled = []
+    with (tmp_path / "run.log").open("w") as output:
+        result = processes.run(
+            [sys.executable, "-c", "import time; time.sleep(1.2)"], stdout=output, on_poll=lambda: polled.append(True)
+        )
+    assert result.returncode == 0 and polled

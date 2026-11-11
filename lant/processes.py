@@ -25,7 +25,7 @@ def _terminate(process):
         process.wait()
 
 
-def run(args, **kwargs):
+def run(args, on_poll=None, **kwargs):
     """The small subset of subprocess.run needed by scientific solver calls."""
     if _cancelled.is_set():
         raise RuntimeError("solver batch interrupted")
@@ -36,6 +36,15 @@ def run(args, **kwargs):
         if _cancelled.is_set():
             _terminate(process)
             raise RuntimeError("solver batch interrupted")
+        if on_poll:
+            if kwargs.get("stdout") == subprocess.PIPE or kwargs.get("stderr") == subprocess.PIPE:
+                raise ValueError("polling requires file-backed output to avoid pipe deadlocks")
+            while True:
+                try:
+                    process.wait(timeout=1)
+                    break
+                except subprocess.TimeoutExpired:
+                    on_poll()
         stdout, stderr = process.communicate()
         return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
     except BaseException:

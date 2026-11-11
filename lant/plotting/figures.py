@@ -108,6 +108,8 @@ class _Figures:
     def attempt(self, n, fn):
         try:
             self.done[n] = fn()
+            from ..progress import detail
+            detail("%d figure tasks completed" % len(self.done))
         except Exception as exc:
             self.skipped[n] = "%s: %s" % (type(exc).__name__, exc)
             print("  figure %s not drawn: %s" % (n, exc), flush=True)
