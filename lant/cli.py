@@ -4,8 +4,7 @@
   lant run all --raw DIR --stations FILE --out DIR
                                               the shortest way: writes DIR(out)/config.yaml and runs the chain
   lant init -o CFG [--raw DIR --stations FILE --out DIR]
-                                              write a configuration: the three required paths, every other key
-                                              with its default and what it rests on
+                                              write a compact configuration (--full: all keys, defaults and basis)
   lant validate -c CFG                        read and check the configuration and the station table
   lant plan -c CFG                            what every step will do, with which values and where they come from
   lant run all -c CFG                         run the chain from the first step that does not stand; stops where a

@@ -29,10 +29,10 @@ The chain stops where a scientific judgement is needed and prints the files to l
 
 | Stops at | Question to answer | Look at | On the synthetic data |
 |---|---|---|---|
-| clean | without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | yes: `lant confirm clean -c …` |
-| stack (when there are candidates) | remove the station sub-stacks listed? | `work/03_stack/station_qc/station_qc.png` | there are no faulty stations, keep them: `lant confirm stack -c …` |
-| reference | do the F-J picks follow the fundamental-mode ridge? | `work/04_reference/fj.png` | yes: `lant confirm reference -c …` |
-| inversion | are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | yes: `lant confirm inversion -c …` |
+| clean | without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | yes: `lant confirm clean -c … --reason "DECISION_AND_EVIDENCE"` |
+| stack (when there are candidates) | remove the station sub-stacks listed? | `work/03_stack/station_qc/station_qc.png` | there are no faulty stations, keep them: `lant confirm stack -c … --reason "DECISION_AND_EVIDENCE"` |
+| reference | do the F-J picks follow the fundamental-mode ridge? | `work/04_reference/fj.png` | yes: `lant confirm reference -c … --reason "DECISION_AND_EVIDENCE"` |
+| inversion | are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | yes: `lant confirm inversion -c … --reason "DECISION_AND_EVIDENCE"` |
 
 After each confirmation run `lant run all -c ~/lant_quick/synthetic.yaml` again; it continues where it stopped. At any time
 

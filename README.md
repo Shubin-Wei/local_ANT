@@ -61,7 +61,7 @@ lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
 writes `/data/result/config.yaml` and runs the chain. When it stops it prints what to look at and the next command, for example
 
 ```bash
-lant confirm reference -c /data/result/config.yaml
+lant confirm reference -c /data/result/config.yaml --reason "DECISION_AND_EVIDENCE"
 lant run all -c /data/result/config.yaml          # continues from the first step that does not stand
 ```
 

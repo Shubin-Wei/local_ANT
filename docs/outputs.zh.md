@@ -107,4 +107,4 @@
 | `6_residuals` | 起始模型和最终模型的走时残差：直方图、各周期均方根 | 全部 |
 
 画不出的图在 figures 报告里列出原因（例如某频带没有测量结果、离线时取不到地形）。
-每张图同时有 png 和 pdf（`plots.formats`）。
+默认只写 PNG；设置 `plots.formats: [png, pdf]` 可同时输出 PDF。

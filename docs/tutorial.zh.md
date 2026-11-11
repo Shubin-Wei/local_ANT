@@ -195,7 +195,7 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 
 ## 7. 记录与复现
 
-`输出目录/.lant/`：`config.yaml`（最近一次运行的完整配置）、`config_history/`、`manifest.json`（每步依据什么成立）、`run_log.jsonl`（每步起止、耗时）、`summary/<步骤>.json`（关键数字）、`steps/<步骤>.md`（报告）、`auto_parameters.json`（规则推出的值及推导）、`provenance/`（代码版本、依赖版本、第三方程序指纹）、`decisions.md`（你的决定和理由）。配置文件末尾的 `confirmed:` 段记录每次确认及其依据的结果指纹。复现：用同一份配置在新的输出目录重跑。棋盘检验的合成噪声不固定随机种子，重跑的棋盘结果在噪声水平内不同。
+`输出目录/.lant/`：`config.yaml`（最近一次运行的完整配置）、`config_history/`、`manifest.json`（每步依据什么成立）、`run_log.jsonl`（每步起止、耗时）、`summary/<步骤>.json`（关键数字）、`steps/<步骤>.md`（报告）、`auto_parameters.json`（规则推出的值及推导）、`provenance/`（代码版本、依赖版本、第三方程序指纹）、`../notes.md`（你的决定和理由）。配置文件末尾的 `confirmed:` 段记录每次确认及其依据的结果指纹。复现：用同一份配置在新的输出目录重跑。棋盘检验的合成噪声不固定随机种子，重跑的棋盘结果在噪声水平内不同。
 
 ## 8. 遇到问题
 

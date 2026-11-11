@@ -29,10 +29,10 @@ lant run all -c ~/lant_quick/synthetic.yaml
 
 | 停在 | 要回答的问题 | 看什么 | 合成数据上 |
 |---|---|---|---|
-| clean | 没有响应文件，全部台站是不是同一型号？ | `work/01_clean/report.txt` | 是：`lant confirm clean -c …` |
-| stack（有候选时） | 列出的台站子叠加要不要剔除？ | `work/03_stack/station_qc/station_qc.png` | 合成数据没有坏台站，保留：`lant confirm stack -c …` |
-| reference | F-J 拾取是不是基阶脊线？ | `work/04_reference/fj.png` | 是：`lant confirm reference -c …` |
-| inversion | 一维起始模型和它对平均曲线的拟合是否合理？ | `results/figures/4_start_model.png` | 是：`lant confirm inversion -c …` |
+| clean | 没有响应文件，全部台站是不是同一型号？ | `work/01_clean/report.txt` | 是：`lant confirm clean -c … --reason "DECISION_AND_EVIDENCE"` |
+| stack（有候选时） | 列出的台站子叠加要不要剔除？ | `work/03_stack/station_qc/station_qc.png` | 合成数据没有坏台站，保留：`lant confirm stack -c … --reason "DECISION_AND_EVIDENCE"` |
+| reference | F-J 拾取是不是基阶脊线？ | `work/04_reference/fj.png` | 是：`lant confirm reference -c … --reason "DECISION_AND_EVIDENCE"` |
+| inversion | 一维起始模型和它对平均曲线的拟合是否合理？ | `results/figures/4_start_model.png` | 是：`lant confirm inversion -c … --reason "DECISION_AND_EVIDENCE"` |
 
 每次确认后再运行一次 `lant run all -c ~/lant_quick/synthetic.yaml`，它会从停下的地方接着跑。任何时候都可以用
 

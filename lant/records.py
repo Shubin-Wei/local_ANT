@@ -17,16 +17,6 @@ import traceback
 
 from . import config as C
 
-DECISIONS_TEMPLATE = """# Parameter decisions
-
-One entry per decision: what was chosen, from which evidence (file or figure in this output directory), what
-the alternatives were, and who decided (user / AI).  Keep earlier entries; add a new one when a value changes.
-
-| date | step | parameter | value | evidence | decided by |
-|---|---|---|---|---|---|
-"""
-
-
 def rec_dir(cfg, create=False):
     d = os.path.join(cfg["project"]["output_dir"], ".lant")
     if create:
@@ -96,17 +86,6 @@ def write_summary(cfg, step, data):
 def read_summary(cfg, step):
     p = os.path.join(rec_dir(cfg), "summary", "%s.json" % step)
     return json.load(open(p)) if os.path.exists(p) else None
-
-
-def _json_default(o):
-    import numpy as np
-    if isinstance(o, (np.integer,)):
-        return int(o)
-    if isinstance(o, (np.floating,)):
-        return None if not np.isfinite(o) else float(o)
-    if isinstance(o, np.ndarray):
-        return o.tolist()
-    return str(o)
 
 
 class StepIncomplete(RuntimeError):

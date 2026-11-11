@@ -195,7 +195,7 @@ One project per line. The defaults that differ are listed at the end of paramete
 
 ## 7. Records and reproduction
 
-`OUT/.lant/`: `config.yaml` (full configuration of the last run), `config_history/`, `manifest.json` (what every step stands on), `run_log.jsonl` (start, end and duration of every step), `summary/<step>.json` (key numbers), `steps/<step>.md` (reports), `auto_parameters.json` (derived values and derivations), `provenance/` (code version, package versions, fingerprints of the third-party programs), `decisions.md` (your decisions and reasons). The `confirmed:` section at the end of the configuration records each confirmation with the fingerprint of the result it rests on. To reproduce: run the same configuration into a new output directory. The synthetic noise of the checkerboard tests has no fixed random seed; repeated checkerboards differ within the noise level.
+`OUT/.lant/`: `config.yaml` (full configuration of the last run), `config_history/`, `manifest.json` (what every step stands on), `run_log.jsonl` (start, end and duration of every step), `summary/<step>.json` (key numbers), `steps/<step>.md` (reports), `auto_parameters.json` (derived values and derivations), `provenance/` (code version, package versions, fingerprints of the third-party programs), `../notes.md` (your decisions and reasons). The `confirmed:` section at the end of the configuration records each confirmation with the fingerprint of the result it rests on. To reproduce: run the same configuration into a new output directory. The synthetic noise of the checkerboard tests has no fixed random seed; repeated checkerboards differ within the noise level.
 
 ## 8. Problems
 

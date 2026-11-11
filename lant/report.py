@@ -92,10 +92,9 @@ def resolved(cfg, without=None):
     """The configuration as it now stands in its file, with every "auto" value resolved (confirmed values, then the
     rules' values of .lant/auto_parameters.json): the same view for the recorded and the present parameters.
     without: a step whose confirmation is left out (lant.pipeline.run_step)."""
-    try:
-        new = C.load(cfg["_config_file"])
-    except Exception:
+    if not cfg.get("_config_file"):
         return cfg
+    new = C.load(cfg["_config_file"])
     if without:
         new["_confirmed"].pop(without, None)
     new["_verbose"] = cfg.get("_verbose", False)
