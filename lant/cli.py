@@ -1,21 +1,29 @@
-"""Command line: `lant <command> [-c config.yaml] ...`  (`python -m lant` works as well).
+"""lant: ambient-noise surface-wave tomography for dense arrays, from raw records to a 3-D Vs model.
 
-  lant check                                  check the installation (Python packages and versions, GMT, DSurfTomo)
+Getting started
+  lant check                                check the installation (Python packages, GMT, DSurfTomo)
+  lant install-external [PROGRAM ...]       build DSurfTomo and fwd1d (dsurftomo) and/or pDSurfTomo (pdsurftomo)
+  lant demo [--out DIR]                     run a small synthetic array with a known answer (a few minutes)
   lant run all --raw DIR --stations FILE --out DIR
-                                              the shortest way: writes DIR(out)/config.yaml and runs the chain
-  lant init -o CFG [--raw DIR --stations FILE --out DIR]
-                                              write a compact configuration (--full: all keys, defaults and basis)
-  lant validate -c CFG                        read and check the configuration and the station table
-  lant plan -c CFG                            what every step will do, with which values and where they come from
-  lant run all -c CFG                         run the chain from the first step that does not stand; stops where a
-                                              judgement is yours (--from STEP: run again from there; --to STEP;
-                                              --rebuild: keep prior step outputs in unique .lant/backups directories)
-  lant run STEP [STEP ...] -c CFG             run single steps (clean cc stack reference disp inversion run evaluate figures)
-  lant run run -c CFG --what main|checks|all  which DSurfTomo projects to run (default all)
-  lant confirm STEP -c CFG --reason TEXT      confirm what a step left for you to judge (stack: --exclude-candidates)
-  lant status -c CFG [--json]                 the state of every step, why, and the next command
-  lant inspect TOPIC -c CFG                   key numbers of a step (TOPIC: data or a step name), as JSON
-  lant plot [NAME ...] -c CFG                 draw the figures (default all; names: see lant.plotting.figures)
+                                            your data: writes OUT/config.yaml and runs the whole chain
+
+Working with a project (CFG: its configuration file)
+  lant init -o CFG [--raw DIR --stations FILE --out DIR] [--full]
+                                            write a configuration (compact; --full: every key with its basis)
+  lant validate -c CFG                      check the configuration, the station table and the raw directory
+  lant plan -c CFG                          what every step will do, with which values and why
+  lant run all -c CFG                       run from the first step that does not stand; stops where you judge
+                                            (--from STEP, --to STEP, --rebuild; -v: detailed output)
+  lant run STEP [STEP ...] -c CFG           single steps: clean cc stack reference disp inversion run evaluate figures
+  lant status -c CFG [--json]               the state of every step, why, and the next command
+  lant confirm STEP -c CFG --reason TEXT    record your decision at a judgement point
+  lant note "TEXT" -c CFG                   append a note to OUT/notes.md (also while a step runs)
+  lant inspect TOPIC -c CFG                 key numbers of a step (TOPIC: data or a step name), as JSON
+  lant plot [NAME ...] -c CFG               draw the figures again
+  lant clean-work -c CFG [--execute --yes]  preview (or remove) rebuildable caches
+
+Results: open OUT/REPORT.md.  `lant COMMAND --help` lists the options of a command.
+Documentation: docs/quickstart.md and docs/tutorial.md (https://github.com/Shubin-Wei/local_ANT).
 """
 import argparse
 import json
@@ -29,11 +37,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def _cfg(path):
     from . import config
     if not path:
-        sys.exit("give the project configuration with -c CONFIG.yaml (create one with `lant init -o CONFIG.yaml`), or --raw DIR --stations FILE --out DIR")
+        sys.exit("give the project configuration with -c CONFIG.yaml (create one with `lant init -o CONFIG.yaml`), "
+                 "or --raw DIR --stations FILE --out DIR")
+    if not os.path.isfile(path):
+        sys.exit("configuration file not found: %s\n  create one with: lant init -o %s" % (path, path))
     try:
         return config.load(path)
-    except (config.ConfigError, FileNotFoundError) as exc:
-        sys.exit("configuration error: %s" % exc)
+    except config.ConfigError as exc:
+        sys.exit("configuration error in %s: %s" % (path, exc))
 
 
 def cmd_init(a):
@@ -128,8 +139,13 @@ def cmd_check(a):
 def cmd_validate(a):
     from . import data as D, stations as ST
     cfg = _cfg(a.config)
-    print("configuration %s: ok (array type %s, output %s)" % (cfg["_config_file"], cfg["project"]["array_type"],
-                                                              cfg["project"]["output_dir"]))
+    placeholders = [k for k, v in (("project.output_dir", cfg["project"]["output_dir"]), ("data.raw_dir",
+                    cfg["data"]["raw_dir"]), ("data.station_file", cfg["data"]["station_file"])) if "/path/to/" in str(v)]
+    if placeholders:
+        sys.exit("%s still has the template paths of %s: write your own paths at the top of the file"
+                 % (cfg["_config_file"], ", ".join(placeholders)))
+    print("configuration %s: read (array type %s, output %s)" % (cfg["_config_file"], cfg["project"]["array_type"],
+                                                                cfg["project"]["output_dir"]))
     problems = 0
     try:
         rows, how = ST.read_table(cfg["data"]["station_file"])
@@ -148,7 +164,8 @@ def cmd_validate(a):
         print("raw directory: PROBLEM: %s" % exc)
         problems += 1
     if problems:
-        sys.exit(1)
+        sys.exit("%d problem(s) to fix before running" % problems)
+    print("ok: next `lant plan -c %s` (what will be done) or `lant run all -c %s`" % (a.config, a.config))
 
 
 STEP_DIRS = {"clean": ["01_clean"], "cc": ["02_ccf"], "stack": ["03_stack"], "reference": ["04_reference"],
@@ -244,8 +261,9 @@ def cmd_run(a):
         except Exception as exc:
             if a.debug:
                 raise
-            sys.exit("step %s failed: %s\n(details: %s/.lant/run_log.jsonl; the traceback: add --debug)"
-                     % (s, exc, cfg["project"]["output_dir"]))
+            sys.exit("step %s failed: %s\n  kept: the results of the earlier steps and the record of this one "
+                     "(%s/.lant/lant.log, run_log.jsonl)\n  next: fix the cause, then `lant run all -c %s` "
+                     "(the traceback: add --debug)" % (s, exc, cfg["project"]["output_dir"], a.config))
     if chain:
         rc = report.resolved(cfg)
         cmd, why = manifest.next_action(rc, manifest.status(rc))
@@ -390,69 +408,88 @@ def _interrupt_on_termination():
 
 def _reason(text):
     """A confirmation records the user's decision; an empty or copied placeholder reason is not one."""
-    if not text.strip() or "USER_DECISION" in text:
+    if not text.strip() or "DECISION_AND_EVIDENCE" in text.upper():
         raise argparse.ArgumentTypeError("give the user's decision and its evidence in your own words")
     return text
 
 
+def cmd_demo(a):
+    from . import demo
+    demo.run(a.out)
+
+
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="lant", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = p.add_subparsers(dest="cmd", required=True)
-    q = sub.add_parser("init")
-    q.add_argument("-o", "--output", required=True)
+    from . import __version__
+
+    p = argparse.ArgumentParser(prog="lant", usage="lant [--version] COMMAND [options]", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--version", action="version", version="lant %s" % __version__)
+    sub = p.add_subparsers(dest="cmd", metavar="COMMAND", help=argparse.SUPPRESS)
+    config = dict(dest="config", metavar="CFG", help="the configuration file of the project")
+
+    def command(name, fn, text):
+        q = sub.add_parser(name, prog="lant " + name, help=text, description=text)
+        q.set_defaults(fn=fn)
+        return q
+
+    q = command("init", cmd_init, "write a configuration file")
+    q.add_argument("-o", "--output", required=True, metavar="CFG", help="the file to write")
     for f, h in (("--raw", "raw data directory"), ("--stations", "station table"), ("--out", "output directory")):
         q.add_argument(f, help=h)
-    q.add_argument("--force", action="store_true")
+    q.add_argument("--force", action="store_true", help="overwrite an existing file")
     q.add_argument("--full", action="store_true", help="write all keys with their defaults and sources")
-    q.set_defaults(fn=cmd_init)
-    sub.add_parser("check").set_defaults(fn=cmd_check)
-    for name, fn in (("validate", cmd_validate), ("status", cmd_status), ("plan", cmd_plan)):
-        q = sub.add_parser(name)
-        q.add_argument("-c", "--config")
+    command("check", cmd_check, "check the installation: Python packages, GMT, DSurfTomo")
+    q = command("demo", cmd_demo, "run a small synthetic array with a known answer through the whole chain")
+    q.add_argument("--out", default="lant-demo", metavar="DIR", help="a new directory for the demo (default: %(default)s)")
+    for name, fn, text in (("validate", cmd_validate, "check the configuration, the station table and the raw directory"),
+                           ("status", cmd_status, "the state of every step, why, and the next command"),
+                           ("plan", cmd_plan, "what every step will do, with which values and why")):
+        q = command(name, fn, text)
+        q.add_argument("-c", "--config", **config)
         if name == "status":
             q.add_argument("--json", action="store_true", help="machine-readable: steps, reasons, next command")
-        q.set_defaults(fn=fn)
-    q = sub.add_parser("run")
-    q.add_argument("steps", nargs="+")
-    q.add_argument("-c", "--config")
+    q = command("run", cmd_run, "run steps of the chain (all: from the first step that does not stand)")
+    q.add_argument("steps", nargs="+", metavar="STEP", help="all, or step names: clean cc stack reference disp "
+                                                            "inversion run evaluate figures")
+    q.add_argument("-c", "--config", **config)
     for f, h in (("--raw", "raw data directory"), ("--stations", "station table"), ("--out", "output directory")):
         q.add_argument(f, help=h + " (instead of -c: the configuration is OUT/config.yaml)")
-    q.add_argument("--from", dest="from_step")
-    q.add_argument("--to", dest="to_step")
-    q.add_argument("--what", default="all", choices=("main", "checks", "all"))
+    q.add_argument("--from", dest="from_step", metavar="STEP", help="run all: run again from this step on")
+    q.add_argument("--to", dest="to_step", metavar="STEP", help="run all: stop after this step")
+    q.add_argument("--what", default="all", choices=("main", "checks", "all"),
+                   help="step run: which DSurfTomo projects (default: all)")
     q.add_argument("-v", "--verbose", action="store_true", help="show detailed step output")
-    q.add_argument("--debug", action="store_true")
+    q.add_argument("--debug", action="store_true", help="show the Python traceback of a failure")
     q.add_argument("--yes", action="store_true", help="acknowledge the displayed rebuild impact")
     q.add_argument("--rebuild", action="store_true", help="keep prior step outputs in unique .lant/backups directories")
-    q.set_defaults(fn=cmd_run)
-    q = sub.add_parser("confirm")
-    q.add_argument("step", choices=("clean", "stack", "reference", "inversion"))
-    q.add_argument("-c", "--config")
-    q.add_argument("--reason", required=True, type=_reason, help="user decision and evidence (terminal use is not identity verification)")
+    q = command("confirm", cmd_confirm, "record your decision at a judgement point")
+    q.add_argument("step", choices=("clean", "stack", "reference", "inversion"), help="the step that waits for you")
+    q.add_argument("-c", "--config", **config)
+    q.add_argument("--reason", required=True, type=_reason, help="your decision and its evidence (terminal use is "
+                                                                 "not identity verification)")
     q.add_argument("--exclude-candidates", action="store_true", help="stack: remove the candidate station-days/-hours")
-    q.set_defaults(fn=cmd_confirm)
-    q = sub.add_parser("inspect")
-    q.add_argument("topic")
-    q.add_argument("-c", "--config")
-    q.set_defaults(fn=cmd_inspect)
-    q = sub.add_parser("plot")
-    q.add_argument("names", nargs="*")
-    q.add_argument("-c", "--config")
-    q.set_defaults(fn=cmd_plot)
-    q = sub.add_parser("install-external", help="build fixed third-party programs in a writable location")
-    q.add_argument("programs", nargs="*", type=_external_program, metavar="PROGRAM")
-    q.set_defaults(fn=cmd_install_external)
-    q = sub.add_parser("note", help="append a project note")
-    q.add_argument("text")
-    q.add_argument("-c", "--config")
-    q.set_defaults(fn=cmd_note)
-    q = sub.add_parser("clean-work", help="preview registered cache cleanup")
-    q.add_argument("-c", "--config")
-    q.add_argument("--cache", action="append", choices=("archive", "cc"))
-    q.add_argument("--execute", action="store_true", help="perform cleanup (default is preview only)")
-    q.add_argument("--yes", action="store_true")
-    q.set_defaults(fn=cmd_clean_work)
+    q = command("inspect", cmd_inspect, "key numbers of a step, as JSON")
+    q.add_argument("topic", help="data, or a step name")
+    q.add_argument("-c", "--config", **config)
+    q = command("plot", cmd_plot, "draw the figures again")
+    q.add_argument("names", nargs="*", metavar="NAME", help="figures to draw (default: all)")
+    q.add_argument("-c", "--config", **config)
+    q = command("install-external", cmd_install_external, "build fixed third-party programs in a writable location")
+    q.add_argument("programs", nargs="*", type=_external_program, metavar="PROGRAM",
+                   help="dsurftomo and/or pdsurftomo (default: both)")
+    q = command("note", cmd_note, "append a note to OUT/notes.md (also while a step runs)")
+    q.add_argument("text", help="the note, in quotes")
+    q.add_argument("-c", "--config", **config)
+    q = command("clean-work", cmd_clean_work, "preview, or remove, the rebuildable caches of a finished project")
+    q.add_argument("-c", "--config", **config)
+    q.add_argument("--cache", action="append", choices=("archive", "cc"), help="which caches (default: both)")
+    q.add_argument("--execute", action="store_true", help="remove them (default: preview only)")
+    q.add_argument("--yes", action="store_true", help="acknowledge the displayed impact")
     a = p.parse_args(argv)
+    if not a.cmd:
+        p.print_help()
+        print("\nFirst time: lant check, then lant demo.")
+        return
     _interrupt_on_termination()
     try:
         a.fn(a)

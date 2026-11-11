@@ -150,3 +150,39 @@ def test_finished_chain_says_where_to_look(tmp_path):
         "  10 stations, 1 processing day; 35 phase-velocity curves (840 points); residual rms of all 810 "
         "travel times 20.7 -> 8.1 ms; 1 checkerboard test; 1 figure"
     )
+
+
+def test_version_and_guidance_without_a_command(capsys):
+    from lant import __version__
+
+    with pytest.raises(SystemExit) as stop:
+        cli.main(["--version"])
+    assert stop.value.code == 0 and capsys.readouterr().out.strip() == "lant %s" % __version__
+    cli.main([])
+    out = capsys.readouterr().out
+    assert "lant demo" in out and "First time: lant check, then lant demo." in out
+
+
+def test_messages_say_what_to_do(tmp_path, capsys):
+    with pytest.raises(SystemExit, match="lant init -o"):
+        cli.main(["status", "-c", str(tmp_path / "missing.yaml")])
+    typo = tmp_path / "typo.yaml"
+    typo.write_text("project: {output_dir: out}\ndata: {raw_dir: r, station_file: s, velocty_range_kms: [1, 3]}\n")
+    with pytest.raises(SystemExit, match="did you mean 'data.velocity_range_kms'"):
+        cli.main(["validate", "-c", str(typo)])
+    template = tmp_path / "template.yaml"
+    cli.main(["init", "-o", str(template)])
+    capsys.readouterr()
+    with pytest.raises(SystemExit, match="template paths"):
+        cli.main(["validate", "-c", str(template)])
+
+
+def test_demo_never_works_in_a_directory_it_did_not_make(tmp_path):
+    from lant import demo
+
+    (tmp_path / "real.mseed").write_bytes(b"data of a user")
+    with pytest.raises(RuntimeError, match="not made by lant demo"):
+        demo.run(tmp_path)
+    with pytest.raises(RuntimeError, match="not a generated synthetic example"):
+        demo.run_known_truth(tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["real.mseed"]

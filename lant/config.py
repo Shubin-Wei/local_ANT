@@ -268,7 +268,10 @@ def _merge(base, over, where=""):
         if k not in base:
             if (where + k) in REMOVED:
                 raise ConfigError("configuration key '%s%s': %s" % (where, k, REMOVED[where + k]))
-            raise ConfigError("unknown configuration key '%s%s'" % (where, k))
+            import difflib
+            close = difflib.get_close_matches(str(k), [str(b) for b in base], n=1, cutoff=0.7)
+            raise ConfigError("unknown configuration key '%s%s'%s" % (where, k, " (did you mean '%s%s'?)" % (
+                where, close[0]) if close else "; all keys: lant init --full"))
         if (where + k) in FREE_MAPPINGS:
             if not isinstance(v, dict) or not all(isinstance(a, str) and isinstance(b, str) for a, b in v.items()):
                 raise ConfigError("%s%s must map names to names, e.g. {\"XX.001\": \"YY.A01\"}" % (where, k))
