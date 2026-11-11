@@ -19,6 +19,7 @@ A pick is "clear" when the second-highest peak is below 0.7 of the largest and >
       ridges), cubic in log f, made non-increasing (reference.normal_dispersion), constant outside; fewer than 5
       frequencies: an error that says what to do.
 """
+
 import math
 
 import h5py
@@ -32,6 +33,7 @@ def scan_grid(cfg):
     to dispersion.fmax_hz, on the same grid."""
     import math
     from .auto import FILTER_EDGE, _grid_up
+
     d = cfg["dispersion"]
     dlt = math.sqrt(FILTER_EDGE / float(d["alpha"]))
     f0 = _grid_up(cfg["correlation"]["fmin_hz"] / (1 - dlt) * (1 - 1e-6), int(d["per_octave"]))
@@ -58,6 +60,7 @@ def fj_spectrum(X, r, k):
     spectral values X [npair] at the distances r [npair] (any order) and the wavenumbers k [nk]: the trapezoidal
     rule over the sorted distances, in double precision (the sum stays exact for any number of pairs)."""
     from scipy.special import j0
+
     o = np.argsort(r)
     r, X = np.asarray(r, np.float64)[o], np.asarray(X, np.float64)[o]
     w = np.empty(len(r))
@@ -65,8 +68,8 @@ def fj_spectrum(X, r, k):
     w[0], w[-1] = 0.5 * (r[1] - r[0]), 0.5 * (r[-1] - r[-2])
     a = X * r * w
     out = np.zeros(len(k))
-    for i0 in range(0, len(r), 2000):                      # pairs in blocks: memory stays small for any array
-        out += a[i0:i0 + 2000] @ j0(np.outer(r[i0:i0 + 2000], k))
+    for i0 in range(0, len(r), 2000):  # pairs in blocks: memory stays small for any array
+        out += a[i0 : i0 + 2000] @ j0(np.outer(r[i0 : i0 + 2000], k))
     return out
 
 
@@ -88,7 +91,7 @@ def fj_image(cfg, stack_path, freqs=None, select=None, c_limit=None):
     freqs = scan_grid(cfg) if freqs is None else freqs
     fall = np.fft.rfftfreq(nfft, 1 / fs)
     kbin = np.array([int(np.argmin(np.abs(fall - f))) for f in freqs])
-    lag = (np.arange(-L, L + 1) / fs)
+    lag = np.arange(-L, L + 1) / fs
     # the real part of the spectrum at the scan frequencies only (the CCFs are real: a cosine transform)
     X = x @ np.cos(2 * np.pi * np.outer(lag, fall[kbin]))
     c = np.arange(r["fj_cmin"], r["fj_cmax"] + 1e-9, r["fj_dc"])
@@ -96,8 +99,11 @@ def fj_image(cfg, stack_path, freqs=None, select=None, c_limit=None):
     npair = np.zeros(len(freqs), int)
     MIN_FJ_PAIRS = min_fj_pairs(len(idx))
     # velocity that turns fj_rmax_lambda into a distance: a number, or (frequencies, curve) of an earlier pass
-    cl = np.full(len(freqs), float(r["fj_c_nominal"])) if c_limit is None else \
-        np.interp(np.log(freqs), np.log(c_limit[0]), c_limit[1])
+    cl = (
+        np.full(len(freqs), float(r["fj_c_nominal"]))
+        if c_limit is None
+        else np.interp(np.log(freqs), np.log(c_limit[0]), c_limit[1])
+    )
     for i, (f, kb) in enumerate(zip(freqs, kbin)):
         m = dist * f / cl[i] <= r["fj_rmax_lambda"]
         npair[i] = m.sum()
@@ -111,10 +117,10 @@ def _peaks(y, thr):
     return np.where((y[1:-1] > y[:-2]) & (y[1:-1] >= y[2:]) & (y[1:-1] >= thr))[0] + 1
 
 
-CLEAR_RATIO = 0.7        # second-highest F-J peak below this fraction of the largest: a clear pick
+CLEAR_RATIO = 0.7  # second-highest F-J peak below this fraction of the largest: a clear pick
 
 
-MIN_FJ_PAIRS = 30        # set by fj_image for the array at hand (min_fj_pairs)
+MIN_FJ_PAIRS = 30  # set by fj_image for the array at hand (min_fj_pairs)
 
 
 def fj_picks(img, cgrid, npair):
@@ -156,13 +162,15 @@ def trusted_run(pick, clear, max_jump=0.10, max_gap=2):
 def pick_max(cfg, freqs, c, img, npair):
     r = cfg["reference"]
     cfj, contrast, clear = fj_picks(img, c, npair)
-    clear &= (cfj > c[0]) & (cfj < c[-1])                 # a peak on the edge of the scan is not a ridge
+    clear &= (cfj > c[0]) & (cfj < c[-1])  # a peak on the edge of the scan is not a ridge
     if r["fj_fit_fmax"] != "auto":
         clear &= freqs <= r["fj_fit_fmax"] * (1 + 1e-9)
     k = trusted_run(cfj, clear)
     if k.size < 5:
-        raise RuntimeError("the F-J image has only %d clear picks that follow each other (work/04_reference/fj.png): check the "
-                           "stack (too few pairs or days?) or borrow a reference (reference.source = file)" % k.size)
+        raise RuntimeError(
+            "the F-J image has only %d clear picks that follow each other (work/04_reference/fj.png): check the "
+            "stack (too few pairs or days?) or borrow a reference (reference.source = file)" % k.size
+        )
     good = np.zeros(len(freqs), bool)
     good[k] = True
     x = np.log(freqs)
@@ -171,7 +179,7 @@ def pick_max(cfg, freqs, c, img, npair):
     return cfj, good, curve, None
 
 
-MIN_TRACK = 5            # a reference curve needs the ridge at this many frequencies at least (as pick_max)
+MIN_TRACK = 5  # a reference curve needs the ridge at this many frequencies at least (as pick_max)
 
 
 def alias_wavelength_km(cfg, geom):
@@ -200,26 +208,40 @@ def track_start(cfg, freqs, c, img, npair, lam_min_km=None):
             pick, use, _, _ = pick_track(cfg, freqs, c, img, start_band=[lo, 2 * lo], need=1, lam_min_km=lam_min_km)
             key = (int(use.sum()), -float(np.mean(pick[use])))
             if best is None or key > best[0]:
-                best = (key, [math.floor(lo * 1e4) / 1e4, math.ceil(2 * lo * 1e4) / 1e4])   # rounded outwards
+                best = (key, [math.floor(lo * 1e4) / 1e4, math.ceil(2 * lo * 1e4) / 1e4])  # rounded outwards
         except RuntimeError:
             pass
         lo *= 2 ** (1 / 3)
     if best is None:
-        raise RuntimeError("F-J image: no ridge to start from at any frequency (work/04_reference/fj.png); borrow a "
-                           "reference (reference.source = file)")
+        raise RuntimeError(
+            "F-J image: no ridge to start from at any frequency (work/04_reference/fj.png); borrow a "
+            "reference (reference.source = file)"
+        )
     return best[1]
 
 
-def pick_track(cfg, freqs, c, img, min_peak=0.5, min_track=0.3, step=0.05, max_miss=3, rise=0.03, start_band=None,
-               need=None, lam_min_km=None):
+def pick_track(
+    cfg,
+    freqs,
+    c,
+    img,
+    min_peak=0.5,
+    min_track=0.3,
+    step=0.05,
+    max_miss=3,
+    rise=0.03,
+    start_band=None,
+    need=None,
+    lam_min_km=None,
+):
     s0, s1 = start_band or cfg["reference"]["track_start_band_hz"]
     Y = img / (img.max(axis=1, keepdims=True) + 1e-30)
-    okc = (c >= 1.03 * c.min()) & (c <= 0.97 * c.max())          # peaks on the edges of the scan are not ridges
+    okc = (c >= 1.03 * c.min()) & (c <= 0.97 * c.max())  # peaks on the edges of the scan are not ridges
     v_lo, v_hi = [float(v) for v in cfg["data"]["velocity_range_kms"]]
-    okc &= (c >= v_lo) & (c <= v_hi)                             # the scan is wider than the range of the area only
-                                                                 # to show what lies beside it
+    okc &= (c >= v_lo) & (c <= v_hi)  # the scan is wider than the range of the area only
+    # to show what lies beside it
     normal = bool(cfg["reference"].get("normal_dispersion", True))
-    ok_at = (lambda i: okc) if not lam_min_km else (lambda i: okc & (c >= lam_min_km * freqs[i]))   # wavelength limit
+    ok_at = (lambda i: okc) if not lam_min_km else (lambda i: okc & (c >= lam_min_km * freqs[i]))  # wavelength limit
     start = None
     for strict in (True, False):
         for i in np.where((freqs >= s0) & (freqs <= s1))[0]:
@@ -231,8 +253,10 @@ def pick_track(cfg, freqs, c, img, min_peak=0.5, min_track=0.3, step=0.05, max_m
         if start is not None:
             break
     if start is None:
-        raise RuntimeError("F-J image: no unambiguous fundamental-mode start in %.2f-%.2f Hz "
-                           "(reference.track_start_band_hz); borrow a reference (reference.source = file)" % (s0, s1))
+        raise RuntimeError(
+            "F-J image: no unambiguous fundamental-mode start in %.2f-%.2f Hz "
+            "(reference.track_start_band_hz); borrow a reference (reference.source = file)" % (s0, s1)
+        )
     pick = np.full(len(freqs), np.nan)
     k = _peaks(Y[start], min_peak)
     pick[start] = c[k[ok_at(start)[k]][0]]
@@ -261,10 +285,12 @@ def pick_track(cfg, freqs, c, img, min_peak=0.5, min_track=0.3, step=0.05, max_m
             i += direction
     use = np.isfinite(pick)
     if use.sum() < (MIN_TRACK if need is None else need):
-        raise RuntimeError("the F-J ridge could be followed over only %d frequencies from %.3g-%.3g Hz (at least %d "
-                           "are needed for a curve): look at work/04_reference/fj.png; say where the fundamental mode is "
-                           "clear (reference.track_start_band_hz), narrow data.velocity_range_kms to the velocities "
-                           "of the area, or borrow a curve (reference.source = file)" % (use.sum(), s0, s1, MIN_TRACK))
+        raise RuntimeError(
+            "the F-J ridge could be followed over only %d frequencies from %.3g-%.3g Hz (at least %d "
+            "are needed for a curve): look at work/04_reference/fj.png; say where the fundamental mode is "
+            "clear (reference.track_start_band_hz), narrow data.velocity_range_kms to the velocities "
+            "of the area, or borrow a curve (reference.source = file)" % (use.sum(), s0, s1, MIN_TRACK)
+        )
     x = np.log(freqs)
     pf = np.polyfit(x[use], np.log(pick[use]), 3 if use.sum() >= 8 else min(2, use.sum() - 1))
     lo, hi = x[use].min(), x[use].max()
@@ -272,10 +298,12 @@ def pick_track(cfg, freqs, c, img, min_peak=0.5, min_track=0.3, step=0.05, max_m
     if not normal:
         return pick, use, raw, None
     curve = np.minimum.accumulate(raw)
-    flat = np.abs(curve / raw - 1) > 0.01                   # where forcing normal dispersion changed the fit by > 1 %
+    flat = np.abs(curve / raw - 1) > 0.01  # where forcing normal dispersion changed the fit by > 1 %
     note = None
     if flat.any():
-        note = ("the fitted curve rises with frequency at %.3g-%.3g Hz and was held flat there (reference."
-                "normal_dispersion); if the F-J ridge really rises there (a velocity reversal), set it to false"
-                % (freqs[flat].min(), freqs[flat].max()))
+        note = (
+            "the fitted curve rises with frequency at %.3g-%.3g Hz and was held flat there (reference."
+            "normal_dispersion); if the F-J ridge really rises there (a velocity reversal), set it to false"
+            % (freqs[flat].min(), freqs[flat].max())
+        )
     return pick, use, curve, note

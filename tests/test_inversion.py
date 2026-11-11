@@ -1,5 +1,6 @@
 """Export of the curves and the DSurfTomo projects: one segment per curve, project files, period limit, node order,
 depth nodes, forward modelling."""
+
 import os
 from pathlib import Path
 
@@ -23,8 +24,12 @@ def test_one_segment():
 def test_project_files(tmp_path):
     """surfdata.dat from the curves, the inversion grid with a ring outside the stations, the depth signs of the
     vertical checks."""
-    curves = [dict(name="A_B", lat1=30.0, lon1=100.0, lat2=30.05, lon2=100.02, T=np.array([0.5, 1.0]), v=np.array([2.5, 2.7])),
-              dict(name="A_C", lat1=30.0, lon1=100.0, lat2=30.02, lon2=100.06, T=np.array([1.0]), v=np.array([2.8]))]
+    curves = [
+        dict(
+            name="A_B", lat1=30.0, lon1=100.0, lat2=30.05, lon2=100.02, T=np.array([0.5, 1.0]), v=np.array([2.5, 2.7])
+        ),
+        dict(name="A_C", lat1=30.0, lon1=100.0, lat2=30.02, lon2=100.06, T=np.array([1.0]), v=np.array([2.8])),
+    ]
     recs, periods = project.records_from_curves(curves, 60)
     assert periods == [0.5, 1.0]
     info = project.write_surfdata(recs, str(tmp_path / "surfdata.dat"))
@@ -33,7 +38,7 @@ def test_project_files(tmp_path):
     g = project.grid(info["stations"], (0.005, 0.005), refine=2)
     assert g["dvxd"] == 0.0025 and (g["nx"] - 1) % 2 == 0
     lat, lon = project.node_coords(g)
-    assert lat[1] > 30.05 and lon[1] < 100.0              # stations inside the boundary ring
+    assert lat[1] > 30.05 and lon[1] < 100.0  # stations inside the boundary ring
     z = np.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
     s = project.depth_signs(z, [0, 0.2, 0.4, 0.6], [0.3])
     assert np.allclose(s, [1, 1, 1, 0, -1, -1, -1])
@@ -42,6 +47,7 @@ def test_project_files(tmp_path):
 def test_period_cap():
     """DSurfTomo's CalSurfG holds 60 periods (pDSurfTomo 80): 61 periods are refused before a project is written."""
     from lant.tools import max_periods
+
     T = 1 / np.geomspace(0.5, 20, 61)
     curves = [dict(name="A_B", lat1=30.0, lon1=100.0, lat2=30.05, lon2=100.02, T=T, v=np.full(61, 2.5))]
     assert max_periods("dsurftomo") == 60 and max_periods("pdsurftomo") == 80
@@ -55,8 +61,11 @@ def test_period_cap():
 def test_model_node_order(tmp_path):
     """A model file with a repeated node in place of a missing one is not taken as complete."""
     from lant.inversion.run import check_node_order
+
     nx, ny, nz = 4, 5, 3
-    rows = [(100 + 0.01 * j, 30 - 0.01 * i, z, 2.0) for z in (0.0, 0.5) for j in range(1, ny - 1) for i in range(1, nx - 1)]
+    rows = [
+        (100 + 0.01 * j, 30 - 0.01 * i, z, 2.0) for z in (0.0, 0.5) for j in range(1, ny - 1) for i in range(1, nx - 1)
+    ]
     m = np.array(rows)
     check_node_order(m, nx, ny, nz)
     m[3] = m[2]
@@ -68,6 +77,7 @@ def test_depth_nodes_layers_curvature():
     """Depth nodes from the wavelengths (the last but one at the deepest sensitivity), the layer limit of DSurfTomo,
     and the 1-D curvature operator of the starting model."""
     from lant.inversion import start as St
+
     z = St.auto_sequence(np.c_[1 / np.array([10.0, 1.0, 0.5]), [2.0, 3.0, 3.3]])
     assert z[0] == 0 and abs(z[1] - 0.05) < 1e-9 and z[-2] <= 3.3 < z[-1]
     St.check_layers(50, 3)
@@ -79,25 +89,27 @@ def test_depth_nodes_layers_curvature():
     for z in (np.array([0, 0.1, 0.3, 0.7, 1.5, 3.0]), np.linspace(0, 3, 25)):
         assert np.allclose(St.curvature_operator(z) @ (2 + 0.3 * z), 0)
     q = [np.sum((St.curvature_operator(z) @ (z / 3) ** 3) ** 2) for z in (np.linspace(0, 3, 7), np.linspace(0, 3, 25))]
-    assert all(abs(x / 12.0 - 1) < 0.25 for x in q)                 # integral of (6 zeta)^2 over 0..1 = 12
+    assert all(abs(x / 12.0 - 1) < 0.25 for x in q)  # integral of (6 zeta)^2 over 0..1 = 12
 
 
 def test_forward_period_order():
     """surfdisp96 needs increasing periods: forward() sorts them (strongly layered model, decreasing periods)."""
     from lant.inversion.start import forward
     from lant.tools import external_path
+
     if not os.path.exists(external_path("bin", "fwd1d")):
         pytest.skip("fwd1d not built")
     z = np.array([0.0, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.2, 2.0])
     vs = np.array([0.25, 0.30, 0.40, 0.55, 0.80, 1.00, 1.40, 1.80, 2.10, 2.50])
-    T = 1 / np.geomspace(0.5, 15, 12)                  # decreasing periods
+    T = 1 / np.geomspace(0.5, 15, 12)  # decreasing periods
     c = forward(z, vs, T)
-    assert np.all(np.diff(c) < 0)                      # phase velocity decreases with frequency, no jump
+    assert np.all(np.diff(c) < 0)  # phase velocity decreases with frequency, no jump
     assert np.allclose(c, forward(z, vs, T[::-1])[::-1])
 
 
 def test_observed_iteration_handles_missing_and_buffered_logs(tmp_path):
     from lant.inversion.run import observed_iteration
+
     assert observed_iteration(str(tmp_path)) is None
     log = tmp_path / "DSurfTomo.in.log"
     log.write_text("initializing\n")
@@ -115,18 +127,19 @@ def test_solver_run_captures_output_and_reports_observed_iteration(tmp_path, mon
     monkeypatch.setattr(progress, "detail", shown.append)
     (tmp_path / "DSurfTomo.in").write_text("4                                c: maximum iteration\n")
     binary = tmp_path / "fake_solver"
-    binary.write_text("#!%s\n" % sys.executable +
-                      "from pathlib import Path\nimport os, time\n"
-                      "Path('env.txt').write_text(os.environ.get('GFORTRAN_UNBUFFERED_ALL', ''))\n"
-                      "Path('DSurfTomo.in.log').write_text('1st iteration...\\n')\n"
-                      "print('solver output', flush=True)\ntime.sleep(1.2)\n"
-                      "Path('DSurfTomo.inMeasure.dat').write_text('100 30 0 2.5\\n')\n"
-                      "with open('DSurfTomo.in.log', 'a') as f: f.write('Program finishes successfully\\n')\n")
+    binary.write_text(
+        "#!%s\n" % sys.executable + "from pathlib import Path\nimport os, time\n"
+        "Path('env.txt').write_text(os.environ.get('GFORTRAN_UNBUFFERED_ALL', ''))\n"
+        "Path('DSurfTomo.in.log').write_text('1st iteration...\\n')\n"
+        "print('solver output', flush=True)\ntime.sleep(1.2)\n"
+        "Path('DSurfTomo.inMeasure.dat').write_text('100 30 0 2.5\\n')\n"
+        "with open('DSurfTomo.in.log', 'a') as f: f.write('Program finishes successfully\\n')\n"
+    )
     binary.chmod(0o755)
     _, result = run_one(str(tmp_path), str(binary), 1)
     assert result == "ok" and "solver output" in (tmp_path / "run.log").read_text()
-    assert "iterations: %s 1/4" % tmp_path.name in shown and shown[-1] == ""   # cleared when the project ends
-    assert (tmp_path / "env.txt").read_text() == "y"                           # the log reaches the file at once
+    assert "iterations: %s 1/4" % tmp_path.name in shown and shown[-1] == ""  # cleared when the project ends
+    assert (tmp_path / "env.txt").read_text() == "y"  # the log reaches the file at once
 
 
 def test_interrupted_project_is_set_aside_and_runs_again(tmp_path):
@@ -138,7 +151,7 @@ def test_interrupted_project_is_set_aside_and_runs_again(tmp_path):
     project.mkdir(parents=True)
     for name in RUN.BUILT:
         (project / name).write_text("built\n")
-    (project / "DSurfTomo.in.log").write_text("1st iteration...\n")        # killed: no success line
+    (project / "DSurfTomo.in.log").write_text("1st iteration...\n")  # killed: no success line
     (project / "DSurfTomo.inMeasure.dat.iter001").write_text("partial\n")
     assert RUN.status(str(project)) == "unfinished"
     moved = RUN.set_aside_unfinished(cfg, [str(project)])

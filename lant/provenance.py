@@ -7,6 +7,7 @@ one writer at a time.
                                           Python and package versions; platform; sha1 of the third-party programs.
   <output>/.lant/lock                   the process that is writing to the output directory (PID, host, start).
 """
+
 import datetime as _dt
 import hashlib
 import json
@@ -40,17 +41,28 @@ def code_version():
     head = _git("rev-parse", "HEAD")
     if head is None:
         from . import __version__
+
         return dict(git=False, version=__version__)
     diff = _git("diff", "HEAD") or ""
-    untracked = [f for f in (_git("ls-files", "--others", "--exclude-standard") or "").split("\n")
-                 if f.endswith((".py", ".f90", ".yaml", ".sh", ".patch"))]
-    return dict(git=True, commit=head.strip(), modified=bool(diff), diff_sha1=hashlib.sha1(diff.encode()).hexdigest() if diff else None,
-                untracked_sources={f: _sha1_file(os.path.join(ROOT, f)) for f in sorted(untracked)
-                                   if os.path.isfile(os.path.join(ROOT, f))})
+    untracked = [
+        f
+        for f in (_git("ls-files", "--others", "--exclude-standard") or "").split("\n")
+        if f.endswith((".py", ".f90", ".yaml", ".sh", ".patch"))
+    ]
+    return dict(
+        git=True,
+        commit=head.strip(),
+        modified=bool(diff),
+        diff_sha1=hashlib.sha1(diff.encode()).hexdigest() if diff else None,
+        untracked_sources={
+            f: _sha1_file(os.path.join(ROOT, f)) for f in sorted(untracked) if os.path.isfile(os.path.join(ROOT, f))
+        },
+    )
 
 
 def environment():
     from .tools import external_path
+
     pk = {}
     for m in PACKAGES:
         try:
@@ -62,8 +74,13 @@ def environment():
         p = external_path("bin", b)
         if os.path.isfile(p):
             ext[b] = dict(path=p, sha1=_sha1_file(p))
-    return dict(python=sys.version.split()[0], packages=pk, platform=platform.platform(), machine=platform.machine(),
-                external=ext)
+    return dict(
+        python=sys.version.split()[0],
+        packages=pk,
+        platform=platform.platform(),
+        machine=platform.machine(),
+        external=ext,
+    )
 
 
 def record(rec_dir):
@@ -85,6 +102,7 @@ class Lock:
     """.lant/lock: one writing process per output directory, held with an exclusive flock (released by the
     system when the process ends, also when it is killed).  The file says which process holds it.  A nested step
     of the same process passes."""
+
     _held = {}
 
     def __init__(self, rec_dir, what=None):
@@ -96,12 +114,13 @@ class Lock:
     def __enter__(self):
         import fcntl
         import time
-        if self.path in Lock._held:                  # nested step of the same process
+
+        if self.path in Lock._held:  # nested step of the same process
             Lock._held[self.path][1] += 1
             self.nested = True
             return self
         fh = open(self.path, "a+")
-        for attempt in range(20):                    # a status probe holds a shared lock for a moment only
+        for attempt in range(20):  # a status probe holds a shared lock for a moment only
             try:
                 fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
@@ -112,12 +131,22 @@ class Lock:
                 fh.seek(0)
                 other = fh.read().strip()
                 fh.close()
-                raise RuntimeError("another lant process is writing to this output directory (%s); wait for it to "
-                                   "finish" % (other or "unknown process"))
+                raise RuntimeError(
+                    "another lant process is writing to this output directory (%s); wait for it to "
+                    "finish" % (other or "unknown process")
+                )
         fh.seek(0)
         fh.truncate()
-        fh.write(json.dumps(dict(pid=os.getpid(), host=socket.gethostname(), what=self.what,
-                                 start=_dt.datetime.now().isoformat(timespec="seconds"))))
+        fh.write(
+            json.dumps(
+                dict(
+                    pid=os.getpid(),
+                    host=socket.gethostname(),
+                    what=self.what,
+                    start=_dt.datetime.now().isoformat(timespec="seconds"),
+                )
+            )
+        )
         fh.flush()
         self.fh = fh
         Lock._held[self.path] = [fh, 1]
@@ -125,6 +154,7 @@ class Lock:
 
     def __exit__(self, *a):
         import fcntl
+
         ent = Lock._held.get(self.path)
         if ent is None:
             return False
@@ -142,6 +172,7 @@ class Lock:
 def active_writer(rec_dir):
     """Read-only probe: a stale PID record is not evidence that a writer still holds the lock."""
     import fcntl
+
     p = os.path.join(rec_dir, "lock")
     try:
         with open(p) as fh:

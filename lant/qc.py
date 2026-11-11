@@ -7,6 +7,7 @@ its own, not exported).
 The median of the accepted phase velocities against the reference, per frequency, is reported
 (median_vs_reference.txt): a systematic offset means the reference (and so the cycle count it fixes) may be off.
 """
+
 import h5py
 import numpy as np
 
@@ -44,10 +45,22 @@ def lambda_qc(cfg, path):
 # reason codes of a rejected phase-velocity sample (bit mask in the "reason" dataset of the measurement files)
 # (every sample that is not accepted carries at least one bit; 0 = accepted; bits 1024 and 2048 belonged to two
 # criteria removed in version 1.4 and are not used)
-REASONS = {"no_group_pick": 1, "snr_group": 2, "no_data": 4, "dev_pre": 8, "path_short_measure": 16, "side_lobe": 32,
-           "no_anchor": 64, "phase_slip": 128, "jackknife": 512,
-           "group_phase": 4096, "short_run": 8192, "wavelength": 16384, "no_reference": 32768,
-           "off_band": 65536}
+REASONS = {
+    "no_group_pick": 1,
+    "snr_group": 2,
+    "no_data": 4,
+    "dev_pre": 8,
+    "path_short_measure": 16,
+    "side_lobe": 32,
+    "no_anchor": 64,
+    "phase_slip": 128,
+    "jackknife": 512,
+    "group_phase": 4096,
+    "short_run": 8192,
+    "wavelength": 16384,
+    "no_reference": 32768,
+    "off_band": 65536,
+}
 
 
 def reason_counts(path):
@@ -67,6 +80,7 @@ def median_vs_reference(path, out_txt):
         cref = h["c_ref"][:]
     n = ok.sum(0)
     import warnings
+
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         med = np.nanmedian(vc, axis=0)
@@ -76,5 +90,8 @@ def median_vs_reference(path, out_txt):
         L.append("%8.4f %6d %8.4f %8.4f %+7.2f" % (f[i], n[i], med[i], cref[i], dev[i]))
     open(out_txt, "w").write("\n".join(L) + "\n")
     m = (n >= 10) & np.isfinite(dev)
-    return dict(frequencies=int(m.sum()), median_percent=float(np.median(dev[m])) if m.any() else None,
-                max_abs_percent=float(np.max(np.abs(dev[m]))) if m.any() else None)
+    return dict(
+        frequencies=int(m.sum()),
+        median_percent=float(np.median(dev[m])) if m.any() else None,
+        max_abs_percent=float(np.max(np.abs(dev[m]))) if m.any() else None,
+    )

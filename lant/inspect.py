@@ -5,6 +5,7 @@ reasons), and every step name (its summary
 plus derived quantities).  The output is JSON (printed without writing files), with
 the files and figures of the step to look at.  Nothing here changes a result.
 """
+
 import json
 import os
 
@@ -15,14 +16,35 @@ from .signal import geodesic_km, nearest_neighbour_km
 
 
 FIGURES = {
-    "clean": ["work/01_clean/report.txt", "work/01_clean/coverage.png", "work/01_clean/station_days.csv", "work/01_clean/processing_days.txt"],
-    "stack": ["work/03_stack/candidates.txt", "work/03_stack/station_qc/station_qc.png", "work/03_stack/station_qc/station_qc.txt",
-              "work/03_stack/removed.txt"],
+    "clean": [
+        "work/01_clean/report.txt",
+        "work/01_clean/coverage.png",
+        "work/01_clean/station_days.csv",
+        "work/01_clean/processing_days.txt",
+    ],
+    "stack": [
+        "work/03_stack/candidates.txt",
+        "work/03_stack/station_qc/station_qc.png",
+        "work/03_stack/station_qc/station_qc.txt",
+        "work/03_stack/removed.txt",
+    ],
     "reference": ["work/04_reference/fj.png", "work/04_reference/fj.txt"],
-    "disp": ["work/05_dispersion/median_vs_reference.txt", "work/05_dispersion/pair_figures/", "results/figures/3_dispersion_curves.png"],
-    "inversion": ["work/06_inversion/average_curve.txt", "work/06_inversion/vs1d.txt", "work/06_inversion/main/DSurfTomo.in",
-                  "results/figures/4_start_model.png"],
-    "evaluate": ["work/06_inversion/evaluation/evaluation.json", "results/figures/6_residuals.png", "results/figures/6_recovery.png"],
+    "disp": [
+        "work/05_dispersion/median_vs_reference.txt",
+        "work/05_dispersion/pair_figures/",
+        "results/figures/3_dispersion_curves.png",
+    ],
+    "inversion": [
+        "work/06_inversion/average_curve.txt",
+        "work/06_inversion/vs1d.txt",
+        "work/06_inversion/main/DSurfTomo.in",
+        "results/figures/4_start_model.png",
+    ],
+    "evaluate": [
+        "work/06_inversion/evaluation/evaluation.json",
+        "results/figures/6_residuals.png",
+        "results/figures/6_recovery.png",
+    ],
     "figures": ["results/figures/"],
 }
 
@@ -35,20 +57,31 @@ def geometry(stations):
     d, _ = geodesic_km(lon[iu], lat[iu], lon[ju], lat[ju])
     nn = nearest_neighbour_km(lon, lat)
     from .signal import local_xy_km
+
     x, y = local_xy_km(lon, lat)
     w = np.linalg.eigvalsh(np.cov(np.c_[x, y].T)) if len(names) > 2 else np.array([0, 1])
     elong = float(np.sqrt(w.max() / max(w.min(), 1e-12)))
-    return dict(stations=len(names), pairs=int(len(d)),
-                interstation_km=dict(min=float(d.min()), p10=float(np.percentile(d, 10)), median=float(np.median(d)),
-                                     p90=float(np.percentile(d, 90)), max=float(d.max())),
-                nearest_neighbour_km=dict(median=float(np.nanmedian(nn)), max=float(np.nanmax(nn))),
-                extent_km=dict(east_west=float(x.max() - x.min()), north_south=float(y.max() - y.min())),
-                elongation=elong, looks_like="line" if elong > 4 else "areal",
-                note="the longest usable period is about distance / (2 c): the reference step measures c and derives the band")
+    return dict(
+        stations=len(names),
+        pairs=int(len(d)),
+        interstation_km=dict(
+            min=float(d.min()),
+            p10=float(np.percentile(d, 10)),
+            median=float(np.median(d)),
+            p90=float(np.percentile(d, 90)),
+            max=float(d.max()),
+        ),
+        nearest_neighbour_km=dict(median=float(np.nanmedian(nn)), max=float(np.nanmax(nn))),
+        extent_km=dict(east_west=float(x.max() - x.min()), north_south=float(y.max() - y.min())),
+        elongation=elong,
+        looks_like="line" if elong > 4 else "areal",
+        note="the longest usable period is about distance / (2 c): the reference step measures c and derives the band",
+    )
 
 
 def data(cfg):
     from . import data as D
+
     out = {"configuration": cfg.get("_config_file")}
     try:
         st = D.used_stations(cfg)
@@ -60,12 +93,15 @@ def data(cfg):
         out["clean"] = s
     else:
         out["clean"] = "not run yet: `lant run clean` scans the raw files"
-    out["correlation_band"] = dict(fs=cfg["correlation"]["fs"], fmin=cfg["correlation"]["fmin_hz"], fmax=cfg["correlation"]["fmax_hz"])
+    out["correlation_band"] = dict(
+        fs=cfg["correlation"]["fs"], fmin=cfg["correlation"]["fmin_hz"], fmax=cfg["correlation"]["fmax_hz"]
+    )
     return out
 
 
 def stack(cfg, s):
     import h5py
+
     p = paths.P(cfg, paths.STACK, "stack.h5")
     if os.path.exists(p) and not isinstance(cfg["correlation"]["seg_step_s"], str):
         with h5py.File(p, "r") as h:
@@ -74,14 +110,19 @@ def stack(cfg, s):
             hours = nseg * (cfg["correlation"]["seg_step_s"] / 3600)
         ok = nseg > 0
         s["pairs_with_data"] = int(ok.sum())
-        s["pair_hours"] = dict(p10=float(np.percentile(hours[ok], 10)), median=float(np.median(hours[ok])), max=float(hours.max()))
-        s["distance_km_of_pairs_with_data"] = dict(min=float(dist[ok].min()), median=float(np.median(dist[ok])), max=float(dist[ok].max()))
+        s["pair_hours"] = dict(
+            p10=float(np.percentile(hours[ok], 10)), median=float(np.median(hours[ok])), max=float(hours.max())
+        )
+        s["distance_km_of_pairs_with_data"] = dict(
+            min=float(dist[ok].min()), median=float(np.median(dist[ok])), max=float(dist[ok].max())
+        )
     return s
 
 
 def disp(cfg, s):
     import h5py
     from .qc import reason_counts
+
     p = paths.P(cfg, paths.DISP, "disp.h5")
     if os.path.exists(p):
         with h5py.File(p, "r") as h:
@@ -96,6 +137,7 @@ def disp(cfg, s):
 
 def inspect(cfg, topic):
     from . import auto
+
     if topic == "auto":
         p = auto.path(cfg)
         out = json.load(open(p)) if os.path.exists(p) else {"status": "run `lant run clean` first"}
@@ -117,12 +159,14 @@ def inspect(cfg, topic):
 def status(cfg):
     """The state of every step (lant.manifest.status) and the next thing to do."""
     from . import manifest, report
+
     rcfg = report.resolved(cfg)
     st = manifest.status(rcfg)
     cmd, why = manifest.next_action(rcfg, st)
     from .artifacts import audit
     from .delivery import RULES
     from .provenance import active_writer
+
     writer = active_writer(records.rec_dir(cfg))
     if writer:
         # The record shows the step's previous run and the files are being written: neither is a result yet.
@@ -136,8 +180,12 @@ def status(cfg):
 
         lost = interrupted(cfg)
         if lost in st:  # its record still shows the run before, while its outputs were being replaced
-            st[lost] = dict(st[lost], state="failed", reason="interrupted before it finished; the next lant command "
-                            "registers its partial outputs and records it as failed")
+            st[lost] = dict(
+                st[lost],
+                state="failed",
+                reason="interrupted before it finished; the next lant command "
+                "registers its partial outputs and records it as failed",
+            )
             cmd, why = manifest.next_action(rcfg, st)
         files = audit(cfg)
     # A confirmation is the user's decision: an assistant shows the items and waits instead of running it.

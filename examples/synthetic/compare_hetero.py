@@ -10,6 +10,7 @@ Prints numbers only:
   * model: per depth node, at grid nodes within one cell of a station, correlation and regression slope of the
     recovered lateral Vs anomaly (relative to the mean of the depth) against the pattern put in.
 """
+
 import argparse
 import os
 import sys
@@ -25,6 +26,7 @@ def main():
     from lant.inversion.run import read_model
     from lant.signal import local_xy_km
     from make_stack import pattern
+
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--output", required=True)
     p.add_argument("--truth", required=True)
@@ -48,30 +50,51 @@ def main():
         m = (f >= lo) & (f < hi)
         r = rel[:, m][ok[:, m]]
         if r.size:
-            print("  %5.2f - %5.2f   %7d   %+9.3f          %7.3f" % (lo, hi, r.size, 100 * np.median(r),
-                                                                 100 * np.percentile(np.abs(r), 95)))
+            print(
+                "  %5.2f - %5.2f   %7d   %+9.3f          %7.3f"
+                % (lo, hi, r.size, 100 * np.median(r), 100 * np.percentile(np.abs(r), 95))
+            )
     r = rel[ok]
-    print("  all             %7d   %+9.3f          %7.3f" % (r.size, 100 * np.median(r), 100 * np.percentile(np.abs(r), 95)))
+    print(
+        "  all             %7d   %+9.3f          %7.3f"
+        % (r.size, 100 * np.median(r), 100 * np.percentile(np.abs(r), 95))
+    )
     am, at = (vc / c0[None, :] - 1)[ok], (true / c0[None, :] - 1)[ok]
-    print("  path anomaly (relative to the uniform background): true sd %.3f %%, measured sd %.3f %%, correlation %.3f, "
-          "slope %.3f" % (100 * at.std(), 100 * am.std(), np.corrcoef(am, at)[0, 1], np.dot(am - am.mean(), at - at.mean())
-                          / np.dot(at - at.mean(), at - at.mean())))
-    lon, lat, dep, v = read_model(a.model or os.path.join(a.output, "work", "06_inversion", "main", "DSurfTomo.inMeasure.dat"))
-    st = np.genfromtxt(os.path.join(a.output, "work", "01_clean", "stations.csv"), delimiter=",", names=True, dtype=None, encoding=None)
+    print(
+        "  path anomaly (relative to the uniform background): true sd %.3f %%, measured sd %.3f %%, correlation %.3f, "
+        "slope %.3f"
+        % (
+            100 * at.std(),
+            100 * am.std(),
+            np.corrcoef(am, at)[0, 1],
+            np.dot(am - am.mean(), at - at.mean()) / np.dot(at - at.mean(), at - at.mean()),
+        )
+    )
+    lon, lat, dep, v = read_model(
+        a.model or os.path.join(a.output, "work", "06_inversion", "main", "DSurfTomo.inMeasure.dat")
+    )
+    st = np.genfromtxt(
+        os.path.join(a.output, "work", "01_clean", "stations.csv"), delimiter=",", names=True, dtype=None, encoding=None
+    )
     G = np.meshgrid(lon, lat, indexing="ij")
     x, y = local_xy_km(G[0].ravel(), G[1].ravel(), float(T["lat0"]), float(T["lon0"]))
     sx, sy = local_xy_km(st["longitude"], st["latitude"], float(T["lat0"]), float(T["lon0"]))
     near = np.hypot(x[:, None] - sx[None, :], y[:, None] - sy[None, :]).min(axis=1) <= cell
     d = pattern(x, y, cell, amp)[near]
-    print("model against the pattern (amplitude %.1f %%, cell %.1f km; %d grid nodes within one cell of a station)"
-          % (100 * amp, cell, near.sum()))
+    print(
+        "model against the pattern (amplitude %.1f %%, cell %.1f km; %d grid nodes within one cell of a station)"
+        % (100 * amp, cell, near.sum())
+    )
     print("  depth (km)   correlation   slope   recovered sd %")
     for k, z in enumerate(dep):
         vz = v[:, :, k].ravel()[near]
         an = vz / vz.mean() - 1
         if an.std() < 1e-6:
             continue
-        print("  %8.2f     %+7.3f     %+6.3f   %7.3f" % (z, np.corrcoef(an, d)[0, 1], np.dot(an, d) / np.dot(d, d), 100 * an.std()))
+        print(
+            "  %8.2f     %+7.3f     %+6.3f   %7.3f"
+            % (z, np.corrcoef(an, d)[0, 1], np.dot(an, d) / np.dot(d, d), 100 * an.std())
+        )
 
 
 if __name__ == "__main__":

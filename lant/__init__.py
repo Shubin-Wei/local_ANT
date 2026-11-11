@@ -5,4 +5,5 @@ stack and station diagnosis -> F-J reference curve -> two-station phase velociti
 control -> DSurfTomo direct inversion for 3-D Vs (areal arrays) or narrow-strip inversion along a line -> checks and
 figures.  Command line: `lant --help`; documentation: docs/tutorial.md.
 """
+
 __version__ = "1.4.0"

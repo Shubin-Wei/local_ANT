@@ -20,6 +20,7 @@ Accepted tables (recognised automatically):
     (assign_by_serial); `line` splits the table into one project per line (data.line).
 Names are matched to the record headers by match_names (see there).
 """
+
 import csv
 import re
 
@@ -32,20 +33,125 @@ class StationError(ValueError):
 
 ALIASES = {
     "network": ["network", "net", "knetwk", "networkcode", "netcode", "台网", "台网代码", "台网名"],
-    "station": ["station", "sta", "stat", "stname", "stationname", "stationcode", "kstnm", "name", "code", "id",
-                "site", "point", "台站", "台站名", "台站名称", "站名", "站点", "测点", "点号", "台号", "台站代码", "名称"],
+    "station": [
+        "station",
+        "sta",
+        "stat",
+        "stname",
+        "stationname",
+        "stationcode",
+        "kstnm",
+        "name",
+        "code",
+        "id",
+        "site",
+        "point",
+        "台站",
+        "台站名",
+        "台站名称",
+        "站名",
+        "站点",
+        "测点",
+        "点号",
+        "台号",
+        "台站代码",
+        "名称",
+    ],
     "latitude": ["latitude", "lat", "stla", "纬度", "北纬", "y", "lat(deg)", "latitude(deg)", "lat_deg"],
-    "longitude": ["longitude", "lon", "long", "lng", "stlo", "经度", "东经", "x", "lon(deg)", "longitude(deg)", "lon_deg"],
-    "elevation": ["elevation", "elev", "ele", "alt", "altitude", "height", "stel", "高程", "海拔", "高度", "z", "elev(m)",
-                  "elevation(m)", "高程(m)", "海拔(m)"],
-    "instrument": ["instrument", "sensor", "model", "instrumentmodel", "sensormodel", "seismometer", "geophone",
-                   "仪器", "仪器型号", "型号", "传感器", "检波器", "地震计"],
-    "serial": ["serial", "serialnumber", "serialno", "sn", "nodeid", "instrumentid", "仪器号", "仪器编号", "序列号",
-               "设备号", "节点号"],
-    "start": ["start", "starttime", "begin", "begintime", "deploy", "deploytime", "开始时间", "起始时间", "布设时间",
-              "布台时间", "布设日期", "布台日期", "开始日期", "起始日期", "startdate", "deploydate"],
-    "end": ["end", "endtime", "stop", "stoptime", "pickup", "pickuptime", "结束时间", "终止时间", "回收时间",
-            "撤台时间", "收台时间", "回收日期", "撤台日期", "结束日期", "enddate", "pickupdate"],
+    "longitude": [
+        "longitude",
+        "lon",
+        "long",
+        "lng",
+        "stlo",
+        "经度",
+        "东经",
+        "x",
+        "lon(deg)",
+        "longitude(deg)",
+        "lon_deg",
+    ],
+    "elevation": [
+        "elevation",
+        "elev",
+        "ele",
+        "alt",
+        "altitude",
+        "height",
+        "stel",
+        "高程",
+        "海拔",
+        "高度",
+        "z",
+        "elev(m)",
+        "elevation(m)",
+        "高程(m)",
+        "海拔(m)",
+    ],
+    "instrument": [
+        "instrument",
+        "sensor",
+        "model",
+        "instrumentmodel",
+        "sensormodel",
+        "seismometer",
+        "geophone",
+        "仪器",
+        "仪器型号",
+        "型号",
+        "传感器",
+        "检波器",
+        "地震计",
+    ],
+    "serial": [
+        "serial",
+        "serialnumber",
+        "serialno",
+        "sn",
+        "nodeid",
+        "instrumentid",
+        "仪器号",
+        "仪器编号",
+        "序列号",
+        "设备号",
+        "节点号",
+    ],
+    "start": [
+        "start",
+        "starttime",
+        "begin",
+        "begintime",
+        "deploy",
+        "deploytime",
+        "开始时间",
+        "起始时间",
+        "布设时间",
+        "布台时间",
+        "布设日期",
+        "布台日期",
+        "开始日期",
+        "起始日期",
+        "startdate",
+        "deploydate",
+    ],
+    "end": [
+        "end",
+        "endtime",
+        "stop",
+        "stoptime",
+        "pickup",
+        "pickuptime",
+        "结束时间",
+        "终止时间",
+        "回收时间",
+        "撤台时间",
+        "收台时间",
+        "回收日期",
+        "撤台日期",
+        "结束日期",
+        "enddate",
+        "pickupdate",
+    ],
     "line": ["line", "profile", "linename", "测线", "线号", "线名", "剖面"],
 }
 
@@ -70,7 +176,7 @@ def parse_coord(s):
     if _FLOAT.fullmatch(s):
         return float(s)
     sign = 1.0
-    s = re.sub(r"(\d\s*[mM′']\s*\d+(?:\.\d+)?)\s*[sS](?=\s*[NSEWnsew]?$)", r"\1", s)   # '...24.2s': seconds, not south
+    s = re.sub(r"(\d\s*[mM′']\s*\d+(?:\.\d+)?)\s*[sS](?=\s*[NSEWnsew]?$)", r"\1", s)  # '...24.2s': seconds, not south
     m = re.fullmatch(r"([NSEWnsew])?\s*(.*?)\s*([NSEWnsew])?", s)
     head, body, tail = m.group(1), m.group(2), m.group(3)
     if head and tail:
@@ -97,7 +203,9 @@ def parse_coord(s):
 
 
 _PLAIN = re.compile(r"[-+]?\d+(\.\d*)?([eE][-+]?\d+)?")
-_DMS = re.compile(r"[NSEWnsew]?\s*[-+]?\d+(\.\d+)?\s*[°º:dD]\s*\d+(\.\d+)?\s*[mM′':]?\s*(\d+(\.\d+)?\s*[sS″\"]?)?\s*[NSEWnsew]?")
+_DMS = re.compile(
+    r"[NSEWnsew]?\s*[-+]?\d+(\.\d+)?\s*[°º:dD]\s*\d+(\.\d+)?\s*[mM′':]?\s*(\d+(\.\d+)?\s*[sS″\"]?)?\s*[NSEWnsew]?"
+)
 _HEMI = re.compile(r"[NSEWnsew]\s*\d+\.\d+|\d+\.\d+\s*[NSEWnsew]")
 
 
@@ -120,7 +228,7 @@ def _rows_text(path):
     if not lines:
         raise StationError("%s is empty" % path)
     for d in (",", "\t", ";", "|"):
-        if all(d in l for l in lines[:min(5, len(lines))]):
+        if all(d in l for l in lines[: min(5, len(lines))]):
             return [[c.strip() for c in r] for r in csv.reader(lines, delimiter=d)]
     return [l.split() for l in lines]
 
@@ -129,7 +237,9 @@ def _rows_excel(path):
     try:
         import openpyxl
     except ImportError:
-        raise StationError("%s: reading Excel files needs openpyxl (pip install openpyxl), or save the sheet as CSV" % path)
+        raise StationError(
+            "%s: reading Excel files needs openpyxl (pip install openpyxl), or save the sheet as CSV" % path
+        )
     ws = openpyxl.load_workbook(path, read_only=True, data_only=True).worksheets[0]
     rows = [["" if c is None else str(c).strip() for c in r] for r in ws.iter_rows(values_only=True)]
     return [r for r in rows if any(r)]
@@ -150,6 +260,7 @@ def parse_time(value, end=False, date_offset_s=0.0):
     time (2024-05-01, 20240501, 240501) is a day of field work in the time zone of the day labels (date_offset_s,
     from data.day_label): the start is the beginning of that day, the end is the end of that day."""
     import obspy
+
     v = str(value).strip()
     m = re.fullmatch(r"(\d{2}|\d{4})[-/.]?(\d{2})[-/.]?(\d{2})", v)
     if m:
@@ -163,9 +274,24 @@ def read_table(path, date_offset_s=0.0):
     """-> list of dict(network or None, station, lat, lon, elev) and a description of how the file was read."""
     if path.lower().endswith((".xml", ".stationxml")):
         import obspy
+
         inv = obspy.read_inventory(path)
-        out = [dict(network=n.code, station=s.code, lat=float(s.latitude), lon=float(s.longitude), elev=float(s.elevation),
-                    instrument=None, serial=None, line=None, t_start=None, t_end=None) for n in inv for s in n]
+        out = [
+            dict(
+                network=n.code,
+                station=s.code,
+                lat=float(s.latitude),
+                lon=float(s.longitude),
+                elev=float(s.elevation),
+                instrument=None,
+                serial=None,
+                line=None,
+                t_start=None,
+                t_end=None,
+            )
+            for n in inv
+            for s in n
+        ]
         if not out:
             raise StationError("%s: no station in the StationXML file" % path)
         return out, "StationXML"
@@ -183,8 +309,10 @@ def read_table(path, date_offset_s=0.0):
         numeric = [j for j in range(ncol) if all(_is_num(r[j]) for r in body)]
         text = [j for j in range(ncol) if j not in numeric]
         if len(numeric) < 2:
-            raise StationError("%s: cannot find two coordinate columns; give the table a header line such as "
-                               "network,station,latitude,longitude,elevation" % path)
+            raise StationError(
+                "%s: cannot find two coordinate columns; give the table a header line such as "
+                "network,station,latitude,longitude,elevation" % path
+            )
         if not text:
             # a numeric station code (e.g. "1001 35.12 105.43"): the first column is the name if it is an integer
             if all(re.fullmatch(r"\d+", r[0]) for r in body) and len(numeric) >= 3:
@@ -200,16 +328,20 @@ def read_table(path, date_offset_s=0.0):
         elif b in lat_c and a not in lat_c:
             cols.update(latitude=b, longitude=a)
         else:
-            raise StationError("%s: the two coordinate columns %d and %d are both within +-90 degrees, so latitude and "
-                               "longitude cannot be told apart; add a header line (latitude, longitude)" % (path, a + 1, b + 1))
+            raise StationError(
+                "%s: the two coordinate columns %d and %d are both within +-90 degrees, so latitude and "
+                "longitude cannot be told apart; add a header line (latitude, longitude)" % (path, a + 1, b + 1)
+            )
         if len(numeric) > 2:
             cols["elevation"] = numeric[2]
         if len(text) >= 2:
             cols.update(network=text[0], station=text[1])
         else:
             cols["station"] = text[0]
-        how.append("no header: columns inferred from the values (%s)"
-                   % ", ".join("%s=column %d" % (k, i + 1) for k, i in sorted(cols.items(), key=lambda t: t[1])))
+        how.append(
+            "no header: columns inferred from the values (%s)"
+            % ", ".join("%s=column %d" % (k, i + 1) for k, i in sorted(cols.items(), key=lambda t: t[1]))
+        )
     out = []
     for k, r in enumerate(body):
         try:
@@ -219,8 +351,10 @@ def read_table(path, date_offset_s=0.0):
         if not np.isfinite(lat) or not np.isfinite(lon):
             continue
         if abs(lat) > 90 or abs(lon) > 360:
-            raise StationError("%s row %d: latitude %g / longitude %g are not geographic degrees (projected coordinates "
-                               "such as UTM must be converted to latitude/longitude first)" % (path, k + 2, lat, lon))
+            raise StationError(
+                "%s row %d: latitude %g / longitude %g are not geographic degrees (projected coordinates "
+                "such as UTM must be converted to latitude/longitude first)" % (path, k + 2, lat, lon)
+            )
         el = np.nan
         if "elevation" in cols and cols["elevation"] < len(r):
             try:
@@ -234,18 +368,30 @@ def read_table(path, date_offset_s=0.0):
         opt = lambda k: (r[cols[k]].strip() or None) if k in cols and cols[k] < len(r) else None
         if lon > 180:
             lon -= 360.0
-        row = dict(network=net or None, station=sta, lat=lat, lon=lon, elev=el, instrument=opt("instrument"),
-                   serial=opt("serial"), line=opt("line"), t_start=None, t_end=None)
+        row = dict(
+            network=net or None,
+            station=sta,
+            lat=lat,
+            lon=lon,
+            elev=el,
+            instrument=opt("instrument"),
+            serial=opt("serial"),
+            line=opt("line"),
+            t_start=None,
+            t_end=None,
+        )
         for key, col in (("t_start", "start"), ("t_end", "end")):
             if opt(col):
                 try:
                     row[key] = parse_time(opt(col), col == "end", date_offset_s)
                 except Exception:
-                    raise StationError("%s row %d: %s time %r is not a date (2024-05-01) or a date and time "
-                                       "(2024-05-01T08:00:00, UTC)" % (path, k + 2, col, opt(col)))
+                    raise StationError(
+                        "%s row %d: %s time %r is not a date (2024-05-01) or a date and time "
+                        "(2024-05-01T08:00:00, UTC)" % (path, k + 2, col, opt(col))
+                    )
         if row["serial"] is None and (row["t_start"] is not None or row["t_end"] is not None):
-            row["serial"] = sta                     # a deployment window without a serial column: the station name is
-                                                    # the code of the record headers, used only inside the window
+            row["serial"] = sta  # a deployment window without a serial column: the station name is
+            # the code of the record headers, used only inside the window
         out.append(row)
     if not out:
         raise StationError("%s: no station rows read" % path)
@@ -266,8 +412,9 @@ def names_from_files(traces, table):
     -> (number of records named, files left unnamed because their records overlap)."""
     import os
     from collections import defaultdict
+
     bad = set()
-    per_file = defaultdict(list)                  # records of one channel code at the same time: not separable
+    per_file = defaultdict(list)  # records of one channel code at the same time: not separable
     for t in traces:
         if not t["sta"]:
             per_file[(t["file"], t.get("channel", ""))].append((t["start"], t["end"]))
@@ -285,10 +432,14 @@ def names_from_files(traces, table):
         if t["sta"] or t["file"] in bad:
             continue
         stem = os.path.splitext(os.path.basename(t["file"]))[0]
-        parts = re.split(r"[^A-Za-z0-9]+", stem) + [stem] + re.split(r"[^A-Za-z0-9]+", os.path.basename(os.path.dirname(t["file"])))
+        parts = (
+            re.split(r"[^A-Za-z0-9]+", stem)
+            + [stem]
+            + re.split(r"[^A-Za-z0-9]+", os.path.basename(os.path.dirname(t["file"])))
+        )
         hit = {known[_key(p)] for p in parts if p and _key(p) in known}
         if len(hit) == 1:
-            t["sta_header"] = t["sta"]                 # the code in the file, to pick the record when it is read
+            t["sta_header"] = t["sta"]  # the code in the file, to pick the record when it is read
             t["sta"] = split_name(hit.pop())[1]
             n += 1
     return n, sorted(bad)
@@ -310,15 +461,24 @@ def assign_by_serial(table, traces, default_net="XX"):
         name = "%s.%s" % (net or default_net, sta)
         if name in coords:
             raise StationError("the station table has two rows for point %s" % name)
-        coords[name] = dict(lon=r["lon"], lat=r["lat"], elev=r["elev"], instrument=r.get("instrument"), line=r.get("line"))
+        coords[name] = dict(
+            lon=r["lon"], lat=r["lat"], elev=r["elev"], instrument=r.get("instrument"), line=r.get("line")
+        )
         by_serial.setdefault(_key(r["serial"]), []).append(
-            (r["t_start"] if r["t_start"] is not None else -np.inf, r["t_end"] if r["t_end"] is not None else np.inf, name))
+            (
+                r["t_start"] if r["t_start"] is not None else -np.inf,
+                r["t_end"] if r["t_end"] is not None else np.inf,
+                name,
+            )
+        )
     for key, wins in by_serial.items():
         wins.sort()
         for a, b in zip(wins[:-1], wins[1:]):
             if b[0] < a[1]:
-                raise StationError("serial %s is at %s and at %s at the same time (windows overlap): correct the "
-                                   "start / end times of the station table" % (key, a[2], b[2]))
+                raise StationError(
+                    "serial %s is at %s and at %s at the same time (windows overlap): correct the "
+                    "start / end times of the station table" % (key, a[2], b[2])
+                )
     used, rest, outside, hit = [], [], 0, set()
     for t in traces:
         wins = by_serial.get(_key(t["sta"]))
@@ -333,8 +493,18 @@ def assign_by_serial(table, traces, default_net="XX"):
                 hit.add(name)
                 got = True
         outside += not got
-    return used, rest, coords, rest_rows, dict(points=len(coords), records=len(used), records_outside_windows=int(outside),
-                                               points_without_data=sorted(set(coords) - hit))
+    return (
+        used,
+        rest,
+        coords,
+        rest_rows,
+        dict(
+            points=len(coords),
+            records=len(used),
+            records_outside_windows=int(outside),
+            points_without_data=sorted(set(coords) - hit),
+        ),
+    )
 
 
 def split_name(s):
@@ -367,7 +537,7 @@ def match_names(table, data_codes):
     mapping, coords, rep, unmatched, ambiguous = {}, {}, [], [], []
     rows_of = {}
     nets = {n for n, _ in data_codes if n} | {r["network"] for r in table if r["network"]}
-    default_net = nets.pop() if len(nets) == 1 else "XX"        # one network in the whole data set: use it everywhere
+    default_net = nets.pop() if len(nets) == 1 else "XX"  # one network in the whole data set: use it everywhere
     for row in table:
         net, sta = row["network"], row["station"]
         if net is None:
@@ -403,22 +573,48 @@ def match_names(table, data_codes):
             name = "%s.%s" % (cand[0][0] or net or default_net, cand[0][1])
         if not cand:
             unmatched.append(name)
-            coords.setdefault(name, dict(lon=row["lon"], lat=row["lat"], elev=row["elev"], instrument=row.get("instrument"), line=row.get("line")))
+            coords.setdefault(
+                name,
+                dict(
+                    lon=row["lon"],
+                    lat=row["lat"],
+                    elev=row["elev"],
+                    instrument=row.get("instrument"),
+                    line=row.get("line"),
+                ),
+            )
             continue
         rows_of.setdefault(cand[0], []).append((name, row, rule))
         if cand[0] in mapping:
             continue
         mapping[cand[0]] = name
-        coords[name] = dict(lon=row["lon"], lat=row["lat"], elev=row["elev"], instrument=row.get("instrument"), line=row.get("line"))
+        coords[name] = dict(
+            lon=row["lon"], lat=row["lat"], elev=row["elev"], instrument=row.get("instrument"), line=row.get("line")
+        )
         if rule > 1:
             rep.append("%s.%s (header) -> %s (table) [rule %d]" % (cand[0][0], cand[0][1], name, rule))
-    for code, lst in rows_of.items():              # one header station claimed by several table rows: none is used
+    for code, lst in rows_of.items():  # one header station claimed by several table rows: none is used
         if len(lst) > 1:
             name = mapping.pop(code)
             coords.pop(name, None)
             rep[:] = [x for x in rep if not x.startswith("%s.%s (header)" % code)]
-            ambiguous.append("header station %s.%s matches %d table rows (%s): not used until the table is fixed or "
-                             "data.rename says which" % (code[0], code[1], len(lst), "; ".join(
-                                 "%s at %.5f %.5f" % (n, r["lon"], r["lat"]) for n, r, _ in lst)))
-    return mapping, coords, dict(renamed=rep, table_without_data=unmatched, ambiguous=ambiguous,
-                                 data_without_table=sorted("%s.%s" % c for c in data_codes if c not in mapping))
+            ambiguous.append(
+                "header station %s.%s matches %d table rows (%s): not used until the table is fixed or "
+                "data.rename says which"
+                % (
+                    code[0],
+                    code[1],
+                    len(lst),
+                    "; ".join("%s at %.5f %.5f" % (n, r["lon"], r["lat"]) for n, r, _ in lst),
+                )
+            )
+    return (
+        mapping,
+        coords,
+        dict(
+            renamed=rep,
+            table_without_data=unmatched,
+            ambiguous=ambiguous,
+            data_without_table=sorted("%s.%s" % c for c in data_codes if c not in mapping),
+        ),
+    )

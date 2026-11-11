@@ -1,13 +1,14 @@
 """Records kept in the user's output directory (never in the source tree):
 
-    <output>/.lant/config.yaml            the full configuration of the latest run (defaults filled in)
-    <output>/.lant/config_history/        earlier versions, kept whenever the configuration changed
-    <output>/.lant/run_log.jsonl          one line per step: start, end, status, duration, outputs, messages
-    <output>/.lant/summary/<step>.json    the key numbers of each step (what `lant inspect` reports)
-    <output>/notes.md                     parameter choices and their reasons (appended through lant)
-    <output>/.lant/provenance/<id>.json   code version and environment of the runs (lant/provenance.py)
-    <output>/.lant/lock                   the process writing to the output directory
+<output>/.lant/config.yaml            the full configuration of the latest run (defaults filled in)
+<output>/.lant/config_history/        earlier versions, kept whenever the configuration changed
+<output>/.lant/run_log.jsonl          one line per step: start, end, status, duration, outputs, messages
+<output>/.lant/summary/<step>.json    the key numbers of each step (what `lant inspect` reports)
+<output>/notes.md                     parameter choices and their reasons (appended through lant)
+<output>/.lant/provenance/<id>.json   code version and environment of the runs (lant/provenance.py)
+<output>/.lant/lock                   the process writing to the output directory
 """
+
 import datetime as _dt
 import json
 import os
@@ -16,6 +17,7 @@ import time
 import traceback
 
 from . import config as C
+
 
 def rec_dir(cfg, create=False):
     d = os.path.join(cfg["project"]["output_dir"], ".lant")
@@ -42,7 +44,7 @@ def save_config(cfg):
         stamp = _dt.datetime.fromtimestamp(os.path.getmtime(cur)).strftime("%Y%m%dT%H%M%S_%f")
         dst = os.path.join(hist, "config_%s.yaml" % stamp)
         k = 1
-        while os.path.exists(dst):                     # never overwrite an earlier version
+        while os.path.exists(dst):  # never overwrite an earlier version
             dst = os.path.join(hist, "config_%s_%d.yaml" % (stamp, k))
             k += 1
         shutil.move(cur, dst)
@@ -60,6 +62,7 @@ def strict(o):
     """JSON-safe copy: numpy types to Python, NaN / inf to None (standard JSON has no NaN)."""
     import math
     import numpy as np
+
     if isinstance(o, dict):
         return {str(k): strict(v) for k, v in o.items()}
     if isinstance(o, (list, tuple)):
@@ -105,19 +108,28 @@ class Step:
         from logging.handlers import RotatingFileHandler
         from .progress import Progress
         from .provenance import record
+
         self.context = contextlib.ExitStack()
         try:
             from .artifacts import protect_step_outputs, writing
+
             self.context.enter_context(writing(self.cfg, self.name))
             protect_step_outputs(self.cfg, self.name)
             from .delivery import initialize
+
             initialize(self.cfg)
             save_config(self.cfg)
             self.t = time.time()
-            log(self.cfg, step=self.name, event="start", config=self.cfg.get("_config_file"),
-                provenance=record(rec_dir(self.cfg)))
-            handler = RotatingFileHandler(os.path.join(rec_dir(self.cfg), "lant.log"),
-                                          maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8")
+            log(
+                self.cfg,
+                step=self.name,
+                event="start",
+                config=self.cfg.get("_config_file"),
+                provenance=record(rec_dir(self.cfg)),
+            )
+            handler = RotatingFileHandler(
+                os.path.join(rec_dir(self.cfg), "lant.log"), maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
+            )
             self.context.callback(handler.close)
             verbose = self.cfg.get("_verbose", False)
 
@@ -134,7 +146,7 @@ class Step:
 
             self.context.enter_context(contextlib.redirect_stdout(Output()))
             print("[lant] step %s started" % self.name, flush=True)
-            position = self.cfg.get("_position")            # "6/9" within lant run all
+            position = self.cfg.get("_position")  # "6/9" within lant run all
             self.context.enter_context(Progress("[%s] %s" % (position, self.name) if position else self.name))
             return self
         except BaseException:
@@ -143,6 +155,7 @@ class Step:
 
     def __exit__(self, et, ev, tb):
         import sys
+
         dt = round(time.time() - self.t, 1)
         failed = getattr(self, "failed", None)
         event = "failed" if et else ("partial" if failed else "done")
@@ -153,7 +166,10 @@ class Step:
             log(self.cfg, step=self.name, event=event, seconds=dt, **extra)
             print("[lant] step %s %s (%.0fs)" % (self.name, event, dt), flush=True)
         finally:
-            self.context.__exit__(et, ev, tb)            # registers the outputs and releases the lock
-        print("[lant] %s %s (%.0fs); details: %s" % (self.name, event, dt,
-              os.path.join(rec_dir(self.cfg), "lant.log")), file=sys.stderr, flush=True)
+            self.context.__exit__(et, ev, tb)  # registers the outputs and releases the lock
+        print(
+            "[lant] %s %s (%.0fs); details: %s" % (self.name, event, dt, os.path.join(rec_dir(self.cfg), "lant.log")),
+            file=sys.stderr,
+            flush=True,
+        )
         return False

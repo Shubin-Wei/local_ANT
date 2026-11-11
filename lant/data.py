@@ -16,6 +16,7 @@ date of t0 by data.day_label: "utc_start" (the UTC date of the start; the defaul
 Daylight-saving time is not followed: the windows stay fixed 24-h UTC windows.  work/01_clean/processing_days.txt lists
 every label with its UTC window.
 """
+
 import csv
 import fnmatch
 import json
@@ -62,14 +63,19 @@ def write_table(path, coords):
         w.writerow(["network", "station", "latitude", "longitude", "elevation"])
         for name, c in sorted(coords.items()):
             n, s = name.split(".", 1)
-            w.writerow([n, s, "%.7f" % c["lat"], "%.7f" % c["lon"], "" if not np.isfinite(c["elev"]) else "%.1f" % c["elev"]])
+            w.writerow(
+                [n, s, "%.7f" % c["lat"], "%.7f" % c["lon"], "" if not np.isfinite(c["elev"]) else "%.1f" % c["elev"]]
+            )
 
 
 def read_canonical(path):
     out = {}
     for r in csv.DictReader(open(path, newline="")):
-        out["%s.%s" % (r["network"], r["station"])] = dict(lon=float(r["longitude"]), lat=float(r["latitude"]),
-                                                           elev=float(r["elevation"]) if r["elevation"] else np.nan)
+        out["%s.%s" % (r["network"], r["station"])] = dict(
+            lon=float(r["longitude"]),
+            lat=float(r["latitude"]),
+            elev=float(r["elevation"]) if r["elevation"] else np.nan,
+        )
     return out
 
 
@@ -86,7 +92,9 @@ def resolve_names(names, known, what):
         if net:
             cand = [k for k in cand if k.split(".")[0] == net] or cand
         if len(cand) != 1:
-            raise DataError("%s: station %r %s" % (what, n, "matches %s" % cand if cand else "is not in the station table"))
+            raise DataError(
+                "%s: station %r %s" % (what, n, "matches %s" % cand if cand else "is not in the station table")
+            )
         out.append(cand[0])
     return out
 
@@ -120,6 +128,7 @@ def read_quiet(path, **kw):
     each, hundreds of thousands per file; they are counted, not printed."""
     import warnings
     import obspy
+
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         st = obspy.read(path, **kw)
@@ -130,7 +139,7 @@ def _scan_one(args):
     path, fmt = args
     try:
         st, nwarn = read_quiet(path, format=None if fmt == "auto" else fmt, headonly=True)
-    except Exception as exc:          # not a seismic data file, or corrupt
+    except Exception as exc:  # not a seismic data file, or corrupt
         return path, None, "%s: %s" % (type(exc).__name__, str(exc)[:150])
     rows = []
     for tr in st:
@@ -145,16 +154,29 @@ def _scan_one(args):
             ci = sac.get("cmpinc")
             if ci is not None and ci != -12345.0:
                 cmpinc = float(ci)
-        rows.append(dict(file=path, net=s.network, sta=s.station, channel=s.channel, location=s.location,
-                         fs=float(s.sampling_rate), start=s.starttime.timestamp,
-                         end=s.endtime.timestamp + 1.0 / s.sampling_rate, npts=int(s.npts),
-                         format=str(s.get("_format", "")), coord=coord, cmpinc=cmpinc))
+        rows.append(
+            dict(
+                file=path,
+                net=s.network,
+                sta=s.station,
+                channel=s.channel,
+                location=s.location,
+                fs=float(s.sampling_rate),
+                start=s.starttime.timestamp,
+                end=s.endtime.timestamp + 1.0 / s.sampling_rate,
+                npts=int(s.npts),
+                format=str(s.get("_format", "")),
+                coord=coord,
+                cmpinc=cmpinc,
+            )
+        )
     return path, rows, nwarn
 
 
 def build_index(cfg, nproc=4):
     """Scan the headers of every candidate file -> index dict (all channels)."""
     from multiprocessing import Pool
+
     d = cfg["data"]
     files = find_files(d["raw_dir"], d["file_patterns"], d["ignore_patterns"])
     if not files:
@@ -240,14 +262,20 @@ def choose_channel(traces, pattern):
             unknown = sorted({r["channel"] for r in rows if orientation(r) == "unknown"})
             if not sel and len(chans) == 1 and unknown:
                 sel = rows
-                notes.append("%s.%s: only channel %s, orientation unknown: used - confirm that it is vertical (or set "
-                             "data.channel)" % (code[0], code[1], chans[0]))
+                notes.append(
+                    "%s.%s: only channel %s, orientation unknown: used - confirm that it is vertical (or set "
+                    "data.channel)" % (code[0], code[1], chans[0])
+                )
             elif not sel and not unknown:
-                notes.append("%s.%s: channels %s are horizontal: station not used (only vertical-component "
-                             "correlations are supported)" % (code[0], code[1], ",".join(chans)))
+                notes.append(
+                    "%s.%s: channels %s are horizontal: station not used (only vertical-component "
+                    "correlations are supported)" % (code[0], code[1], ",".join(chans))
+                )
             elif not sel:
-                notes.append("%s.%s: channels %s, none recognisable as vertical: station not used (set data.channel)"
-                             % (code[0], code[1], ",".join(chans)))
+                notes.append(
+                    "%s.%s: channels %s, none recognisable as vertical: station not used (set data.channel)"
+                    % (code[0], code[1], ",".join(chans))
+                )
         if sel:
             out[code] = sel
     return out, notes
@@ -272,8 +300,10 @@ def label_offset_s(spec):
     else:
         m = re.fullmatch(r"\s*UTC\s*([+-])\s*(\d{1,2})(?::(\d{2}))?\s*", str(spec), re.I)
         if not m:
-            raise ValueError("data.day_label must be 'utc_start', a fixed offset such as 'UTC+8' or 'UTC-05:30', or "
-                             "a number of hours; got %r" % (spec,))
+            raise ValueError(
+                "data.day_label must be 'utc_start', a fixed offset such as 'UTC+8' or 'UTC-05:30', or "
+                "a number of hours; got %r" % (spec,)
+            )
         h = (1 if m.group(1) == "+" else -1) * (int(m.group(2)) + int(m.group(3) or 0) / 60.0)
     if not -14 <= h <= 14:
         raise ValueError("data.day_label: offset %g h outside -14..+14 h" % h)
@@ -283,6 +313,7 @@ def label_offset_s(spec):
 def day_label(t0, cfg=None, offset_s=None):
     """Label YYYYDDD of the processing day that starts at t0 (UTC timestamp) under data.day_label."""
     import obspy
+
     off = offset_s if offset_s is not None else label_offset_s((cfg or {}).get("data", {}).get("day_label"))
     u = obspy.UTCDateTime(t0 + off)
     return "%04d%03d" % (u.year, u.julday)
@@ -291,25 +322,31 @@ def day_label(t0, cfg=None, offset_s=None):
 def label_date(t0, cfg):
     """YYYY-MM-DD of the label of the processing day starting at t0 (what start_date / end_date compare with)."""
     import obspy
+
     return (obspy.UTCDateTime(t0 + label_offset_s(cfg["data"].get("day_label")))).strftime("%Y-%m-%d")
 
 
 def utc_date(t):
     """YYYY-MM-DD of a UTC timestamp (record spans and the like; not a processing-day label)."""
     import obspy
+
     return obspy.UTCDateTime(t).strftime("%Y-%m-%d")
 
 
 def utc_window(t0):
     import obspy
-    return "%s - %s UTC" % (obspy.UTCDateTime(t0).strftime("%Y-%m-%d %H:%M"),
-                            obspy.UTCDateTime(t0 + 86400).strftime("%Y-%m-%d %H:%M"))
+
+    return "%s - %s UTC" % (
+        obspy.UTCDateTime(t0).strftime("%Y-%m-%d %H:%M"),
+        obspy.UTCDateTime(t0 + 86400).strftime("%Y-%m-%d %H:%M"),
+    )
 
 
 def day_windows(traces, cfg):
     """Processing days that hold data: {label: (t0, [trace rows])}.  data.start_date / end_date select by the date
     of the label (data.day_label), so one date is one processing day."""
     import obspy
+
     h = cfg["data"]["day_start_utc_hour"]
     off = label_offset_s(cfg["data"].get("day_label"))
     lo = str(cfg["data"]["start_date"]) if cfg["data"]["start_date"] else None
@@ -354,6 +391,7 @@ def _decimate_piece(d, q, sos, pad, r0):
     """Zero-phase low-pass + decimation of one contiguous piece, in blocks (memory independent of its length):
     the filtered samples at the piece indices r0, r0 + q, r0 + 2q, ..."""
     from scipy.signal import sosfiltfilt
+
     n = d.size
     idx = np.arange(r0, n, q)
     out = np.empty(idx.size, np.float32)
@@ -374,6 +412,7 @@ def snap_to_grid(tr, t0, fs):
     nearest grid point (no change of the samples); beyond that it is resampled by Lanczos interpolation (a = 20)
     starting at the first grid point inside the record.  -> "on_grid" | "shifted" | "interpolated"."""
     import obspy
+
     off = (tr.stats.starttime.timestamp - t0) * fs
     k0 = int(round(off))
     if abs(off - k0) <= 1e-3:
@@ -398,26 +437,31 @@ def read_day(rows, t0, fs):
     within +-max(1 s, 50 output samples) of it were all present."""
     import obspy
     from scipy.signal import butter
+
     raw_fs = rows[0]["fs"]
     q = int(round(raw_fs / fs))
     if q < 1 or abs(raw_fs / fs - q) > 1e-6:
         raise ValueError("sampling rate %g Hz is not a whole multiple of correlation.fs = %g Hz" % (raw_fs, fs))
     nout = int(round(86400 * fs))
     polarity = -1.0 if is_down(rows[0]) else 1.0
-    pad = 200 * q                                   # filter run-in (raw samples) on each side of a block
+    pad = 200 * q  # filter run-in (raw samples) on each side of a block
     guard = int(np.ceil(max(1.0, 50.0 / fs) * raw_fs))
-    extra = (pad + guard) / raw_fs + 1.0            # read this much beyond the day so its edges are not data ends
+    extra = (pad + guard) / raw_fs + 1.0  # read this much beyond the day so its edges are not data ends
     want = (rows[0]["net"], rows[0].get("sta_header", rows[0]["sta"]), rows[0]["location"], rows[0]["channel"], raw_fs)
     st = obspy.Stream()
     for path in sorted({r["file"] for r in rows}):
-        part, _ = read_quiet(path, format=rows[0].get("format") or None, starttime=obspy.UTCDateTime(t0 - extra),
-                             endtime=obspy.UTCDateTime(t0 + 86400 + extra))
+        part, _ = read_quiet(
+            path,
+            format=rows[0].get("format") or None,
+            starttime=obspy.UTCDateTime(t0 - extra),
+            endtime=obspy.UTCDateTime(t0 + 86400 + extra),
+        )
         for tr in part:
             s = tr.stats
             if (s.network, s.station, s.location, s.channel, s.sampling_rate) == want:
                 st.append(tr)
     pieces = []
-    if len(st) > 1:                                 # pieces in different files that join up are one piece
+    if len(st) > 1:  # pieces in different files that join up are one piece
         try:
             st.merge(method=-1)
             st.merge(method=0, fill_value=None)
@@ -425,7 +469,7 @@ def read_day(rows, t0, fs):
             pass
     for tr in st.split():
         if np.issubdtype(tr.data.dtype, np.floating) and not np.isfinite(tr.data).all():
-            tr.data = np.ma.masked_invalid(tr.data)      # NaN / inf samples are gaps
+            tr.data = np.ma.masked_invalid(tr.data)  # NaN / inf samples are gaps
             parts = tr.split()
         else:
             parts = [tr]
@@ -447,7 +491,7 @@ def read_day(rows, t0, fs):
     y = np.zeros(nout, np.float32)
     ok = np.zeros(nout, bool)
     for a, d in sorted(pieces, key=lambda t: t[0]):
-        j0 = max(0, -(-a // q))                     # first output sample whose raw index j*q lies in the piece
+        j0 = max(0, -(-a // q))  # first output sample whose raw index j*q lies in the piece
         j1 = min(nout, (a + d.size - 1) // q + 1)
         if j1 <= j0:
             continue
@@ -455,7 +499,7 @@ def read_day(rows, t0, fs):
         lo = max(0, r0 - pad - guard)
         hi = min(d.size, (j1 - 1) * q - a + 1 + pad + guard)
         z = _decimate_piece(d[lo:hi].astype(np.float64) - med, q, sos, pad, r0 - lo)
-        y[j0:j0 + min(z.size, j1 - j0)] = z[:j1 - j0]
+        y[j0 : j0 + min(z.size, j1 - j0)] = z[: j1 - j0]
         g0 = max(j0, -(-(a + guard) // q))
         g1 = min(j1, (a + d.size - 1 - guard) // q + 1)
         if g1 > g0:

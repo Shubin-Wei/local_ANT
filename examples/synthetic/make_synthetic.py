@@ -3,6 +3,7 @@
 
 The generator is lant.synthetic (`python -m lant.synthetic --help`); `lant demo` uses it to run a whole example.
 """
+
 import os
 import sys
 

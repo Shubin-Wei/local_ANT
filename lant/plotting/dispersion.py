@@ -1,14 +1,15 @@
 """Dispersion figures.
 
-  pair_example  one pair: its symmetric cross-correlation with the velocity window marked, the phase-velocity image
-                (real part of the analytic signal at t = d / c, phase constant removed, 0-1 shown) and the group-velocity
-                image (squared envelope) with the accepted picks
-  all_curves    every exported phase-velocity curve in grey, mean and standard deviation (>= 20 curves), period axis on
-                top
-  pair_figures  the pair example for pairs spread evenly over distance and for the conspicuous ones - the most
-                rejected points and the largest deviation from the median curve - (work/05_dispersion/pair_figures:
-                spread_*, rejected_*, deviating_*), for checking the picks by eye without looking only at good results
+pair_example  one pair: its symmetric cross-correlation with the velocity window marked, the phase-velocity image
+              (real part of the analytic signal at t = d / c, phase constant removed, 0-1 shown) and the group-velocity
+              image (squared envelope) with the accepted picks
+all_curves    every exported phase-velocity curve in grey, mean and standard deviation (>= 20 curves), period axis on
+              top
+pair_figures  the pair example for pairs spread evenly over distance and for the conspicuous ones - the most
+              rejected points and the largest deviation from the median curve - (work/05_dispersion/pair_figures:
+              spread_*, rejected_*, deviating_*), for checking the picks by eye without looking only at good results
 """
+
 import os
 
 import h5py
@@ -20,14 +21,14 @@ from .style import plt
 from .. import disp as D
 from ..export import read_curves
 
-XT = [m * 10.0 ** e for e in range(-3, 4) for m in (1, 2, 5)]       # 1-2-5 ticks for any band
+XT = [m * 10.0**e for e in range(-3, 4) for m in (1, 2, 5)]  # 1-2-5 ticks for any band
 
 
 def _freq_axis(ax, f):
     ax.set_xscale("log")
     t = [x for x in XT if f[0] * 0.99 <= x <= f[-1] * 1.01]
-    if len(t) < 3:                              # a narrow band: every 1-2-3-4-5-6-8 x 10^k inside it
-        fine = [m * 10.0 ** k for k in range(-3, 4) for m in (1, 2, 3, 4, 5, 6, 8)]
+    if len(t) < 3:  # a narrow band: every 1-2-3-4-5-6-8 x 10^k inside it
+        fine = [m * 10.0**k for k in range(-3, 4) for m in (1, 2, 3, 4, 5, 6, 8)]
         t = [x for x in fine if f[0] * 0.99 <= x <= f[-1] * 1.01]
     ax.set_xticks(t)
     ax.set_xticklabels(["%g" % x for x in t])
@@ -61,20 +62,34 @@ def _images(cfg, disp_path, stack_path, i):
     for n in (-3, -2, -1, 1, 2, 3):
         t_n = tp + n / freqs
         branches[n] = np.where(t_n > 0, dist / np.where(t_n > 0, t_n, 1), np.nan)
-    cref = np.where(support, cref, np.nan)                 # the reference only where the F-J picks support it
-    w = sosfiltfilt(butter(4, [freqs[0], min(freqs[-1], 0.45 * fs)], btype="bandpass", fs=fs, output="sos"), x - x.mean())
+    cref = np.where(support, cref, np.nan)  # the reference only where the F-J picks support it
+    w = sosfiltfilt(
+        butter(4, [freqs[0], min(freqs[-1], 0.45 * fs)], btype="bandpass", fs=fs, output="sos"), x - x.mean()
+    )
     c = len(w) // 2
     n = min(int(round(dist / (0.8 * vel[0]) * fs)) + 1, c)
-    sym = 0.5 * (w[c:c + n] + w[c::-1][:n])
+    sym = 0.5 * (w[c : c + n] + w[c::-1][:n])
     sym /= np.abs(sym).max() + 1e-30
-    return dict(freqs=freqs, vel=vel, okc=okc, vc=vc, vg=vg, dist=float(dist), branches=branches, cref=cref, gimg=gimg,
-                tt=np.arange(n) / fs, sym=sym)
+    return dict(
+        freqs=freqs,
+        vel=vel,
+        okc=okc,
+        vc=vc,
+        vg=vg,
+        dist=float(dist),
+        branches=branches,
+        cref=cref,
+        gimg=gimg,
+        tt=np.arange(n) / fs,
+        sym=sym,
+    )
 
 
 def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
     style.apply(cfg["plots"]["font_scale"])
     if vwin is None:
         from .ccf import figure_band
+
         vwin = figure_band(cfg)[1]
     with h5py.File(disp_path, "r") as h:
         i = [p.decode() for p in h["pairs"][:]].index(pair)
@@ -103,14 +118,21 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
     ax.set_ylabel("Amplitude")
     ax.set_yticks([-1, 0, 1])
     ax.legend(loc="upper right", frameon=False, ncol=2)
-    ax.text(0.99, 0.06, "%s   %.2f km" % (pair.replace("_", " – "), a["dist"]), transform=ax.transAxes, ha="right", va="bottom")
+    ax.text(
+        0.99,
+        0.06,
+        "%s   %.2f km" % (pair.replace("_", " – "), a["dist"]),
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+    )
     # velocity axis: the measured phase and group velocities of this pair and the reference, with a margin
     vals = np.r_[a["vc"][a["okc"]], a["vg"][a["okc"]], a["cref"][keepf][np.isfinite(a["cref"][keepf])]]
     vlo, vhi = a["vel"][0], a["vel"][-1]
     if vals.size:
         vlo = max(vlo, np.floor(10 * 0.75 * vals.min()) / 10)
         vhi = min(vhi, np.ceil(10 * 1.3 * vals.max()) / 10)
-    ax = fig.add_subplot(gs[1, 0])                    # phase: cycle branches, reference, picks
+    ax = fig.add_subplot(gs[1, 0])  # phase: cycle branches, reference, picks
     fk = a["freqs"][keepf]
     for n, cn in a["branches"].items():
         ax.plot(a["freqs"], cn, "-", color="0.7", lw=0.8, zorder=1)
@@ -121,8 +143,10 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
     ax.set_ylim(vlo, vhi)
     ax.set_ylabel("Phase velocity (km/s)")
     ax.legend(loc="best", frameon=False, fontsize="small")
-    ax = fig.add_subplot(gs[1, 1])                    # group: envelope image and the measured arrival
-    pm = ax.pcolormesh(fk, a["vel"], a["gimg"][keepf].T, shading="gouraud", cmap=style.ENERGY, vmin=0, vmax=1, rasterized=True)
+    ax = fig.add_subplot(gs[1, 1])  # group: envelope image and the measured arrival
+    pm = ax.pcolormesh(
+        fk, a["vel"], a["gimg"][keepf].T, shading="gouraud", cmap=style.ENERGY, vmin=0, vmax=1, rasterized=True
+    )
     ax.plot(a["freqs"][a["okc"]], a["vg"][a["okc"]], "o", ms=4, mfc="k", mec="k")
     _freq_axis(ax, fk)
     ax.set_ylim(vlo, vhi)
@@ -152,10 +176,11 @@ def choose_pairs(disp_path, n=3, min_points=12):
     for j in pick:
         f = freqs[okc[j]]
         lo, hi = float(f.min()), float(f.max())
-        if hi / lo < 2:                               # at least an octave around the accepted band
+        if hi / lo < 2:  # at least an octave around the accepted band
             c = np.sqrt(lo * hi)
             lo, hi = c / np.sqrt(2), c * np.sqrt(2)
         from .ccf import nice_hz
+
         lo, hi = nice_hz(lo), nice_hz(hi)
         if hi <= lo:
             hi = nice_hz(2 * lo)
@@ -203,7 +228,9 @@ def all_curves(cfg, curve_dir, out):
     ax.plot(f[full], mean[full], "-", c="k", lw=2.6, zorder=6, label="Mean and standard deviation")
     _freq_axis(ax, np.array([f.min(), f.max()]))
     ax.set_ylabel("Phase velocity (km/s)")
-    sec = ax.secondary_xaxis("top", functions=(lambda x: 1 / np.clip(x, 1e-3, None), lambda x: 1 / np.clip(x, 1e-3, None)))
+    sec = ax.secondary_xaxis(
+        "top", functions=(lambda x: 1 / np.clip(x, 1e-3, None), lambda x: 1 / np.clip(x, 1e-3, None))
+    )
     sec.set_xticks([t for t in XT[::-1] if 1 / f.max() * 0.99 <= t <= 1 / f.min() * 1.01])
     sec.set_xticklabels(["%g" % t for t in sec.get_xticks()])
     sec.minorticks_off()
@@ -219,6 +246,7 @@ def pair_figures(cfg, disp_path, out_dir, n):
     velocities from the per-frequency median."""
     import glob
     from .. import paths
+
     os.makedirs(out_dir, exist_ok=True)
     for old in glob.glob(os.path.join(out_dir, "*")):
         os.remove(old)
@@ -241,6 +269,7 @@ def pair_figures(cfg, disp_path, out_dir, n):
         if rej[i] > 0:
             pick.setdefault(int(i), "rejected")
     import warnings
+
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         med = np.nanmedian(vc, axis=0)

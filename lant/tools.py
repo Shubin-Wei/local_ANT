@@ -1,4 +1,5 @@
 """Locations of the external programs built by lant install-external (user cache or source checkout)."""
+
 import os
 import shutil
 
@@ -8,8 +9,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def external_path(*parts):
     # A source checkout keeps its existing development installation. Wheels use a writable user cache.
     checkout = os.path.join(ROOT, "external")
-    default = checkout if os.path.isfile(os.path.join(ROOT, "pyproject.toml")) else os.path.join(
-        os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "lant", "external")
+    default = (
+        checkout
+        if os.path.isfile(os.path.join(ROOT, "pyproject.toml"))
+        else os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "lant", "external")
+    )
     return os.path.join(os.environ.get("LANT_EXTERNAL", default), *parts)
 
 
@@ -31,4 +35,6 @@ def solver_binary(name):
     q = shutil.which(exe)
     if q:
         return q
-    raise RuntimeError("%s not found in %s or on PATH: run `lant install-external %s`" % (exe, external_path("bin"), name))
+    raise RuntimeError(
+        "%s not found in %s or on PATH: run `lant install-external %s`" % (exe, external_path("bin"), name)
+    )

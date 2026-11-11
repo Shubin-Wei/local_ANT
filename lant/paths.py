@@ -1,4 +1,5 @@
 """Layout of the output directory (one place, so that every step and the documentation agree)."""
+
 import os
 
 
@@ -31,5 +32,6 @@ def stack_product(cfg):
 
 def ascii_names(names):
     import numpy as np
+
     n = max(len(s) for s in names) if len(names) else 1
     return np.array(names, dtype="S%d" % n)

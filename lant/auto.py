@@ -21,6 +21,7 @@ Reference step, from the F-J curve of this array or the borrowed curve (from_ref
   dispersion.fmin_hz / vmin / vmax / dv, export.tmax_s; reference.fj_fit_fmax and track_start_band_hz from the
   F-J image itself (lant.fj)
 """
+
 import json
 import math
 import os
@@ -31,18 +32,39 @@ import numpy as np
 from . import config as C
 from .signal import geodesic_km, km_per_degree, local_xy_km, nearest_neighbour_km, nice_number, common_rates
 
-GEOMETRY_KEYS = [("data", "day_start_utc_hour"), ("stack", "block_hours"), ("inversion", "grid_spacing_deg"),
-                 ("checks", "checkerboards"), ("checks", "vertical"), ("plots", "sections")]
-VELOCITY_KEYS = [("correlation", "fs"), ("correlation", "fmin_hz"), ("correlation", "fmax_hz"), ("correlation", "maxlag_s"),
-                 ("correlation", "seg_len_s"), ("correlation", "seg_step_s"), ("dispersion", "fmax_hz"),
-                 ("export", "tmin_s"),
-                 ("reference", "fj_c_nominal"), ("reference", "fj_cmin"), ("reference", "fj_cmax"), ("reference", "fj_dc")]
+GEOMETRY_KEYS = [
+    ("data", "day_start_utc_hour"),
+    ("stack", "block_hours"),
+    ("inversion", "grid_spacing_deg"),
+    ("checks", "checkerboards"),
+    ("checks", "vertical"),
+    ("plots", "sections"),
+]
+VELOCITY_KEYS = [
+    ("correlation", "fs"),
+    ("correlation", "fmin_hz"),
+    ("correlation", "fmax_hz"),
+    ("correlation", "maxlag_s"),
+    ("correlation", "seg_len_s"),
+    ("correlation", "seg_step_s"),
+    ("dispersion", "fmax_hz"),
+    ("export", "tmin_s"),
+    ("reference", "fj_c_nominal"),
+    ("reference", "fj_cmin"),
+    ("reference", "fj_cmax"),
+    ("reference", "fj_dc"),
+]
 CLEAN_KEYS = GEOMETRY_KEYS + VELOCITY_KEYS
-REFERENCE_KEYS = [("dispersion", "fmin_hz"), ("dispersion", "vmin"), ("dispersion", "vmax"), ("dispersion", "dv"),
-                  ("export", "tmax_s")]
+REFERENCE_KEYS = [
+    ("dispersion", "fmin_hz"),
+    ("dispersion", "vmin"),
+    ("dispersion", "vmax"),
+    ("dispersion", "dv"),
+    ("export", "tmax_s"),
+]
 KEYS = CLEAN_KEYS + REFERENCE_KEYS
-LATER = [("checks", "vertical")]          # resolved by the inversion step
-FILTER_EDGE = math.log(2.0)                # the Gaussian filter of the band-edge frequency has fallen to half here
+LATER = [("checks", "vertical")]  # resolved by the inversion step
+FILTER_EDGE = math.log(2.0)  # the Gaussian filter of the band-edge frequency has fallen to half here
 
 
 def path(cfg):
@@ -60,15 +82,31 @@ def geometry(stations):
     w, v = np.linalg.eigh(np.cov(np.c_[x, y].T))
     u_major = v[:, np.argmax(w)]
     s = x * u_major[0] + y * u_major[1]
-    return dict(n=len(names), d=d, nn=nn, elongation=float(np.sqrt(w.max() / max(w.min(), 1e-12))),
-                aperture=float(s.max() - s.min()), axes=v, lon=lon, lat=lat, x=x, y=y,
-                extent=float(max(x.max() - x.min(), y.max() - y.min())))
+    return dict(
+        n=len(names),
+        d=d,
+        nn=nn,
+        elongation=float(np.sqrt(w.max() / max(w.min(), 1e-12))),
+        aperture=float(s.max() - s.min()),
+        axes=v,
+        lon=lon,
+        lat=lat,
+        x=x,
+        y=y,
+        extent=float(max(x.max() - x.min(), y.max() - y.min())),
+    )
 
 
 def geometry_summary(g):
-    return dict(stations=g["n"], elongation=g["elongation"], aperture_km=g["aperture"],
-                p90_distance_km=float(np.percentile(g["d"], 90)), max_distance_km=float(g["d"].max()),
-                median_distance_km=float(np.median(g["d"])), median_nearest_km=float(np.nanmedian(g["nn"])))
+    return dict(
+        stations=g["n"],
+        elongation=g["elongation"],
+        aperture_km=g["aperture"],
+        p90_distance_km=float(np.percentile(g["d"], 90)),
+        max_distance_km=float(g["d"].max()),
+        median_distance_km=float(np.median(g["d"])),
+        median_nearest_km=float(np.nanmedian(g["nn"])),
+    )
 
 
 def user_value(cfg, keys):
@@ -88,7 +126,11 @@ def noise_is_auto(cfg):
 
 # derived by a later step than the one that reads them: the earlier step records the setting ("auto" or the user's
 # value), not the derived value, so that deriving it does not make the earlier step out of date
-DERIVED_LATER = {"inversion": {"inversion.noise": lambda cfg: "auto" if noise_is_auto(cfg) else user_value(cfg, ["inversion", "noise"])}}
+DERIVED_LATER = {
+    "inversion": {
+        "inversion.noise": lambda cfg: "auto" if noise_is_auto(cfg) else user_value(cfg, ["inversion", "noise"])
+    }
+}
 
 
 class _Put:
@@ -136,29 +178,42 @@ def infer(cfg, stations, traces):
     at = cfg["project"]["array_type"]
     long_rec = [t for t in traces if t["end"] - t["start"] >= 12 * 3600]
     import obspy
+
     hours = Counter(obspy.UTCDateTime(t["start"] + 30).hour for t in long_rec)
     if hours and hours.most_common(1)[0][1] >= 0.6 * len(long_rec):
         h, n = hours.most_common(1)[0]
-        put(("data", "day_start_utc_hour"), int(h), "%d of %d records longer than 12 h start at %02d h UTC" % (n, len(long_rec), h))
+        put(
+            ("data", "day_start_utc_hour"),
+            int(h),
+            "%d of %d records longer than 12 h start at %02d h UTC" % (n, len(long_rec), h),
+        )
     else:
         put(("data", "day_start_utc_hour"), 0, "no common start hour of the long records (%s): UTC days" % dict(hours))
     rh = record_hours(traces)
     bh = next((b for b in (24, 12, 8, 6, 4, 3, 2) if rh / b >= 8), 1)
-    put(("stack", "block_hours"), bh, "median record %.1f h per station: %d h gives %.0f sub-stacks (>= 8 wanted)"
-        % (rh, bh, rh / bh))
+    put(
+        ("stack", "block_hours"),
+        bh,
+        "median record %.1f h per station: %d h gives %.0f sub-stacks (>= 8 wanted)" % (rh, bh, rh / bh),
+    )
     nn_med = float(np.nanmedian(g["nn"]))
     want_km = max(nn_med / 2, g["extent"] / 150)
     fine = nice_number(want_km / 111.195)
     r = cfg["inversion"]["grid_refine"]
-    put(("inversion", "grid_spacing_deg"), [round(fine * r, 6)] * 2,
+    put(
+        ("inversion", "grid_spacing_deg"),
+        [round(fine * r, 6)] * 2,
         "max(half the median nearest-station distance %.3f km, extent %.1f km / 150) = %.3f km -> %g deg (x grid_refine %d)"
-        % (nn_med, g["extent"], want_km, fine, r))
+        % (nn_med, g["extent"], want_km, fine, r),
+    )
     ap = g["aperture"]
     frac = (0.165, 0.24, 0.34) if at == "line" else (0.12, 0.18, 0.25)
-    cells = [float("%.2g" % (f * ap)) for f in frac]              # two significant digits: any aperture
-    put(("checks", "checkerboards"),
+    cells = [float("%.2g" % (f * ap)) for f in frac]  # two significant digits: any aperture
+    put(
+        ("checks", "checkerboards"),
         [{"name": "cb_%d_%gkm" % (i + 1, c), "cell_km": [c, 0.0 if at == "line" else c]} for i, c in enumerate(cells)],
-        "%s x the aperture %.1f km" % (" / ".join("%g" % f for f in frac), ap))
+        "%s x the aperture %.1f km" % (" / ".join("%g" % f for f in frac), ap),
+    )
     put(("checks", "vertical"), "auto", "set by the inversion step from the depth nodes")
     if at == "surface":
         lat0, lon0 = float(np.mean(g["lat"])), float(np.mean(g["lon"]))
@@ -208,40 +263,76 @@ def from_velocity(cfg, geom, raw_rates):
     cap = float(cfg["correlation"]["fs_max"])
     rates = [r for r in common_rates(raw_rates) if 1 <= r <= cap]
     if not rates:
-        raise RuntimeError("no whole-number processing rate <= correlation.fs_max %g Hz is reachable from %s Hz"
-                           % (cap, raw_rates))
-    fs = put(("correlation", "fs"), float(max(rates)),
-             "the highest whole-number rate <= correlation.fs_max %g Hz reachable from %s Hz" % (cap, raw_rates))
-    fmax = put(("dispersion", "fmax_hz"), float(_grid_down(0.4 * fs / (1 + dlt) * (1 + 1e-9), po)),
-               "0.4 x %g Hz / (1 + sqrt(ln 2 / %g)) = %.4g Hz, taken down to the 1/%d-octave grid: the top the "
-               "processing rate allows; the QC decides how far the data really reach"
-               % (fs, cfg["dispersion"]["alpha"], 0.4 * fs / (1 + dlt), po))
+        raise RuntimeError(
+            "no whole-number processing rate <= correlation.fs_max %g Hz is reachable from %s Hz" % (cap, raw_rates)
+        )
+    fs = put(
+        ("correlation", "fs"),
+        float(max(rates)),
+        "the highest whole-number rate <= correlation.fs_max %g Hz reachable from %s Hz" % (cap, raw_rates),
+    )
+    fmax = put(
+        ("dispersion", "fmax_hz"),
+        float(_grid_down(0.4 * fs / (1 + dlt) * (1 + 1e-9), po)),
+        "0.4 x %g Hz / (1 + sqrt(ln 2 / %g)) = %.4g Hz, taken down to the 1/%d-octave grid: the top the "
+        "processing rate allows; the QC decides how far the data really reach"
+        % (fs, cfg["dispersion"]["alpha"], 0.4 * fs / (1 + dlt), po),
+    )
     f_lo = _grid_up(2 * v_lo / dmax * (1 - 1e-9), po)
     if f_lo >= fmax:
-        raise RuntimeError("the longest pair (%.3f km) is shorter than 2 wavelengths at %.3g km/s up to %.3g Hz: raise "
-                           "correlation.fs_max or check data.velocity_range_kms" % (dmax, v_lo, fmax))
-    put(("correlation", "fmin_hz"), round(f_lo * (1 - dlt), 6),
+        raise RuntimeError(
+            "the longest pair (%.3f km) is shorter than 2 wavelengths at %.3g km/s up to %.3g Hz: raise "
+            "correlation.fs_max or check data.velocity_range_kms" % (dmax, v_lo, fmax)
+        )
+    put(
+        ("correlation", "fmin_hz"),
+        round(f_lo * (1 - dlt), 6),
         "%.4g Hz (the longest pair %.3f km = 2 wavelengths at the slowest velocity %.3g km/s) x (1 - sqrt(ln 2 "
-        "/ alpha)): the Gaussian filter of that frequency at half gain" % (f_lo, dmax, v_lo))
-    put(("correlation", "fmax_hz"), round(min(fmax * (1 + dlt), 0.4 * fs), 6),
-        "dispersion.fmax_hz x (1 + sqrt(ln 2 / alpha)), not above 0.4 fs")
+        "/ alpha)): the Gaussian filter of that frequency at half gain" % (f_lo, dmax, v_lo),
+    )
+    put(
+        ("correlation", "fmax_hz"),
+        round(min(fmax * (1 + dlt), 0.4 * fs), 6),
+        "dispersion.fmax_hz x (1 + sqrt(ln 2 / alpha)), not above 0.4 fs",
+    )
     put(("export", "tmin_s"), 1 / fmax, "1 / dispersion.fmax_hz = 1 / %.4g Hz" % fmax)
     fine = (1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8)
-    ml = put(("correlation", "maxlag_s"), nice_number(dmax / (0.6 * v_lo) + 4 / f_lo, "up", fine),
-             "max distance %.3f km / (0.6 x %.3g km/s) + 4 periods of %.4g Hz (2 to clear the arrival, 2 of noise), "
-             "rounded up" % (dmax, v_lo, f_lo))
-    sl = put(("correlation", "seg_len_s"), nice_number(max(2 * ml, 10 / f_lo), "up", fine),
-             "max(2 x maxlag (circular correlation), 10 periods of %.4g Hz), rounded up" % f_lo)
+    ml = put(
+        ("correlation", "maxlag_s"),
+        nice_number(dmax / (0.6 * v_lo) + 4 / f_lo, "up", fine),
+        "max distance %.3f km / (0.6 x %.3g km/s) + 4 periods of %.4g Hz (2 to clear the arrival, 2 of noise), "
+        "rounded up" % (dmax, v_lo, f_lo),
+    )
+    sl = put(
+        ("correlation", "seg_len_s"),
+        nice_number(max(2 * ml, 10 / f_lo), "up", fine),
+        "max(2 x maxlag (circular correlation), 10 periods of %.4g Hz), rounded up" % f_lo,
+    )
     put(("correlation", "seg_step_s"), sl / 2, "half the segment of %g s (50 %% overlap)" % sl)
     steps = (1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8)
-    fj0 = put(("reference", "fj_cmin"), round(nice_number(0.5 * v_lo, "down", steps), 4), "0.5 x the slowest velocity %.3g km/s, rounded down" % v_lo)
-    put(("reference", "fj_cmax"), round(nice_number(1.5 * v_hi, "up", steps), 4), "1.5 x the fastest velocity %.3g km/s, rounded up" % v_hi)
+    fj0 = put(
+        ("reference", "fj_cmin"),
+        round(nice_number(0.5 * v_lo, "down", steps), 4),
+        "0.5 x the slowest velocity %.3g km/s, rounded down" % v_lo,
+    )
+    put(
+        ("reference", "fj_cmax"),
+        round(nice_number(1.5 * v_hi, "up", steps), 4),
+        "1.5 x the fastest velocity %.3g km/s, rounded up" % v_hi,
+    )
     fj1 = put.out["reference.fj_cmax"]["value"]
-    put(("reference", "fj_dc"), nice_number(max(fj0 / 200, (fj1 - fj0) / 3000), "down"),
+    put(
+        ("reference", "fj_dc"),
+        nice_number(max(fj0 / 200, (fj1 - fj0) / 3000), "down"),
         "the 1-2-2.5-5 step not above max(fj_cmin / 200 = %.3g, scan width / 3000 = %.3g) km/s"
-        % (fj0 / 200, (fj1 - fj0) / 3000))
-    put(("reference", "fj_c_nominal"), round(v_mid, 4), "not used unless given: the reference step limits the pairs with the curve of a first pass that takes every pair "
-        "(shown here: sqrt(%.3g x %.3g) km/s)" % (v_lo, v_hi))
+        % (fj0 / 200, (fj1 - fj0) / 3000),
+    )
+    put(
+        ("reference", "fj_c_nominal"),
+        round(v_mid, 4),
+        "not used unless given: the reference step limits the pairs with the curve of a first pass that takes every pair "
+        "(shown here: sqrt(%.3g x %.3g) km/s)" % (v_lo, v_hi),
+    )
     return put.out
 
 
@@ -259,31 +350,48 @@ def from_reference(cfg, freqs, c, u, picked_hz, geom):
     short = f * dmax < lam * c * (1 - 1e-9)
     i0 = int(np.nonzero(short)[0].max()) + 1 if short.any() else 0
     if i0 >= len(f):
-        raise RuntimeError("the longest pair (%.3f km) is shorter than %g wavelengths at every frequency up to %.3g Hz"
-                           % (dmax, lam, f[-1]))
-    fmin = put(("dispersion", "fmin_hz"), float(_grid_up(f[i0] * (1 - 1e-9), po)),
-               "the longest pair %.3f km = %g wavelengths of the reference curve (%.3f km/s); below, no pair is long "
-               "enough" % (dmax, lam, float(c[i0])))
+        raise RuntimeError(
+            "the longest pair (%.3f km) is shorter than %g wavelengths at every frequency up to %.3g Hz"
+            % (dmax, lam, f[-1])
+        )
+    fmin = put(
+        ("dispersion", "fmin_hz"),
+        float(_grid_up(f[i0] * (1 - 1e-9), po)),
+        "the longest pair %.3f km = %g wavelengths of the reference curve (%.3f km/s); below, no pair is long "
+        "enough" % (dmax, lam, float(c[i0])),
+    )
     put(("export", "tmax_s"), 1 / fmin, "1 / dispersion.fmin_hz = 1 / %.4g Hz" % fmin)
     band = (f >= fmin * (1 - 1e-6)) & (f <= fmax * (1 + 1e-6))
     cb, ub = c[band], u[band]
     vlo, vhi = float(min(cb.min(), ub.min())), float(max(cb.max(), ub.max()))
     steps = (1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8)
-    vmin = put(("dispersion", "vmin"), round(nice_number(0.6 * vlo, "down", steps), 4),
-               "0.6 x the slowest reference velocity %.3f km/s in %.3g-%.3g Hz (c %.3f-%.3f, U %.3f-%.3f)"
-               % (vlo, fmin, fmax, cb.min(), cb.max(), ub.min(), ub.max()))
-    put(("dispersion", "vmax"), round(nice_number(1.3 * vhi, "up", steps), 4), "1.3 x the fastest reference velocity "
-                                                                               "%.3f km/s" % vhi)
-    put(("dispersion", "dv"), nice_number(vmin / 100, "down"), "the 1-2-2.5-5 step not above vmin / 100 = %.3g km/s" % (vmin / 100))
+    vmin = put(
+        ("dispersion", "vmin"),
+        round(nice_number(0.6 * vlo, "down", steps), 4),
+        "0.6 x the slowest reference velocity %.3f km/s in %.3g-%.3g Hz (c %.3f-%.3f, U %.3f-%.3f)"
+        % (vlo, fmin, fmax, cb.min(), cb.max(), ub.min(), ub.max()),
+    )
+    put(
+        ("dispersion", "vmax"),
+        round(nice_number(1.3 * vhi, "up", steps), 4),
+        "1.3 x the fastest reference velocity %.3f km/s" % vhi,
+    )
+    put(
+        ("dispersion", "dv"),
+        nice_number(vmin / 100, "down"),
+        "the 1-2-2.5-5 step not above vmin / 100 = %.3g km/s" % (vmin / 100),
+    )
     warn = []
     v_lo, v_hi = (float(x) for x in cfg["data"]["velocity_range_kms"])
     if picked_hz is not None:
         m = (f >= picked_hz[0] * (1 - 1e-9)) & (f <= picked_hz[1] * (1 + 1e-9))
         cm = c[m] if m.any() else c
         if cm.min() < 0.8 * v_lo or cm.max() > 1.25 * v_hi:
-            warn.append("the F-J phase velocities %.3f-%.3f km/s lie outside data.velocity_range_kms %s by more than 20 %%: "
-                        "the lag window and the band were set for that range; correct the range and rerun from clean"
-                        % (cm.min(), cm.max(), cfg["data"]["velocity_range_kms"]))
+            warn.append(
+                "the F-J phase velocities %.3f-%.3f km/s lie outside data.velocity_range_kms %s by more than 20 %%: "
+                "the lag window and the band were set for that range; correct the range and rerun from clean"
+                % (cm.min(), cm.max(), cfg["data"]["velocity_range_kms"])
+            )
     return put.out, warn
 
 
@@ -324,6 +432,7 @@ def apply(cfg):
     value while its confirmation holds (lant.confirm.valid_values); else the rule's value from
     .lant/auto_parameters.json."""
     from .confirm import valid_values
+
     dec = load(cfg).get("parameters", {})
     conf = valid_values(cfg)
     for key in set(dec) | set(conf):
@@ -334,7 +443,7 @@ def apply(cfg):
                 cur = cur[k]
         except (KeyError, TypeError):
             continue
-        if key in conf and user_value(cfg, keys) is None:      # confirmed, and not written by the user
+        if key in conf and user_value(cfg, keys) is None:  # confirmed, and not written by the user
             cur[keys[-1]] = conf[key]
         elif C.is_auto(cur.get(keys[-1])) and key in dec and not C.is_auto(dec[key]["value"]):
             cur[keys[-1]] = dec[key]["value"]
@@ -378,5 +487,7 @@ def vertical_tests(cfg, depths):
     across = 0.0 if cfg["project"]["array_type"] == "line" else cell
     tests = [{"name": "cb_vertical", "cell_km": [cell, across], "reversal_depths_km": rev}]
     if cfg["project"]["array_type"] == "line":
-        tests.insert(0, {"name": "cb_vertical_thick", "cell_km": [cell, 0.0], "reversal_depths_km": [round(0.46 * zmax, 3)]})
+        tests.insert(
+            0, {"name": "cb_vertical_thick", "cell_km": [cell, 0.0], "reversal_depths_km": [round(0.46 * zmax, 3)]}
+        )
     return tests

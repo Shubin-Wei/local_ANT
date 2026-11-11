@@ -23,6 +23,7 @@ step stands:
     to confirm    done, with judgements not yet confirmed (or confirmed for other results)
     done          stands
 """
+
 import datetime as _dt
 import hashlib
 import json
@@ -33,12 +34,21 @@ from . import records
 
 # keys that set only the computing resources (processes, threads, task size, disk margin): changing them does not
 # change any result, so a step does not become out of date (and its confirmation stands)
-RESOURCE_KEYS = {"clean.nproc", "clean.min_free_disk_factor", "correlation.nproc", "correlation.threads_per_process",
-                 "dispersion.nproc", "dispersion.chunk", "inversion.threads", "inversion.njobs"}
+RESOURCE_KEYS = {
+    "clean.nproc",
+    "clean.min_free_disk_factor",
+    "correlation.nproc",
+    "correlation.threads_per_process",
+    "dispersion.nproc",
+    "dispersion.chunk",
+    "inversion.threads",
+    "inversion.njobs",
+}
 
 
 def _steps():
     from .pipeline import STEPS
+
     return STEPS
 
 
@@ -65,6 +75,7 @@ def raw_inputs(cfg):
     """Fingerprint of what the clean step reads: every candidate file under data.raw_dir (relative path, size,
     modification time) and the content of the station table."""
     from . import data as D
+
     h = hashlib.sha1()
     d = cfg["data"]
     try:
@@ -85,19 +96,29 @@ def raw_inputs(cfg):
     return h.hexdigest()[:16]
 
 
-def record(cfg, step, state, seconds=None, params=None, to_confirm=None, basis=None, error=None, code=None,
-           inputs=None):
+def record(
+    cfg, step, state, seconds=None, params=None, to_confirm=None, basis=None, error=None, code=None, inputs=None
+):
     """Write the record of a run of `step` (replacing that of its previous run)."""
     m = load(cfg)
     steps = m["steps"]
     order = _steps()
     prev = steps.get(step, {})
     steps[step] = dict(
-        state=state, run=int(prev.get("run", 0)) + 1, time=_dt.datetime.now().isoformat(timespec="seconds"),
-        seconds=seconds, params=params or {},
-        upstream={s: steps[s]["run"] for s in order[:order.index(step)] if s in steps},
-        inputs=inputs, code=code, to_confirm=list(to_confirm or []), basis=basis, error=error)
+        state=state,
+        run=int(prev.get("run", 0)) + 1,
+        time=_dt.datetime.now().isoformat(timespec="seconds"),
+        seconds=seconds,
+        params=params or {},
+        upstream={s: steps[s]["run"] for s in order[: order.index(step)] if s in steps},
+        inputs=inputs,
+        code=code,
+        to_confirm=list(to_confirm or []),
+        basis=basis,
+        error=error,
+    )
     from .artifacts import required
+
     steps[step]["outputs"] = required(cfg, step)
     _save(cfg, m)
     return steps[step]
@@ -110,7 +131,7 @@ def upstream_changed(cfg, step):
     if r is None:
         return True
     order = _steps()
-    return any(s in steps and r["upstream"].get(s) != steps[s]["run"] for s in order[:order.index(step)])
+    return any(s in steps and r["upstream"].get(s) != steps[s]["run"] for s in order[: order.index(step)])
 
 
 def confirmed(cfg, step, rec):
@@ -125,10 +146,11 @@ def status(cfg, check_inputs=True):
     """{step: {state, time, reason}} in the order of the steps, from the manifest and the present configuration
     (cfg: resolved, lant.report.resolved)."""
     from . import report
+
     steps = load(cfg)["steps"]
     order = _steps()
     out = {}
-    broken = None                                   # the first earlier step that does not stand
+    broken = None  # the first earlier step that does not stand
     for s in order:
         r = steps.get(s)
         if r is None:
@@ -145,13 +167,18 @@ def status(cfg, check_inputs=True):
             out[s] = e
             continue
         now = report.used_params(cfg, s)
-        changed = sorted(k for k in set(now) | set(r["params"]) if now.get(k) != r["params"].get(k)
-                         and k not in RESOURCE_KEYS)
-        again = [u for u in order[:order.index(s)] if u in steps and r["upstream"].get(u) != steps[u]["run"]]
+        changed = sorted(
+            k for k in set(now) | set(r["params"]) if now.get(k) != r["params"].get(k) and k not in RESOURCE_KEYS
+        )
+        again = [u for u in order[: order.index(s)] if u in steps and r["upstream"].get(u) != steps[u]["run"]]
         from .artifacts import is_cache
-        missing = [p for p in r.get("outputs", [])
-                   if not (r.get("cache_cleaned") and is_cache(p, ["archive", "cc"]))
-                   and not os.path.exists(os.path.join(cfg["project"]["output_dir"], p))]
+
+        missing = [
+            p
+            for p in r.get("outputs", [])
+            if not (r.get("cache_cleaned") and is_cache(p, ["archive", "cc"]))
+            and not os.path.exists(os.path.join(cfg["project"]["output_dir"], p))
+        ]
         why = None
         if missing:
             why = "required products missing: " + ", ".join(missing)
@@ -176,20 +203,35 @@ def status(cfg, check_inputs=True):
 def next_action(cfg, st):
     """(command, why) of the next thing to do, or (None, "everything is done")."""
     import shlex
+
     c = shlex.quote(cfg.get("_config_file", "CONFIG"))
     for s, e in st.items():
         if e["state"] == "done":
             continue
         if e["state"] == "to confirm":
-            return ('lant confirm %s -c %s --reason "USER_DECISION_AND_EVIDENCE"' % (s, c),
-                    "step %s leaves judgements to you: read .lant/steps/%s.md first" % (s, s))
+            return (
+                'lant confirm %s -c %s --reason "USER_DECISION_AND_EVIDENCE"' % (s, c),
+                "step %s leaves judgements to you: read .lant/steps/%s.md first" % (s, s),
+            )
         if e["state"] == "partial":
-            return ("lant run all -c %s" % c, "step %s is incomplete (%s): repair or exclude what failed, then run "
-                                               "again" % (s, e.get("reason", "")))
+            return (
+                "lant run all -c %s" % c,
+                "step %s is incomplete (%s): repair or exclude what failed, then run again" % (s, e.get("reason", "")),
+            )
         if e["state"] == "failed":
-            return ("lant run all -c %s" % c, "step %s failed (%s): fix the cause, then run again" % (s, e.get("reason", "")))
-        return ("lant run all -c %s" % c, "step %s %s%s" % (s, "has not run yet" if e["state"] == "not run" else
-                                                               "is " + e["state"], ": " + e["reason"] if e.get("reason") else ""))
+            return (
+                "lant run all -c %s" % c,
+                "step %s failed (%s): fix the cause, then run again" % (s, e.get("reason", "")),
+            )
+        return (
+            "lant run all -c %s" % c,
+            "step %s %s%s"
+            % (
+                s,
+                "has not run yet" if e["state"] == "not run" else "is " + e["state"],
+                ": " + e["reason"] if e.get("reason") else "",
+            ),
+        )
     return (None, "everything is done")
 
 
@@ -200,20 +242,25 @@ class NotCurrent(RuntimeError):
 def gate(cfg, step, st=None):
     """Raise unless every earlier step stands (figures: earlier steps that never ran are left out)."""
     from .confirm import NeedsConfirmation
+
     st = st or status(cfg)
     order = _steps()
     c = cfg.get("_config_file", "CONFIG")
     needed = {"cc": "clean", "stack": "cc"}.get(step)
     if needed and st[needed].get("cache_cleaned"):
         raise NotCurrent("%s caches were cleaned; rebuild with lant run all --from clean -c %s" % (needed, c))
-    for s in order[:order.index(step)]:
+    for s in order[: order.index(step)]:
         e = st[s]
         if e["state"] == "done" or (step == "figures" and e["state"] == "not run"):
             continue
         if e["state"] == "to confirm":
             raise NeedsConfirmation(
                 "step %s waits for your confirmation of %s:\n  - %s\nread .lant/steps/%s.md, then\n"
-                "  lant confirm %s -c %s\n  lant run all -c %s" % (step, s, e["reason"].replace("; ", "\n  - "), s, s, c, c))
-        raise NotCurrent("step %s cannot run: step %s is %s%s.  Run\n  lant run all -c %s\n(it continues from the "
-                         "first step that does not stand)" % (step, s, e["state"],
-                                                              " (%s)" % e["reason"] if e.get("reason") else "", c))
+                "  lant confirm %s -c %s\n  lant run all -c %s"
+                % (step, s, e["reason"].replace("; ", "\n  - "), s, s, c, c)
+            )
+        raise NotCurrent(
+            "step %s cannot run: step %s is %s%s.  Run\n  lant run all -c %s\n(it continues from the "
+            "first step that does not stand)"
+            % (step, s, e["state"], " (%s)" % e["reason"] if e.get("reason") else "", c)
+        )

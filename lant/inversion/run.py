@@ -7,6 +7,7 @@ whose inputs are newer than its log (stale) is an error.
 pDSurfTomo (Zhu et al. 2026) runs in its Mode 2 (parallel travel times and kernels, the original LSMR), which gives
 the same model as DSurfTomo.
 """
+
 import glob
 import os
 import shutil
@@ -32,7 +33,8 @@ def model_complete(d):
     """The model file exists, has one row per output node ((nx - 2) x (ny - 2) x (nz - 1): DSurfTomo writes neither
     the outer ring of the grid nor the fixed bottom node) and only finite, positive velocities."""
     import json
-    synthetic = os.path.exists(os.path.join(d, "MOD.true"))          # checkerboards write the recovered model here
+
+    synthetic = os.path.exists(os.path.join(d, "MOD.true"))  # checkerboards write the recovered model here
     p = os.path.join(d, "DSurfTomo.inSyn.dat" if synthetic else "DSurfTomo.inMeasure.dat")
     meta = os.path.join(d, "project.json")
     if not os.path.exists(p) or not os.path.getsize(p):
@@ -43,7 +45,7 @@ def model_complete(d):
         return False
     if os.path.exists(meta):
         g = json.load(open(meta))
-        try:                                       # DSurfTomo drops the rim and the fixed bottom node
+        try:  # DSurfTomo drops the rim and the fixed bottom node
             check_node_order(m, g["grid"]["nx"], g["grid"]["ny"], len(g["depths"]), p)
         except RuntimeError:
             return False
@@ -77,6 +79,7 @@ def status(d):
 def observed_iteration(project):
     """Read only a bounded log tail; buffered logs may have no iteration information yet."""
     import re
+
     path = os.path.join(project, "DSurfTomo.in.log")
     try:
         with open(path, "rb") as fh:
@@ -104,9 +107,11 @@ def set_aside_unfinished(cfg, dirs):
     their inputs (nothing is deleted) -> {project: backup}."""
     import datetime
     from .. import records
+
     root = cfg["project"]["output_dir"]
-    backup = os.path.join(records.rec_dir(cfg), "backups",
-                          datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f") + "-interrupted")
+    backup = os.path.join(
+        records.rec_dir(cfg), "backups", datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f") + "-interrupted"
+    )
     moved = {}
     for d in dirs:
         if status(d) != "unfinished":
@@ -123,12 +128,13 @@ def set_aside_unfinished(cfg, dirs):
     return moved
 
 
-_running = {}                                        # project name -> observed iteration, for the progress line
+_running = {}  # project name -> observed iteration, for the progress line
 _running_guard = threading.Lock()
 
 
 def _show_running(name=None, value=None):
     from ..progress import detail
+
     with _running_guard:
         if value is None:
             _running.pop(name, None)
@@ -144,12 +150,13 @@ def run_one(d, binary, threads):
         return d, "skipped (finished, inputs unchanged)"
     if st == "stale":
         return d, "FAILED: its inputs are newer than its output (stale); rebuild with lant run all --from inversion"
-    if st == "unfinished":                           # lant.pipeline sets interrupted runs aside before this
+    if st == "unfinished":  # lant.pipeline sets interrupted runs aside before this
         return d, "FAILED: output of an earlier run is present (unfinished); move it away or rerun the run step"
     env = dict(os.environ, OMP_NUM_THREADS=str(threads), **UNBUFFERED)
     if os.path.basename(binary) == "pDSurfTomo":
         open(os.path.join(d, "ParallelConfig.in"), "w").write(
-            "tt_senK_lsmr = parallel, parallel, default\nThreadNum = %d\nInvResultDir = InvResult\n" % threads)
+            "tt_senK_lsmr = parallel, parallel, default\nThreadNum = %d\nInvResultDir = InvResult\n" % threads
+        )
     progress_errors = []
     name, total = os.path.basename(d), max_iterations(d)
     _show_running(name, "starting")
@@ -167,15 +174,19 @@ def run_one(d, binary, threads):
 
     try:
         with open(os.path.join(d, "run.log"), "w") as fh:
-            rc = run_process([binary, "DSurfTomo.in"], cwd=d, env=env, stdout=fh,
-                             stderr=subprocess.STDOUT, on_poll=show_iteration).returncode
+            rc = run_process(
+                [binary, "DSurfTomo.in"], cwd=d, env=env, stdout=fh, stderr=subprocess.STDOUT, on_poll=show_iteration
+            ).returncode
     finally:
         _show_running(name)
     if rc != 0:
         return d, "FAILED: exit status %d (see %s/run.log)" % (rc, d)
     if status(d) != "done":
-        return d, ("FAILED: the model file is incomplete (rows, NaN or non-positive velocities)" if model_says_done(d)
-                   else "FAILED: no 'Program finishes successfully' at the end of the log")
+        return d, (
+            "FAILED: the model file is incomplete (rows, NaN or non-positive velocities)"
+            if model_says_done(d)
+            else "FAILED: no 'Program finishes successfully' at the end of the log"
+        )
     return d, "ok"
 
 
@@ -184,8 +195,11 @@ def run_projects(cfg, dirs):
     binary = solver_binary(inv["solver"])
     with workers(max_workers=int(inv["njobs"])) as ex:
         from concurrent.futures import as_completed
+
         futures = [ex.submit(run_one, d, binary, int(inv["threads"])) for d in dirs]
-        kinds = sorted({"main" if os.path.basename(d) == "main" else os.path.basename(os.path.dirname(d)) for d in dirs})
+        kinds = sorted(
+            {"main" if os.path.basename(d) == "main" else os.path.basename(os.path.dirname(d)) for d in dirs}
+        )
         unit = "solver projects (%s)" % ", ".join(kinds)
         done = [future.result() for future in track(as_completed(futures), len(futures), unit, eta=False)]
     res = sorted(done, key=lambda r: dirs.index(r[0]))  # summaries in project order, not in order of completion
@@ -220,15 +234,22 @@ def check_node_order(m, nx, ny, nz, path="model"):
         raise RuntimeError("%s: %d rows, expected %d" % (path, m.shape[0] if m.ndim == 2 else 0, want))
     M = m[:, :3].reshape(nz - 1, ny - 2, nx - 2, 3)
     tol = 1e-4
-    ok = (np.ptp(M[..., 2], axis=(1, 2)).max() <= tol and          # depth constant within a depth block
-          np.ptp(M[..., 0], axis=(0, 2)).max() <= tol and          # longitude constant along depth and latitude
-          np.ptp(M[..., 1], axis=(0, 1)).max() <= tol)             # latitude constant along depth and longitude
+    ok = (
+        np.ptp(M[..., 2], axis=(1, 2)).max() <= tol  # depth constant within a depth block
+        and np.ptp(M[..., 0], axis=(0, 2)).max() <= tol  # longitude constant along depth and latitude
+        and np.ptp(M[..., 1], axis=(0, 1)).max() <= tol
+    )  # latitude constant along depth and longitude
     if ok:
-        ok = (len(np.unique(np.round(M[:, 0, 0, 2], 4))) == nz - 1 and len(np.unique(np.round(M[0, :, 0, 0], 5))) == ny - 2
-              and len(np.unique(np.round(M[0, 0, :, 1], 5))) == nx - 2)
+        ok = (
+            len(np.unique(np.round(M[:, 0, 0, 2], 4))) == nz - 1
+            and len(np.unique(np.round(M[0, :, 0, 0], 5))) == ny - 2
+            and len(np.unique(np.round(M[0, 0, :, 1], 5))) == nx - 2
+        )
     if not ok:
-        raise RuntimeError("%s: the rows are not the inner grid nodes, each once, in DSurfTomo's order (repeated, "
-                           "missing or reordered nodes)" % path)
+        raise RuntimeError(
+            "%s: the rows are not the inner grid nodes, each once, in DSurfTomo's order (repeated, "
+            "missing or reordered nodes)" % path
+        )
 
 
 def full_grid(project, model, nx, ny, nz):
@@ -240,7 +261,7 @@ def full_grid(project, model, nx, ny, nz):
             raise RuntimeError("%s: %d rows, expected %d" % (model, len(m), (nx - 2) * (ny - 2) * (nz - 1)))
         check_node_order(m, nx, ny, nz, model)
         vs = vs.copy()
-        vs[:nz - 1, 1:ny - 1, 1:nx - 1] = m[:, 3].reshape(nz - 1, ny - 2, nx - 2)
+        vs[: nz - 1, 1 : ny - 1, 1 : nx - 1] = m[:, 3].reshape(nz - 1, ny - 2, nx - 2)
     return depz, vs
 
 
@@ -278,16 +299,19 @@ def _forward_once(cfg, project, depz, vs, synthetic=False, threads=None):
         L2 = list(L)
         for key, val in (("maximum iteration", "1"), ("synthetic flag", "1" if synthetic else "0")):
             k = next(i for i, l in enumerate(L2) if "c: " + key in l)
-            L2[k] = "%-33s" % val + L2[k][L2[k].index("c: "):]
+            L2[k] = "%-33s" % val + L2[k][L2[k].index("c: ") :]
         open(os.path.join(tmp, "DSurfTomo.in"), "w").write("\n".join(L2))
         env = dict(os.environ, OMP_NUM_THREADS=str(threads))
         if os.path.basename(binary) == "pDSurfTomo":
             open(os.path.join(tmp, "ParallelConfig.in"), "w").write(
-                "tt_senK_lsmr = parallel, parallel, default\nThreadNum = %d\nInvResultDir = InvResult\n" % threads)
+                "tt_senK_lsmr = parallel, parallel, default\nThreadNum = %d\nInvResultDir = InvResult\n" % threads
+            )
         r = run_process([binary, "DSurfTomo.in"], cwd=tmp, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         res = os.path.join(tmp, "residualFirst.dat")
         if r.returncode != 0 or not os.path.exists(res):
-            raise RuntimeError("forward run failed (exit status %d):\n" % r.returncode + r.stdout.decode(errors="ignore")[-2000:])
+            raise RuntimeError(
+                "forward run failed (exit status %d):\n" % r.returncode + r.stdout.decode(errors="ignore")[-2000:]
+            )
         R = np.loadtxt(res, ndmin=2)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -299,6 +323,7 @@ def _forward_once(cfg, project, depz, vs, synthetic=False, threads=None):
 def logged_residuals(project):
     """Standard deviation (ms) of the weighted residuals DSurfTomo printed for every iteration (run.log)."""
     import re
+
     out = []
     try:
         for line in open(os.path.join(project, "run.log"), errors="replace"):
@@ -336,6 +361,7 @@ def precheck(cfg, project):
     the median residual is further from 0 than checks.precheck.max_median_iqr x the interquartile range.
     Writes <project>/precheck.json; -> dict(valid, reasons, stats)."""
     import json
+
     pc = cfg["checks"]["precheck"]
     L, nx, ny, nz, periods = read_in(os.path.join(project, "DSurfTomo.in"))
     depz, vs = read_mod(os.path.join(project, "MOD"), nx, ny, nz)
@@ -344,11 +370,15 @@ def precheck(cfg, project):
     iqr = st["q75_ms"] - st["q25_ms"]
     reasons = []
     if st["kept_fraction"] < pc["min_kept"]:
-        reasons.append("only %.1f %% of the %d travel times survive DSurfTomo's rejection rule (checks.precheck.min_kept "
-                       "%.0f %%)" % (100 * st["kept_fraction"], st["n"], 100 * pc["min_kept"]))
+        reasons.append(
+            "only %.1f %% of the %d travel times survive DSurfTomo's rejection rule (checks.precheck.min_kept "
+            "%.0f %%)" % (100 * st["kept_fraction"], st["n"], 100 * pc["min_kept"])
+        )
     if abs(st["median_ms"]) > pc["max_median_iqr"] * iqr:
-        reasons.append("median residual %.2f ms is beyond %.1f x the interquartile range %.2f ms: the starting model is "
-                       "too fast or too slow overall" % (st["median_ms"], pc["max_median_iqr"], iqr))
+        reasons.append(
+            "median residual %.2f ms is beyond %.1f x the interquartile range %.2f ms: the starting model is "
+            "too fast or too slow overall" % (st["median_ms"], pc["max_median_iqr"], iqr)
+        )
     out = dict(valid=not reasons, reasons=reasons, stats=st)
     json.dump(out, open(os.path.join(project, "precheck.json"), "w"), indent=1)
     return out
@@ -362,11 +392,19 @@ def residual_stats(R):
     r = R[:, 2] - R[:, 1]
     q25, q50, q75 = np.percentile(r, [25, 50, 75])
     kept = R[:, 5] != 0
-    return dict(n=len(r), rms_ms=1e3 * float(np.sqrt(np.mean(r ** 2))), rel_rms_percent=100 * float(np.sqrt(np.mean((r / R[:, 2]) ** 2))),
-                mean_ms=1e3 * float(r.mean()), median_ms=1e3 * float(q50), q25_ms=1e3 * float(q25), q75_ms=1e3 * float(q75),
-                rejected_by_rule=int((~kept).sum()), kept_fraction=float(kept.mean()),
-                kept_median_ms=1e3 * float(np.median(r[kept])) if kept.any() else None,
-                zero_predicted=int((R[:, 1] <= 0).sum()))
+    return dict(
+        n=len(r),
+        rms_ms=1e3 * float(np.sqrt(np.mean(r**2))),
+        rel_rms_percent=100 * float(np.sqrt(np.mean((r / R[:, 2]) ** 2))),
+        mean_ms=1e3 * float(r.mean()),
+        median_ms=1e3 * float(q50),
+        q25_ms=1e3 * float(q25),
+        q75_ms=1e3 * float(q75),
+        rejected_by_rule=int((~kept).sum()),
+        kept_fraction=float(kept.mean()),
+        kept_median_ms=1e3 * float(np.median(r[kept])) if kept.any() else None,
+        zero_predicted=int((R[:, 1] <= 0).sum()),
+    )
 
 
 def residuals(cfg, project, out_prefix, iterations=True):
@@ -375,18 +413,27 @@ def residuals(cfg, project, out_prefix, iterations=True):
     with open(out_prefix + ".csv", "w") as f:
         f.write("src_lat,src_lon,rcv_lat,rcv_lon,period_s,dist_km,t_obs_s,t_pred_s,kept_by_rule\n")
         for d, r in zip(D, R):
-            f.write("%.6f,%.6f,%.6f,%.6f,%.4f,%.5f,%.5f,%.5f,%d\n" % (d[0], d[1], d[2], d[3], d[4], r[0], r[2], r[1], r[5]))
+            f.write(
+                "%.6f,%.6f,%.6f,%.6f,%.4f,%.5f,%.5f,%.5f,%d\n" % (d[0], d[1], d[2], d[3], d[4], r[0], r[2], r[1], r[5])
+            )
     final = residual_stats(R)
     iters = []
     prev = None
-    models = ["start"] + sorted(glob.glob(os.path.join(project, "DSurfTomo.inMeasure.dat.iter???"))) if iterations else ["start"]
+    models = (
+        ["start"] + sorted(glob.glob(os.path.join(project, "DSurfTomo.inMeasure.dat.iter???")))
+        if iterations
+        else ["start"]
+    )
     for m in models:
         Dm, Rm, vs = evaluate(cfg, project, m)
-        if m == "start":                          # the residuals of the starting model, for the residual figure
+        if m == "start":  # the residuals of the starting model, for the residual figure
             with open(out_prefix.replace("residuals_final", "residuals_start") + ".csv", "w") as f:
                 f.write("src_lat,src_lon,rcv_lat,rcv_lon,period_s,dist_km,t_obs_s,t_pred_s,kept_by_rule\n")
                 for d, r in zip(Dm, Rm):
-                    f.write("%.6f,%.6f,%.6f,%.6f,%.4f,%.5f,%.5f,%.5f,%d\n" % (d[0], d[1], d[2], d[3], d[4], r[0], r[2], r[1], r[5]))
+                    f.write(
+                        "%.6f,%.6f,%.6f,%.6f,%.4f,%.5f,%.5f,%.5f,%d\n"
+                        % (d[0], d[1], d[2], d[3], d[4], r[0], r[2], r[1], r[5])
+                    )
         s = residual_stats(Rm)
         s["model"] = "start" if m == "start" else m[-7:]
         if prev is not None:
@@ -394,8 +441,11 @@ def residuals(cfg, project, out_prefix, iterations=True):
             s["dm_max"] = float(np.abs(vs - prev).max())
         prev = vs
         iters.append(s)
-        print("    %-8s rms %.2f ms (%.3f %%), median %.2f ms, kept by the rejection rule %.1f %%"
-              % (s["model"], s["rms_ms"], s["rel_rms_percent"], s["median_ms"], 100 * s["kept_fraction"]), flush=True)
+        print(
+            "    %-8s rms %.2f ms (%.3f %%), median %.2f ms, kept by the rejection rule %.1f %%"
+            % (s["model"], s["rms_ms"], s["rel_rms_percent"], s["median_ms"], 100 * s["kept_fraction"]),
+            flush=True,
+        )
     return dict(final=final, iterations=iters)
 
 
@@ -406,9 +456,13 @@ def read_model(path):
     lon, lat, dep = np.unique(m[:, 0]), np.unique(m[:, 1]), np.unique(np.round(m[:, 2], 4))
     v = np.full((lon.size, lat.size, dep.size), np.nan)
     if len(m) != lon.size * lat.size * dep.size:
-        raise RuntimeError("%s: %d rows for %d x %d x %d nodes (missing or repeated nodes)"
-                           % (path, len(m), lon.size, lat.size, dep.size))
-    v[np.searchsorted(lon, m[:, 0]), np.searchsorted(lat, m[:, 1]), np.searchsorted(dep, np.round(m[:, 2], 4))] = m[:, 3]
+        raise RuntimeError(
+            "%s: %d rows for %d x %d x %d nodes (missing or repeated nodes)"
+            % (path, len(m), lon.size, lat.size, dep.size)
+        )
+    v[np.searchsorted(lon, m[:, 0]), np.searchsorted(lat, m[:, 1]), np.searchsorted(dep, np.round(m[:, 2], 4))] = m[
+        :, 3
+    ]
     if np.isnan(v).any():
         raise RuntimeError("%s: %d nodes have no row (repeated rows in their place)" % (path, int(np.isnan(v).sum())))
     return lon, lat, dep, v
@@ -433,6 +487,13 @@ def checker_recovery(project, stations, edge_km):
         ar, at = syn[ms, 3][keep] - bg[z], tru[mt, 3][keep] - bg[z]
         if np.std(at) < 1e-6:
             continue
-        out.append(dict(depth_km=float(z), r=float(np.corrcoef(ar, at)[0, 1]), slope=float(np.dot(ar, at) / np.dot(at, at)),
-                        sd=float(np.std(ar) / np.std(at)), n=int(keep.sum())))
+        out.append(
+            dict(
+                depth_km=float(z),
+                r=float(np.corrcoef(ar, at)[0, 1]),
+                slope=float(np.dot(ar, at) / np.dot(at, at)),
+                sd=float(np.std(ar) / np.std(at)),
+                n=int(keep.sum()),
+            )
+        )
     return out

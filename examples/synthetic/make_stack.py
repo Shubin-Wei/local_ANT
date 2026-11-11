@@ -23,6 +23,7 @@ chain be run again from the reference step:
 
 The truth file holds, per pair and frequency, the path-average phase velocity, and the pattern d(x, y).
 """
+
 import argparse
 import os
 import sys
@@ -43,16 +44,23 @@ def pattern(x, y, cell, amp):
 def velocity_table(z, vs, freqs, amp):
     """c(f) of the profile scaled by 1 - amp, 1, 1 + amp (rows) at the frequencies freqs."""
     from lant.inversion.start import forward
-    return np.array([forward(z, np.asarray(vs) * (1 + a), 1 / freqs) for a in (-amp, 0.0, amp)]) if amp > 0 \
+
+    return (
+        np.array([forward(z, np.asarray(vs) * (1 + a), 1 / freqs) for a in (-amp, 0.0, amp)])
+        if amp > 0
         else np.array([forward(z, np.asarray(vs), 1 / freqs)] * 3)
+    )
 
 
 def build(like, out, z, vs, hetero=0.0, cell=3.0, noise=0.0, higher_mode=0.0, mode_fmin=4.0, truth=None):
     from lant.signal import local_xy_km
+
     rng = np.random.default_rng()
     with h5py.File(like, "r") as h:
-        meta = {k: h[k][:] for k in ("pairs", "days", "dist_km", "az_deg", "lon1", "lat1", "lon2", "lat2",
-                                     "daily_count", "nseg")}
+        meta = {
+            k: h[k][:]
+            for k in ("pairs", "days", "dist_km", "az_deg", "lon1", "lat1", "lon2", "lat2", "daily_count", "nseg")
+        }
         attrs = dict(h.attrs)
         nt = h["stack"].shape[1]
     fs, fmin, fmax = float(attrs["fs"]), float(attrs["fmin"]), float(attrs["fmax"])
@@ -61,7 +69,7 @@ def build(like, out, z, vs, hetero=0.0, cell=3.0, noise=0.0, higher_mode=0.0, mo
     f = np.fft.rfftfreq(nfft, 1 / fs)
     band = (f >= fmin) & (f <= fmax)
     fb = f[band]
-    grid = np.geomspace(fb[0], fb[-1], 40)                    # c(f) on a coarse grid, interpolated in log f
+    grid = np.geomspace(fb[0], fb[-1], 40)  # c(f) on a coarse grid, interpolated in log f
     tab = velocity_table(z, vs, grid, hetero)
     lon0, lat0 = np.mean(np.r_[meta["lon1"], meta["lon2"]]), np.mean(np.r_[meta["lat1"], meta["lat2"]])
     x1, y1 = local_xy_km(meta["lon1"], meta["lat1"], lat0, lon0)
@@ -75,10 +83,17 @@ def build(like, out, z, vs, hetero=0.0, cell=3.0, noise=0.0, higher_mode=0.0, mo
     stack = np.zeros((npair, nt), np.float32)
     c_path = np.zeros((npair, len(grid)))
     for q in range(npair):
-        d = pattern(x1[q] + s * (x2[q] - x1[q]), y1[q] + s * (y2[q] - y1[q]), cell, hetero) if hetero > 0 else np.zeros(len(s))
-        w = d / hetero if hetero > 0 else d                   # -1 .. 1: position between the three tabulated profiles
-        slow = np.where(w[:, None] < 0, (1 + w[:, None]) / tab[1] - w[:, None] / tab[0],
-                        (1 - w[:, None]) / tab[1] + w[:, None] / tab[2])
+        d = (
+            pattern(x1[q] + s * (x2[q] - x1[q]), y1[q] + s * (y2[q] - y1[q]), cell, hetero)
+            if hetero > 0
+            else np.zeros(len(s))
+        )
+        w = d / hetero if hetero > 0 else d  # -1 .. 1: position between the three tabulated profiles
+        slow = np.where(
+            w[:, None] < 0,
+            (1 + w[:, None]) / tab[1] - w[:, None] / tab[0],
+            (1 - w[:, None]) / tab[1] + w[:, None] / tab[2],
+        )
         c_path[q] = 1.0 / slow.mean(axis=0)
         t = meta["dist_km"][q] / np.interp(np.log(fb), np.log(grid), c_path[q])
         S = np.zeros(len(f))
@@ -86,7 +101,7 @@ def build(like, out, z, vs, hetero=0.0, cell=3.0, noise=0.0, higher_mode=0.0, mo
         if higher_mode > 0:
             S[band] += higher_mode * j0(2 * np.pi * fb * t / 1.25) * (fb >= mode_fmin) * taper
         xx = np.fft.irfft(S, nfft)
-        stack[q] = np.r_[xx[-L:], xx[:L + 1]]
+        stack[q] = np.r_[xx[-L:], xx[: L + 1]]
     stack /= np.abs(stack).max(axis=1, keepdims=True) + 1e-30
     nblk = len(meta["days"])
     S_n = np.zeros(len(f))
@@ -97,9 +112,9 @@ def build(like, out, z, vs, hetero=0.0, cell=3.0, noise=0.0, higher_mode=0.0, mo
         cnt = meta["daily_count"].astype(np.float64)
         for b in range(nblk):
             blk = stack.astype(np.float64)
-            if noise > 0:                                     # band-limited noise, new for every sub-stack
+            if noise > 0:  # band-limited noise, new for every sub-stack
                 w = np.fft.irfft(np.fft.rfft(rng.standard_normal((npair, nfft)), axis=1) * S_n, nfft, axis=1)
-                w = np.c_[w[:, -L:], w[:, :L + 1]]
+                w = np.c_[w[:, -L:], w[:, : L + 1]]
                 blk = blk + noise * np.sqrt(nblk) * w / (w.std() + 1e-30)
             blk[cnt[b] == 0] = 0
             dd[b] = blk
@@ -111,8 +126,19 @@ def build(like, out, z, vs, hetero=0.0, cell=3.0, noise=0.0, higher_mode=0.0, mo
             o.attrs[k] = v
     os.replace(out + ".tmp", out)
     if truth:
-        np.savez(truth, freqs=grid, c_path=c_path, c0=tab[1], pairs=meta["pairs"].astype("U"), hetero=hetero, cell=cell,
-                 lon0=lon0, lat0=lat0, z=np.asarray(z), vs=np.asarray(vs))
+        np.savez(
+            truth,
+            freqs=grid,
+            c_path=c_path,
+            c0=tab[1],
+            pairs=meta["pairs"].astype("U"),
+            hetero=hetero,
+            cell=cell,
+            lon0=lon0,
+            lat0=lat0,
+            z=np.asarray(z),
+            vs=np.asarray(vs),
+        )
     return grid, c_path
 
 

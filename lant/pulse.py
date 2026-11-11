@@ -2,12 +2,13 @@
 clean step (fold test of every station-day, summary per station in work/01_clean/pulse_1s.csv) and its removal in the cc
 step (correlation.remove_1s_comb).
 """
+
 import csv
 from collections import defaultdict
 
 import numpy as np
 
-PULSE_P = 1e-3            # significance level of the 1-s fold test of one station-day
+PULSE_P = 1e-3  # significance level of the 1-s fold test of one station-day
 
 
 def fold_1s(pieces, fs):
@@ -23,6 +24,7 @@ def fold_1s(pieces, fs):
     variance in the folded waveform, seconds=M, limit=F at the level PULSE_P, dof=nu), or None when it cannot be
     tested."""
     from scipy.stats import f as fdist
+
     p = int(round(fs))
     if p < 4 or abs(fs - p) > 1e-6:
         return None
@@ -33,24 +35,29 @@ def fold_1s(pieces, fs):
         n = (len(d) - off) // p
         if n < 1:
             continue
-        b = np.asarray(d[off:off + n * p], np.float64).reshape(n, p)
+        b = np.asarray(d[off : off + n * p], np.float64).reshape(n, p)
         b = b - b.mean(axis=1, keepdims=True)
         acc += b.sum(axis=0)
         sq += float((b * b).sum())
-        for i in range(0, n, 2000):                  # mean power spectrum of the seconds -> their autocorrelation
-            spec += (np.abs(np.fft.rfft(b[i:i + 2000], axis=1)) ** 2).sum(axis=0)
+        for i in range(0, n, 2000):  # mean power spectrum of the seconds -> their autocorrelation
+            spec += (np.abs(np.fft.rfft(b[i : i + 2000], axis=1)) ** 2).sum(axis=0)
         m += n
     if m < 60 or sq <= 0:
         return None
     tmpl = acc / m
-    between = float((tmpl * tmpl).sum()) * m / (p - 1)             # variance between the phases x M
+    between = float((tmpl * tmpl).sum()) * m / (p - 1)  # variance between the phases x M
     within = (sq - float((tmpl * tmpl).sum()) * m) / ((m - 1) * (p - 1))
     if within <= 0:
         return None
     rho = np.fft.irfft(spec, p)
     nu = max(1.0, (p - 1) / float(((rho / rho[0]) ** 2).sum())) if rho[0] > 0 else float(p - 1)
-    return dict(ratio=between / within, power=float((tmpl * tmpl).sum()) * m / sq, seconds=m, dof=round(nu, 1),
-                limit=float(fdist.isf(PULSE_P, nu, nu * (m - 1))))
+    return dict(
+        ratio=between / within,
+        power=float((tmpl * tmpl).sum()) * m / sq,
+        seconds=m,
+        dof=round(nu, 1),
+        limit=float(fdist.isf(PULSE_P, nu, nu * (m - 1))),
+    )
 
 
 def pulse_summary(stats, path):
@@ -68,7 +75,9 @@ def pulse_summary(stats, path):
         for sta in sorted(by):
             a = np.array(by[sta])
             nd = int((a[:, 0] > a[:, 1]).sum())
-            w.writerow([sta, len(a), nd, "%.3f" % np.median(a[:, 0]), "%.3f" % np.median(a[:, 1]), "%.3g" % np.median(a[:, 2])])
+            w.writerow(
+                [sta, len(a), nd, "%.3f" % np.median(a[:, 0]), "%.3f" % np.median(a[:, 1]), "%.3g" % np.median(a[:, 2])]
+            )
             if nd > 0.5 * len(a):
                 found.append(sta)
                 mx = max(mx, float(np.median(a[:, 2])))

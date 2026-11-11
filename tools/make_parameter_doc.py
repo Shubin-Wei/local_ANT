@@ -6,6 +6,7 @@
 Run it after changing a default (lant/config.py) or a description (lant/params.py); a key without a Chinese
 text stops it.
 """
+
 import os
 import sys
 
@@ -15,8 +16,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from lant import config, params  # noqa: E402
 
-KIND_ZH = {"required": "必填", "literature": "文献", "theory": "理论", "rule": "规则", "empirical": "经验值",
-           "choice": "选择", "technical": "技术"}
+KIND_ZH = {
+    "required": "必填",
+    "literature": "文献",
+    "theory": "理论",
+    "rule": "规则",
+    "empirical": "经验值",
+    "choice": "选择",
+    "technical": "技术",
+}
 
 ZH = {
     "project.name": "项目名（只用于图和记录）",
@@ -28,11 +36,11 @@ ZH = {
     "data.ignore_patterns": "不读的文件名模式",
     "data.station_file": "台站表，常见形式都可以（CSV、文本、Excel、StationXML）",
     "data.component": "Z：垂直分量互相关（Rayleigh 波）；目前只支持这一种",
-    "data.channel": "auto：按通道名或 SAC 头段找每个台的垂直通道；名字看不出来时写模式，如 \"*3\"",
+    "data.channel": 'auto：按通道名或 SAC 头段找每个台的垂直通道；名字看不出来时写模式，如 "*3"',
     "data.network_default": "记录头段没有台网代码时用的台网代码",
     "data.rename": "自动对不上时手工指定：{头段里的名字: 台站表里的名字}",
     "data.day_start_utc_hour": "处理日从这个 UTC 整点开始；auto：长于 12 小时的记录里有 60 % 以上从同一整点开始就取它，否则取 0",
-    "data.day_label": "处理日的标签：utc_start，或固定时差如 \"UTC+8\"",
+    "data.day_label": '处理日的标签：utc_start，或固定时差如 "UTC+8"',
     "data.velocity_range_kms": "本区 Rayleigh 波相速度的大致范围 [慢, 快]（km/s），决定时延窗、频带和 F-J 扫描范围。默认值覆盖软土到硬岩；范围写窄一些可以省计算时间（reference 步骤会报告实测速度）",
     "data.response": "仪器响应文件或目录（StationXML、dataless SEED、RESP）：给了就在 clean 去响应（Bensen et al. 2007）。不给时全部台站必须是同一型号",
     "data.line": "台站表有测线列时：本项目处理哪条测线（一条测线一个项目）",
@@ -61,7 +69,7 @@ ZH = {
     "stack.station_qc.enabled": "台站诊断：列出相关系数或时移与其余不同的台站子叠加（不经你同意不会剔除）",
     "stack.station_qc.partners": "每个台站通过它与最近的这么多个台站组成的台对来比较",
     "stack.station_qc.min_partners": "判断一个台站子叠加至少需要的有数据台对数（不足：不判断，并在报告里写明）",
-    "stack.exclude_station_days": "你要剔除的台站日：[台站, YYYYDDD]、[台站, \"YYYYDDD-\"] 等",
+    "stack.exclude_station_days": '你要剔除的台站日：[台站, YYYYDDD]、[台站, "YYYYDDD-"] 等',
     "stack.exclude_station_hours": "你要剔除的台站小时：[台站, YYYYDDD, 小时]",
     "stack.exclude_candidates": "同时剔除诊断列出的候选（由 `lant confirm stack --exclude-candidates` 设置）",
     "reference.source": "fj：本台阵的频率—贝塞尔谱（Wang et al. 2019）；file：你给的曲线（AFTAN 和 Yao 的 EGFAnalysisTimeFreq 也接受参考曲线）",
@@ -152,20 +160,30 @@ ZH = {
     "plots.pair_example": "单台对图（叠加时长、频散）画哪些台对：一个台对名或列表；默认在曲线较长的台对中按距离的 20 % / 50 % / 80 % 分位数取三对",
 }
 
-SECTIONS = [("project", "project", "项目"), ("data", "data: raw data", "data：原始数据"),
-            ("clean", "clean: cleaning (`01_clean`)", "clean：清洗（`01_clean`）"),
-            ("correlation", "correlation: hourly cross-coherence (`02_ccf`)", "correlation：逐小时互相干（`02_ccf`）"),
-            ("stack", "stack: stack and station diagnosis (`03_stack`)", "stack：叠加与台站诊断（`03_stack`）"),
-            ("reference", "reference: reference curve (`04_reference`)", "reference：参考曲线（`04_reference`）"),
-            ("dispersion", "dispersion: measurement and quality control (`05_dispersion`)",
-             "dispersion：频散测量与质量控制（`05_dispersion`）"),
-            ("export", "export: curves passed to the inversion (`05_dispersion/curves`)",
-             "export：交给反演的曲线（`05_dispersion/curves`）"),
-            ("inversion", "inversion: DSurfTomo (`06_inversion`)", "inversion：DSurfTomo 反演（`06_inversion`）"),
-            ("checks", "checks: checkerboards, controls, precheck", "checks：棋盘、对照、预检"),
-            ("plots", "plots: figures", "plots：出图")]
+SECTIONS = [
+    ("project", "project", "项目"),
+    ("data", "data: raw data", "data：原始数据"),
+    ("clean", "clean: cleaning (`01_clean`)", "clean：清洗（`01_clean`）"),
+    ("correlation", "correlation: hourly cross-coherence (`02_ccf`)", "correlation：逐小时互相干（`02_ccf`）"),
+    ("stack", "stack: stack and station diagnosis (`03_stack`)", "stack：叠加与台站诊断（`03_stack`）"),
+    ("reference", "reference: reference curve (`04_reference`)", "reference：参考曲线（`04_reference`）"),
+    (
+        "dispersion",
+        "dispersion: measurement and quality control (`05_dispersion`)",
+        "dispersion：频散测量与质量控制（`05_dispersion`）",
+    ),
+    (
+        "export",
+        "export: curves passed to the inversion (`05_dispersion/curves`)",
+        "export：交给反演的曲线（`05_dispersion/curves`）",
+    ),
+    ("inversion", "inversion: DSurfTomo (`06_inversion`)", "inversion：DSurfTomo 反演（`06_inversion`）"),
+    ("checks", "checks: checkerboards, controls, precheck", "checks：棋盘、对照、预检"),
+    ("plots", "plots: figures", "plots：出图"),
+]
 
-HEAD = {"en": """# Parameters
+HEAD = {
+    "en": """# Parameters
 
 [中文](parameters.zh.md) | English
 
@@ -188,7 +206,8 @@ The column "basis" says what a default rests on:
 | technical | affects speed, memory or files only, not the result |
 
 Where the chain stops for you: after `clean` (ambiguous names, stations without data, coordinate mismatches, unknown component orientation, an array type between areal and line, responses not removed and instrument models unknown), after `stack` (only when the diagnosis lists candidates), after `reference` (is the picked ridge the fundamental mode?), after `inversion` (starting model, deepest node, velocity bounds). A step with nothing to judge does not stop.
-""", "zh": """# 参数说明
+""",
+    "zh": """# 参数说明
 
 中文 | [English](parameters.md)
 
@@ -211,9 +230,11 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | 技术 | 只影响速度、内存或文件，不影响结果 |
 
 流程在哪些地方停下来等你：`clean` 之后（名字有歧义、台站没有数据、坐标对不上、分量方向不明、台阵类型介于面状和线状之间、没有去响应且不知道仪器型号）、`stack` 之后（只在诊断列出候选时）、`reference` 之后（拾取的脊是不是基阶）、`inversion` 之后（起始模型、最深节点、速度上下限）。没有需要判断的事项时不停。
-"""}
+""",
+}
 
-TAIL = {"en": """
+TAIL = {
+    "en": """
 ## %d. Defaults that differ for line arrays
 
 A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
@@ -223,7 +244,8 @@ A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
 ## References
 
 %s
-""", "zh": """
+""",
+    "zh": """
 ## %d. 线状台阵不同的默认值
 
 线状台阵（`project.array_type: line`，或 `auto` 判断为线状）使用：
@@ -233,7 +255,8 @@ A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
 ## 参考文献
 
 %s
-"""}
+""",
+}
 
 REFS = [
     "Bensen, G. D., et al. (2007). Processing seismic ambient noise data to obtain reliable broad-band surface wave dispersion measurements. *GJI*, 169, 1239–1260. doi:10.1111/j.1365-246X.2007.03374.x",
@@ -266,7 +289,7 @@ REFS = [
 
 
 def dump(v):
-    t = yaml.safe_dump(v, default_flow_style=True, width=10 ** 6).strip().replace("\n...", "")
+    t = yaml.safe_dump(v, default_flow_style=True, width=10**6).strip().replace("\n...", "")
     return t if len(t) <= 60 else t[:57] + "..."
 
 
@@ -290,9 +313,15 @@ def main():
                     continue
                 kind, text = params.DOC[k]
                 kind = "required" if k in req else kind
-                L.append("| `%s` | %s | %s | %s |" % (k.split(".", 1)[1], "—" if k in req else "`%s`" % dump(v).replace("|", "\\|"),
-                                                   kind if lang == "en" else KIND_ZH[kind],
-                                                   (text if lang == "en" else ZH[k]).replace("|", "\\|")))
+                L.append(
+                    "| `%s` | %s | %s | %s |"
+                    % (
+                        k.split(".", 1)[1],
+                        "—" if k in req else "`%s`" % dump(v).replace("|", "\\|"),
+                        kind if lang == "en" else KIND_ZH[kind],
+                        (text if lang == "en" else ZH[k]).replace("|", "\\|"),
+                    )
+                )
             L.append("")
         line = "\n".join("- `%s`: `%s`" % (k, dump(v)) for k, v in params.flat(config.LINE_OVERRIDES))
         refs = "\n".join("- " + r for r in REFS)

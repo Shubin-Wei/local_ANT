@@ -4,13 +4,14 @@ The correlations of a laterally uniform medium with phase velocity c(f) are J0(2
 measurement and the F-J spectrum must give c(f) back.  The cross-coherence of a record with its delayed copy must
 peak at the positive delay.
 """
+
 import h5py
 import numpy as np
 from scipy.special import j0
 
 from lant import config, signal
 
-C_TRUE = lambda f: 2.2 + 0.9 / (1 + (np.asarray(f) / 2.0) ** 1.5)       # km/s, normal dispersion
+C_TRUE = lambda f: 2.2 + 0.9 / (1 + (np.asarray(f) / 2.0) ** 1.5)  # km/s, normal dispersion
 
 
 def _stack(path, nsta=14, fs=50.0, maxlag=14.0, band=(0.4, 16.0), nblk=4):
@@ -30,7 +31,7 @@ def _stack(path, nsta=14, fs=50.0, maxlag=14.0, band=(0.4, 16.0), nblk=4):
         S = np.zeros(len(f))
         S[m] = j0(2 * np.pi * f[m] * d / C_TRUE(f[m])) * tap
         xx = np.fft.irfft(S, nfft)
-        st[q] = np.r_[xx[-L:], xx[:L + 1]]
+        st[q] = np.r_[xx[-L:], xx[: L + 1]]
     st /= np.abs(st).max(axis=1, keepdims=True)
     daily = np.stack([st + 0.002 * rng.standard_normal(st.shape).astype(np.float32) for _ in range(nblk)])
     with h5py.File(path, "w") as h:
@@ -58,6 +59,7 @@ def test_two_station_phase_velocity(tmp_path):
     """Phase velocities of J0 correlations against c(f).  (Between 2 and 3 wavelengths the far-field phase pi/4
     is itself in error by up to about 3 %: the reason for the wavelength limit qc.lam_c.)"""
     from lant import disp, reference, qc
+
     stack = str(tmp_path / "stack.h5")
     dist = _stack(stack)
     cfg = _cfg()
@@ -70,19 +72,20 @@ def test_two_station_phase_velocity(tmp_path):
     with h5py.File(out, "r") as h:
         ok, vc = h["ok_c"][:], h["vc"][:]
     err = vc / C_TRUE(f)[None, :] - 1
-    lam = dist[:, None] * f[None, :] / C_TRUE(f)[None, :]                # path length in wavelengths
+    lam = dist[:, None] * f[None, :] / C_TRUE(f)[None, :]  # path length in wavelengths
     assert ok.sum() > 0.25 * s["pairs"] * len(f)
     far, mid = ok & (lam >= 5), ok & (lam >= 3) & (lam < 5)
     assert abs(np.median(err[ok])) < 0.003
-    assert np.percentile(np.abs(err[far]), 95) < 0.004                    # far field: a few tenths of a percent
-    assert np.percentile(np.abs(err[mid]), 95) < 0.015                    # 3-5 wavelengths: the far-field phase pi/4
+    assert np.percentile(np.abs(err[far]), 95) < 0.004  # far field: a few tenths of a percent
+    assert np.percentile(np.abs(err[mid]), 95) < 0.015  # 3-5 wavelengths: the far-field phase pi/4
     per_f = np.array([np.median(err[far[:, k], k]) for k in range(len(f)) if far[:, k].sum() >= 10])
-    assert np.abs(per_f).max() < 0.004                                    # no frequency-dependent bias
+    assert np.abs(per_f).max() < 0.004  # no frequency-dependent bias
 
 
 def test_fj_spectrum_picks_the_curve(tmp_path):
     """The F-J image of J0 correlations peaks on c(f): picks within 1.5 %."""
     from lant import fj
+
     stack = str(tmp_path / "stack.h5")
     _stack(stack, nsta=20)
     cfg = _cfg()
@@ -100,13 +103,24 @@ def test_fj_spectrum_picks_the_curve(tmp_path):
 def test_correlation_sign(monkeypatch):
     """Station B records what station A recorded 0.4 s earlier: the cross-coherence A-B peaks at +0.4 s."""
     from lant import cc, data as D
+
     fs, n = 50.0, int(86400 * 50)
     rng = np.random.default_rng(32)
     a = rng.standard_normal(n).astype(np.float32)
     recs = {"XX.A": a, "XX.B": np.roll(a, 20)}
     monkeypatch.setattr(D, "read_day", lambda rows, t0, fs_: (recs[rows].copy(), np.ones(n, bool)))
-    opt = dict(fs=fs, seg_len=40.0, seg_step=20.0, maxlag=5.0, fmin=0.5, fmax=20.0, smooth_bins=1, max_over_std=10.0,
-               decomb=False, pair_chunk=100)
+    opt = dict(
+        fs=fs,
+        seg_len=40.0,
+        seg_step=20.0,
+        maxlag=5.0,
+        fmin=0.5,
+        fmax=20.0,
+        smooth_bins=1,
+        max_over_std=10.0,
+        decomb=False,
+        pair_chunk=100,
+    )
     names, hourly, count, _, _ = cc.day_ccf({"XX.A": "XX.A", "XX.B": "XX.B"}, 0.0, opt, nbin=24)
     x = hourly[:2].mean(0)[0]
     lag = (np.arange(len(x)) - len(x) // 2) / fs
@@ -117,6 +131,7 @@ def test_distance_on_the_ellipsoid():
     """geodesic_km against ObsPy (WGS84) at several latitudes and azimuths; the sphere differs by up to 0.6 %."""
     from obspy.geodetics import gps2dist_azimuth
     from lant.signal import geodesic_km, sphere_km, local_xy_km
+
     rng = np.random.default_rng(1)
     la1, lo1 = rng.uniform(-70, 70, 200), rng.uniform(-180, 180, 200)
     la2, lo2 = la1 + rng.uniform(-0.2, 0.2, 200), lo1 + rng.uniform(-0.2, 0.2, 200)

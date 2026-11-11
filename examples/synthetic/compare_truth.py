@@ -10,6 +10,7 @@ Writes output/figures/truth_comparison.png and prints:
 The synthetic medium is laterally uniform, so the inverted model should be close to the true one wherever the
 data constrain it (down to about half the longest wavelength), and laterally almost uniform.
 """
+
 import os
 import sys
 
@@ -23,6 +24,7 @@ def main():
     import argparse
     from lant.export import read_curves
     from lant.inversion.run import read_model
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=HERE, help="the example directory (true_model.txt, true_dispersion.txt)")
     ap.add_argument("--output", default=None, help="the output directory (default DIR/output)")
@@ -45,7 +47,9 @@ def main():
     for k in range(0, len(f), max(1, len(f) // 12)):
         print("  %6.2f   %5d   %.3f  %.3f  %+5.1f %%" % (f[k], n[k], med[k], true_c[k], 100 * (med[k] / true_c[k] - 1)))
     rel = 100 * (med / true_c - 1)
-    print("  all frequencies: median difference %+.2f %%, max |difference| %.2f %%" % (np.median(rel), np.abs(rel).max()))
+    print(
+        "  all frequencies: median difference %+.2f %%, max |difference| %.2f %%" % (np.median(rel), np.abs(rel).max())
+    )
     model = os.path.join(out, "work", "06_inversion", "main", "DSurfTomo.inMeasure.dat")
     if not os.path.exists(model):
         print("\nno inverted model yet (%s): run the chain to the end (lant run all) for the Vs comparison" % model)
@@ -57,11 +61,15 @@ def main():
     true_v = np.interp(dep, tm[:, 0], tm[:, 1])
     print("\nVs (km/s) per depth node: start model, inverted (horizontal mean +- std), true")
     for k, z in enumerate(dep):
-        print("  %5.2f km   %.3f   %.3f +- %.3f   %.3f   %+5.1f %%" % (z, np.interp(z, vs1d[:, 0], vs1d[:, 1]), mean[k], std[k],
-                                                                  true_v[k], 100 * (mean[k] / true_v[k] - 1)))
+        print(
+            "  %5.2f km   %.3f   %.3f +- %.3f   %.3f   %+5.1f %%"
+            % (z, np.interp(z, vs1d[:, 0], vs1d[:, 1]), mean[k], std[k], true_v[k], 100 * (mean[k] / true_v[k] - 1))
+        )
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
     fig, axs = plt.subplots(1, 2, figsize=(11, 4.6))
     for c in curves:
         axs[0].semilogx(1 / c["T"], c["v"], "-", c="0.75", lw=0.5)
@@ -71,6 +79,7 @@ def main():
     axs[0].set_ylabel("Phase velocity (km/s)")
     axs[0].set_xlim(f.min() * 0.9, f.max() * 1.1)
     from matplotlib.ticker import FuncFormatter, NullFormatter
+
     axs[0].xaxis.set_major_formatter(FuncFormatter(lambda v, _: "%g" % v))
     axs[0].xaxis.set_minor_formatter(NullFormatter())
     axs[0].legend(frameon=False)
@@ -87,6 +96,7 @@ def main():
     os.makedirs(os.path.dirname(p), exist_ok=True)
     from lant import artifacts, records
     from lant.provenance import Lock
+
     cfg = {"project": {"output_dir": os.path.abspath(out)}}
     with Lock(records.rec_dir(cfg)):
         before = artifacts.snapshot(cfg)

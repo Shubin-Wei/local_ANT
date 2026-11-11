@@ -17,6 +17,7 @@
 Figures of the processing steps are written by the steps themselves (work/01_clean/coverage.png,
 work/03_stack/station_qc/station_qc.png, work/04_reference/fj.png).
 """
+
 import json
 import os
 
@@ -24,11 +25,30 @@ from .. import paths
 from . import ccf, dispersion, inversion, maps, sections
 from . import gmt as G
 
-NAMES = ["stations", "ccf_moveout", "ccf_stack_time", "dispersion_pair", "dispersion_curves", "start_model", "kernels",
-         "depth_slices", "slices_3d", "sections", "checkerboards", "recovery", "residuals"]
+NAMES = [
+    "stations",
+    "ccf_moveout",
+    "ccf_stack_time",
+    "dispersion_pair",
+    "dispersion_curves",
+    "start_model",
+    "kernels",
+    "depth_slices",
+    "slices_3d",
+    "sections",
+    "checkerboards",
+    "recovery",
+    "residuals",
+]
 # Groups with numbered or banded copies: discard obsolete copies only after successful rendering.
-MULTI = {"ccf_moveout": "2_ccf_moveout*", "ccf_stack_time": "2_ccf_stack_time*", "dispersion_pair": "3_dispersion_pair*",
-         "checkerboards": "6_checkerboard_*", "depth_slices": "5_depth_slices*", "slices_3d": "5_slices_3d*"}
+MULTI = {
+    "ccf_moveout": "2_ccf_moveout*",
+    "ccf_stack_time": "2_ccf_stack_time*",
+    "dispersion_pair": "3_dispersion_pair*",
+    "checkerboards": "6_checkerboard_*",
+    "depth_slices": "5_depth_slices*",
+    "slices_3d": "5_slices_3d*",
+}
 
 
 def resolve(cfg, model, stations):
@@ -38,12 +58,13 @@ def resolve(cfg, model, stations):
     from ..inversion.run import read_model
     from ..pipeline import recovery_radius
     from ..signal import local_xy_km, nice_number
+
     p = cfg["plots"]
     notes = {}
     if not os.path.exists(model):
         return notes
     lon, lat, dep, v = read_model(model)
-    if p["slice_depths_km"] == "auto":                # the model file holds the updated depths only
+    if p["slice_depths_km"] == "auto":  # the model file holds the updated depths only
         upd = [float(z) for z in dep]
         k = np.unique(np.round(np.linspace(0, len(upd) - 1, min(8, len(upd)))).astype(int))
         p["slice_depths_km"] = [upd[i] for i in k]
@@ -56,6 +77,7 @@ def resolve(cfg, model, stations):
         gx, gy = local_xy_km(LO.ravel(), LA.ravel(), lat0, lon0)
         sx, sy = local_xy_km(sl, sb, lat0, lon0)
         from scipy.spatial import cKDTree
+
         near = cKDTree(np.c_[sx, sy]).query(np.c_[gx, gy])[0] <= recovery_radius(cfg)
         vals = v.reshape(-1, len(dep))[near].ravel()
         vals = vals[np.isfinite(vals)]
@@ -75,6 +97,7 @@ class _Figures:
 
     def __init__(self, cfg, which):
         from .. import data as D
+
         self.cfg, self.todo = cfg, which or NAMES
         self.out = paths.mk(paths.P(cfg, paths.FIG))
         self.stations = D.used_stations(cfg)
@@ -107,6 +130,7 @@ class _Figures:
 
     def attempt(self, n, fn):
         import tempfile
+
         destination = self.out
         try:
             with tempfile.TemporaryDirectory(prefix=".draw-", dir=destination) as staging:
@@ -128,6 +152,7 @@ class _Figures:
                 if targets:
                     self.done[n] = dict(result, files=targets) if isinstance(result, dict) else targets
             from ..progress import detail
+
             detail("%d figure tasks completed" % len(self.done))
         except Exception as exc:
             self.skipped[n] = "%s: %s" % (type(exc).__name__, exc)
@@ -140,10 +165,16 @@ class _Figures:
         """Remove obsolete variants after the group was drawn again.  A group with a failed figure keeps its previous
         ones; a variant left out for the present data (a band without measurements) is obsolete and removed."""
         import glob
+
         drawn = {path for r in self.done.values() for path in (r["files"] if isinstance(r, dict) else r)}
         for name, pattern in MULTI.items():
-            failed = any(key == name or key.startswith(name) or key.startswith(pattern.rstrip("*")) or
-                         (name == "checkerboards" and key.startswith("checkerboard_")) for key in self.failed)
+            failed = any(
+                key == name
+                or key.startswith(name)
+                or key.startswith(pattern.rstrip("*"))
+                or (name == "checkerboards" and key.startswith("checkerboard_"))
+                for key in self.failed
+            )
             if name in self.todo and not failed:
                 for file in glob.glob(os.path.join(self.out, pattern)):
                     if file not in drawn:
@@ -178,7 +209,7 @@ def _example_pairs(F):
     given = F.cfg["plots"]["pair_example"]
     if given:
         given = [given] if isinstance(given, str) else list(given)
-        bands = dict(dispersion.choose_pairs(F.disp, n=10 ** 6, min_points=1))
+        bands = dict(dispersion.choose_pairs(F.disp, n=10**6, min_points=1))
         chosen = [(p, bands.get(p)) for p in given]
 
     def vwin(band):
@@ -191,12 +222,20 @@ def _example_pairs(F):
         if os.path.exists(p):
             bad = [tuple(l.split()) for l in open(p) if len(l.split()) == 2 and not l.startswith("#")]
         for k, (pair, band) in enumerate(chosen, 1):
-            F.attempt("ccf_stack_time_%d" % k, lambda pair=pair, band=band, k=k, vw=vwin(band): ccf.stack_time(
-                F.cfg, F.stack, pair, F.path("2_ccf_stack_time_%d" % k), band=band, bad_days=bad, vwin=vw))
+            F.attempt(
+                "ccf_stack_time_%d" % k,
+                lambda pair=pair, band=band, k=k, vw=vwin(band): ccf.stack_time(
+                    F.cfg, F.stack, pair, F.path("2_ccf_stack_time_%d" % k), band=band, bad_days=bad, vwin=vw
+                ),
+            )
     if F.want("dispersion_pair", [F.stack, F.disp]):
         for k, (pair, band) in enumerate(chosen, 1):
-            F.attempt("dispersion_pair_%d" % k, lambda pair=pair, k=k, vw=vwin(band): dispersion.pair_example(
-                F.cfg, F.disp, F.stack, pair, F.path("3_dispersion_pair_%d" % k), vwin=vw))
+            F.attempt(
+                "dispersion_pair_%d" % k,
+                lambda pair=pair, k=k, vw=vwin(band): dispersion.pair_example(
+                    F.cfg, F.disp, F.stack, pair, F.path("3_dispersion_pair_%d" % k), vwin=vw
+                ),
+            )
 
 
 def _curves_and_start(F):
@@ -205,7 +244,9 @@ def _curves_and_start(F):
         F.attempt("dispersion_curves", lambda: dispersion.all_curves(F.cfg, curves, F.path("3_dispersion_curves")))
     vs1d = paths.P(F.cfg, paths.INV, "vs1d.txt")
     if F.want("start_model", [vs1d]):
-        F.attempt("start_model", lambda: inversion.start_model(F.cfg, paths.P(F.cfg, paths.INV), F.path("4_start_model")))
+        F.attempt(
+            "start_model", lambda: inversion.start_model(F.cfg, paths.P(F.cfg, paths.INV), F.path("4_start_model"))
+        )
     if F.want("kernels", [vs1d]):
         F.attempt("kernels", lambda: inversion.kernels(F.cfg, paths.P(F.cfg, paths.INV), F.path("4_kernels")))
 
@@ -218,10 +259,14 @@ def _model(F):
             if n in F.todo:
                 F.skipped[n] = "line array: the model is a narrow strip along the line, drawn as the section 5_sections"
     else:
-        traces = [(s["name"], s["start"], s["end"]) for s in cfg["plots"]["sections"]] if cfg["plots"]["sections"] else None
+        traces = (
+            [(s["name"], s["start"], s["end"]) for s in cfg["plots"]["sections"]] if cfg["plots"]["sections"] else None
+        )
         if F.want("depth_slices", [F.model]):
-            F.attempt("depth_slices", lambda: maps.depth_slices(cfg, F.model, F.stations, F.path("5_depth_slices"),
-                                                                traces=traces))
+            F.attempt(
+                "depth_slices",
+                lambda: maps.depth_slices(cfg, F.model, F.stations, F.path("5_depth_slices"), traces=traces),
+            )
         if F.want("slices_3d", [F.model]):
             F.attempt("slices_3d", lambda: maps.slices_3d(cfg, F.model, F.stations, F.path("5_slices_3d")))
     if F.want("sections", [F.model]):
@@ -247,11 +292,19 @@ def _checkerboards(F):
         if not os.path.exists(os.path.join(d, "DSurfTomo.inSyn.dat")):
             continue
         if F.line:
-            F.attempt("checkerboard_" + name, lambda d=d, name=name: sections.line_checkerboard(
-                cfg, d, F.stations, F.path("6_checkerboard_" + name), label=name))
+            F.attempt(
+                "checkerboard_" + name,
+                lambda d=d, name=name: sections.line_checkerboard(
+                    cfg, d, F.stations, F.path("6_checkerboard_" + name), label=name
+                ),
+            )
         else:
-            F.attempt("checkerboard_" + name, lambda d=d, name=name: maps.checkerboard(
-                cfg, d, F.stations, F.path("6_checkerboard_" + name), vertical=name in vert))
+            F.attempt(
+                "checkerboard_" + name,
+                lambda d=d, name=name: maps.checkerboard(
+                    cfg, d, F.stations, F.path("6_checkerboard_" + name), vertical=name in vert
+                ),
+            )
 
 
 def _evaluation(F):
@@ -275,5 +328,8 @@ def make_all(cfg, which=None):
     F.remove_old()
     if G.RELIEF_NOTES:
         F.skipped["relief"] = "; ".join(G.RELIEF_NOTES)
-    return dict(drawn=F.done, not_drawn=F.skipped,
-                plot_parameters={k: dict(value=cfg["plots"][k], rule=v) for k, v in notes.items()})
+    return dict(
+        drawn=F.done,
+        not_drawn=F.skipped,
+        plot_parameters={k: dict(value=cfg["plots"][k], rule=v) for k, v in notes.items()},
+    )

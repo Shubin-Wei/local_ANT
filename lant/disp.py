@@ -27,6 +27,7 @@ For every pair of the stack:
     the reason of every rejection is kept as a bit mask ("reason", lant.qc.REASONS).
 The group velocity is measured only to find the arrival the phase is read at (not a product).
 """
+
 import os
 from multiprocessing import Pool
 
@@ -37,11 +38,11 @@ import numpy as np
 
 from . import signal as S
 
-VEL = None                                     # velocity axis, set from dispersion.vmin/vmax/dv by init_worker
+VEL = None  # velocity axis, set from dispersion.vmin/vmax/dv by init_worker
 PHI0 = np.pi / 4
-QC = {}                                        # dispersion.qc of the configuration, set by init_worker
+QC = {}  # dispersion.qc of the configuration, set by init_worker
 G = {}
-DATA_KEYS = ("vg", "vc", "snr", "side", "jk_c", "u_from_c")   # float arrays [npair, nf] of the measurement file
+DATA_KEYS = ("vg", "vc", "snr", "side", "jk_c", "u_from_c")  # float arrays [npair, nf] of the measurement file
 
 
 def off_band_mask(freqs, spec):
@@ -64,7 +65,7 @@ def reference_work(freqs, c_ref, valid):
     segment only.  Returns (valid, u_ref, c_fill, u_fill)."""
     valid = valid & np.isfinite(c_ref)
     u_ref = np.full(len(freqs), np.nan)
-    for (k0, k1) in S.runs_of(valid):
+    for k0, k1 in S.runs_of(valid):
         if k1 - k0 < 2:
             valid[k0:k1] = False
             continue
@@ -83,7 +84,7 @@ def load_reference(path):
     v = np.asarray(out["ref_valid"], bool) if "ref_valid" in out else np.ones(len(c), bool)
     out["ref_valid"], out["u_ref"], out["c_fill"], out["u_fill"] = reference_work(out["freqs"], c, v.copy())
     sup = np.asarray(out["ref_support"], bool) if "ref_support" in out else out["ref_valid"].copy()
-    out["ref_support"] = sup & out["ref_valid"]     # backed by measurements (F-J picks, medians, a borrowed curve)
+    out["ref_support"] = sup & out["ref_valid"]  # backed by measurements (F-J picks, medians, a borrowed curve)
     return out
 
 
@@ -100,12 +101,13 @@ def init_worker(opt):
     G["ref"] = load_reference(opt["reference"])
     G["refs"] = {}
     zp = os.path.join(os.path.dirname(opt["reference"]), "zones.npz")
-    if os.path.exists(zp):                         # one reference per zone (reference.zone_km)
+    if os.path.exists(zp):  # one reference per zone (reference.zone_km)
         z = np.load(zp)
         for k in range(len(z["c_ref"])):
             ref = dict(G["ref"])
             ref["ref_valid"], ref["u_ref"], ref["c_fill"], ref["u_fill"] = reference_work(
-                ref["freqs"], z["c_ref"][k].astype(float), np.ones(len(ref["freqs"]), bool))
+                ref["freqs"], z["c_ref"][k].astype(float), np.ones(len(ref["freqs"]), bool)
+            )
             ref["ref_support"] = z["ref_support"][k] & ref["ref_valid"]
             G["refs"][k] = ref
     with h5py.File(opt["stack"], "r") as h:
@@ -151,7 +153,7 @@ def lobe_metrics(prof, j):
         if m == j:
             continue
         a, b = (m, j) if m < j else (j, m)
-        if p[a:b + 1].min() <= 0.7 * min(p[m], pj):
+        if p[a : b + 1].min() <= 0.7 * min(p[m], pj):
             side = max(side, p[m] / pj)
     return side
 
@@ -164,7 +166,7 @@ def pick_group(img, u_ref, valid, segments=None, support=None):
     support = np.ones(len(u_ref), bool) if support is None else support
     if segments is not None and not (len(segments) == 1 and segments[0] == (0, len(u_ref))):
         vg, side = np.full(len(u_ref), np.nan), np.full(len(u_ref), np.nan)
-        for (k0, k1) in segments:
+        for k0, k1 in segments:
             if valid[k0:k1].any():
                 vg[k0:k1], side[k0:k1] = pick_group(img[k0:k1], u_ref[k0:k1], valid[k0:k1], support=support[k0:k1])
         return vg, side
@@ -200,7 +202,7 @@ def matched_phase(sig, fs, ffine, tg_fine, alpha, phi0, taper_s=1.0):
     psi = 2 * np.pi * np.concatenate([[0.0], np.cumsum(0.5 * (tg[1:] + tg[:-1]) * np.diff(f))])
     psi_c = np.interp(ffine, f, psi)
     tp = np.full(len(ffine), np.nan)
-    half = np.sqrt(20.0 / alpha)                               # the Gaussian is below 2e-9 beyond
+    half = np.sqrt(20.0 / alpha)  # the Gaussian is below 2e-9 beyond
     df = f[1]
     for k, fc in enumerate(ffine):
         i0, i1 = max(1, int(fc * (1 - half) / df)), min(len(f), int(fc * (1 + half) / df) + 2)
@@ -222,14 +224,16 @@ def excess_spectrum(sym, dist, fs, maxlag, vmin, fmin):
     E = np.zeros(nfft // 2 + 1)
     for q in range(len(sym)):
         t1 = min(dist[q] / vmin + 2.0 / fmin, 0.85 * maxlag)
-        ws = np.where(t <= 0.8 * t1, 1.0, np.where(t < t1, 0.5 + 0.5 * np.cos(np.pi * (t - 0.8 * t1) / (0.2 * t1)), 0.0))
+        ws = np.where(
+            t <= 0.8 * t1, 1.0, np.where(t < t1, 0.5 + 0.5 * np.cos(np.pi * (t - 0.8 * t1) / (0.2 * t1)), 0.0)
+        )
         late = t >= t1
         wn = np.zeros(nt)
         wn[late] = np.hanning(late.sum())
         Fs = np.fft.rfft(sym[q] * ws, n=nfft)
         Fn = np.fft.rfft(sym[q] * wn, n=nfft)
         # the correlation is even in lag: the two-sided signal window has the real spectrum 2 Re(Fs) - x(0)
-        E += (2 * Fs.real - sym[q, 0]) ** 2 - 2 * np.abs(Fn) ** 2 * (2 * (ws ** 2).sum() - 1) / (2 * (wn ** 2).sum())
+        E += (2 * Fs.real - sym[q, 0]) ** 2 - 2 * np.abs(Fn) ** 2 * (2 * (ws**2).sum() - 1) / (2 * (wn**2).sum())
     return E
 
 
@@ -243,7 +247,7 @@ def band_amplitude(stack_path, idx, freqs, alpha, vmin, block=500):
         dist = h["dist_km"][:]
         E = 0.0
         for i in range(0, len(idx), block):
-            j = idx[i:i + block]
+            j = idx[i : i + block]
             pos, neg = S.branches(h["stack"][j].astype(np.float64), fs, maxlag)
             E = E + excess_spectrum(0.5 * (pos + neg), dist[j], fs, maxlag, vmin, freqs[0])
     A = np.sqrt(np.clip(E, 0.0, None))
@@ -309,13 +313,14 @@ def process_chunk(task):
     res["anchor_f"] = np.full((npair, nf), np.nan, np.float32)
     tot_w = dcount.sum(axis=0)
     tot_sum = (daily * dcount[:, :, None]).sum(axis=0)
-    po = int(round(1.0 / np.log2(freqs[1] / freqs[0])))          # points per octave of the measurement grid
-    ffine = S.log_freqs(freqs[0], freqs[-1], 4 * po)              # phase tracked on a 4x finer grid
+    po = int(round(1.0 / np.log2(freqs[1] / freqs[0])))  # points per octave of the measurement grid
+    ffine = S.log_freqs(freqs[0], freqs[-1], 4 * po)  # phase tracked on a 4x finer grid
     lff = np.log(ffine)
     lf = np.log(freqs)
-    c_ref_f = np.interp(lff, lf, c_ref)              # the reference on the fine tracking grid
+    c_ref_f = np.interp(lff, lf, c_ref)  # the reference on the fine tracking grid
     kc = np.clip(np.round(np.log2(ffine / freqs[0]) * po).astype(int), 0, nf - 1)
     from .qc import REASONS as RS
+
     for q in range(npair):
         if G["nseg"][idx[q]] == 0:
             res["reason"][q] = RS["no_data"]
@@ -335,25 +340,31 @@ def process_chunk(task):
             res["reason"][q] = reason | RS["short_run"]
             continue
         vg, side = pick_group(img, u_ref, valid, segs, support)
-        snr = at_pick(img, vg)                          # the SNR of the picked arrival, not of the strongest one
+        snr = at_pick(img, vg)  # the SNR of the picked arrival, not of the strongest one
         # jackknife groups from this pair's own sub-stacks with data, dealt out in turn
         have = np.where(dcount[:, q] > 0)[0]
-        groups = [have[g::G["njack"]] for g in range(G["njack"])]
+        groups = [have[g :: G["njack"]] for g in range(G["njack"])]
         subsets = []
         for g in groups:
             w = tot_w[q] - dcount[g, q].sum()
             if g.size == 0 or w <= 0 or dcount[g, q].sum() <= 0:
                 continue
             subsets.append((tot_sum[q] - (daily[g, q] * dcount[g, q][:, None]).sum(axis=0)) / w)
-        dev_g = np.where(support, np.abs(vg - u_ref) / u_ref, 0.0)    # no deviation screen off the measured reference
+        dev_g = np.where(support, np.abs(vg - u_ref) / u_ref, 0.0)  # no deviation screen off the measured reference
         res["vg"][q], res["snr"][q], res["side"][q] = vg, snr, side
         reason[~np.isfinite(vg)] |= RS["no_group_pick"]
         with np.errstate(invalid="ignore"):
             reason[snr < QC["snr_c"]] |= RS["snr_group"]
             reason[dev_g > QC["dev_pre"]] |= RS["dev_pre"]
             reason[(side > QC["side_c"]) & ~side_off] |= RS["side_lobe"]
-            pre0 = (snr >= QC["snr_c"]) & (dist[q] >= QC["lam_c"] * lam_c) & (dev_g <= QC["dev_pre"]) \
-                & ((side <= QC["side_c"]) | side_off) & ref_valid & np.isfinite(vg)
+            pre0 = (
+                (snr >= QC["snr_c"])
+                & (dist[q] >= QC["lam_c"] * lam_c)
+                & (dev_g <= QC["dev_pre"])
+                & ((side <= QC["side_c"]) | side_off)
+                & ref_valid
+                & np.isfinite(vg)
+            )
         pre = S.contiguous(pre0, QC["min_run"])
         reason[pre0 & ~pre] |= RS["short_run"]
         res["pre_c"][q] = pre
@@ -363,7 +374,7 @@ def process_chunk(task):
         vg_fill = np.where(np.isfinite(vg), vg, u_ref)
         tg_f = dist[q] / np.interp(lff, lf, vg_fill)
         lam_ratio_f = dist[q] * ffine / c_ref_f
-        sigsets = [x2[q:q + 1]] + [sub[None, :] for sub in subsets]
+        sigsets = [x2[q : q + 1]] + [sub[None, :] for sub in subsets]
         tp_sets = []
         for sig2 in sigsets:
             p, n = S.branches(sig2, fs, maxlag)
@@ -371,10 +382,11 @@ def process_chunk(task):
         c_fine_all = np.full((len(sigsets), len(ffine)), np.nan)
         m_fine = np.full(len(ffine), np.nan)
         anchor_run = np.full(nf, np.nan)
-        for (k0, k1) in S.runs_of(pre):
+        for k0, k1 in S.runs_of(pre):
             fine = np.where((kc >= k0) & (kc < k1))[0]
-            anchor = fine[(lam_ratio_f[fine] >= QC["lam_c"]) & (lam_ratio_f[fine] <= QC["anchor_max"])
-                          & support[kc[fine]]]                   # the cycle count only where the reference is measured
+            anchor = fine[
+                (lam_ratio_f[fine] >= QC["lam_c"]) & (lam_ratio_f[fine] <= QC["anchor_max"]) & support[kc[fine]]
+            ]  # the cycle count only where the reference is measured
             if anchor.size == 0:
                 reason[k0:k1] |= RS["no_anchor"]
                 continue
@@ -408,7 +420,7 @@ def process_chunk(task):
                 # the phase track -> rejected as well
                 jk_c[k] = np.max(np.nan_to_num(jk_c_f[fk], nan=np.inf))
         with np.errstate(divide="ignore", invalid="ignore"):
-            dlnc = S.gradient_in_runs(np.log(vc), lf)       # within each run of measured samples, one-sided at its ends
+            dlnc = S.gradient_in_runs(np.log(vc), lf)  # within each run of measured samples, one-sided at its ends
             u_from_c = vc / (1.0 - dlnc)
             ucons = np.abs(u_from_c - vg) / vg <= QC["ucons_c"]
             jk_ok = jk_c <= QC["jk_c_rel"] * vc
@@ -437,23 +449,39 @@ def auto_njack(stack_path):
 def measure(cfg, stack, reference, out):
     """Run the measurement on every pair with data -> out (HDF5)."""
     from .config import phase_constant
+
     d = cfg["dispersion"]
     njack = auto_njack(stack) if d["njack"] == "auto" else int(d["njack"])
     if njack < d["min_jackknife_groups"]:
-        raise RuntimeError("%d jackknife groups (sub-stacks holding data: stack.block_hours, dispersion.njack) but "
-                           "dispersion.min_jackknife_groups is %d: no error could be estimated; use shorter sub-stacks "
-                           "(stack.block_hours) or more groups" % (njack, d["min_jackknife_groups"]))
+        raise RuntimeError(
+            "%d jackknife groups (sub-stacks holding data: stack.block_hours, dispersion.njack) but "
+            "dispersion.min_jackknife_groups is %d: no error could be estimated; use shorter sub-stacks "
+            "(stack.block_hours) or more groups" % (njack, d["min_jackknife_groups"])
+        )
     q = dict(d["qc"])
     lam_c_final = q.pop("lam_c")
     q.pop("min_run")
     qc_off = dict(dev_pre=q.pop("dev_pre"), ucons_c=q.pop("ucons_c"))
-    opt = dict(stack=stack, reference=reference, alpha=d["alpha"], njack=njack,
-               min_jackknife_groups=d["min_jackknife_groups"], lam_min=d["lam_min"],
-               anchor_max=d["anchor_max_lambda"], side_off_bands=d["side_off_bands"], min_dist=d["min_dist_km"],
-               vmin=d["vmin"], vmax=d["vmax"], dv=d["dv"], phi0=phase_constant(cfg),
-               qc=dict(snr_c=q["snr_c"], snr_g=q["snr_g"], jk_c_rel=q["jk_c_rel"],
-                       side_c=q["side_c"], min_run=d["qc"]["min_run"]),
-               qc_off=qc_off, band_edge=float(q["band_edge"]))
+    opt = dict(
+        stack=stack,
+        reference=reference,
+        alpha=d["alpha"],
+        njack=njack,
+        min_jackknife_groups=d["min_jackknife_groups"],
+        lam_min=d["lam_min"],
+        anchor_max=d["anchor_max_lambda"],
+        side_off_bands=d["side_off_bands"],
+        min_dist=d["min_dist_km"],
+        vmin=d["vmin"],
+        vmax=d["vmax"],
+        dv=d["dv"],
+        phi0=phase_constant(cfg),
+        qc=dict(
+            snr_c=q["snr_c"], snr_g=q["snr_g"], jk_c_rel=q["jk_c_rel"], side_c=q["side_c"], min_run=d["qc"]["min_run"]
+        ),
+        qc_off=qc_off,
+        band_edge=float(q["band_edge"]),
+    )
     with h5py.File(stack, "r") as h:
         pairs = np.array([p.decode() for p in h["pairs"][:]])
         nseg = h["nseg"][:]
@@ -470,9 +498,9 @@ def measure(cfg, stack, reference, out):
     if os.path.exists(zp):
         zone = np.load(zp)["zone"]
     chunks = []
-    for zk in sorted(set(zone[all_idx].tolist())):       # the pairs of a zone share its reference
+    for zk in sorted(set(zone[all_idx].tolist())):  # the pairs of a zone share its reference
         zi = all_idx[zone[all_idx] == zk]
-        chunks += [(zk, zi[i:i + d["chunk"]]) for i in range(0, len(zi), d["chunk"])]
+        chunks += [(zk, zi[i : i + d["chunk"]]) for i in range(0, len(zi), d["chunk"])]
     npair_all = len(pairs)
     out_d = {k: np.full((npair_all, nf), np.nan, np.float32) for k in DATA_KEYS}
     out_d["reason"] = np.zeros((npair_all, nf), np.int32)
@@ -503,10 +531,17 @@ def measure(cfg, stack, reference, out):
         h.create_dataset("zone", data=zone)
         h.create_dataset("pairs", data=pairs.astype("S"))
         h.create_dataset("dist_km", data=dist)
-        h.attrs.update(dict(alpha=d["alpha"], njack=njack, min_jackknife_groups=opt["min_jackknife_groups"],
-                            reference=os.path.abspath(reference),
-                            side_off_bands=d["side_off_bands"] or "none", phase_constant=opt["phi0"],
-                            lam_c_final=lam_c_final,
-                            **{"qc_" + k: (0.0 if np.isinf(v) else v) for k, v in QC.items()}))
+        h.attrs.update(
+            dict(
+                alpha=d["alpha"],
+                njack=njack,
+                min_jackknife_groups=opt["min_jackknife_groups"],
+                reference=os.path.abspath(reference),
+                side_off_bands=d["side_off_bands"] or "none",
+                phase_constant=opt["phi0"],
+                lam_c_final=lam_c_final,
+                **{"qc_" + k: (0.0 if np.isinf(v) else v) for k, v in QC.items()},
+            )
+        )
     os.replace(out + ".tmp", out)
     return dict(pairs=len(all_idx), njack=njack, phase_points=int(out_d["ok_c"].sum()))

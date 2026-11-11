@@ -1,4 +1,5 @@
 """The stack step: excluded station-days and the station diagnosis."""
+
 import os
 
 import numpy as np
@@ -10,6 +11,7 @@ def test_block_exclusion(tmp_path):
     """An entry for a sub-day block (YYYYDDD_hh) removes that block; a whole-day entry removes all its blocks."""
     import h5py
     from lant.stack import exclude_station_days
+
     p = str(tmp_path / "s.h5")
     with h5py.File(p, "w") as h:
         h["stack"] = np.ones((1, 5), np.float32)
@@ -29,6 +31,7 @@ def test_station_diagnosis(tmp_path):
     distribution; with too few station sub-stacks nothing is judged."""
     import h5py
     from lant import stack as SK
+
     rng = np.random.default_rng(21)
     fs, nl, nblk, names = 50.0, 401, 12, ["S%02d" % i for i in range(8)]
     t = (np.arange(nl) - nl // 2) / fs
@@ -37,7 +40,9 @@ def test_station_diagnosis(tmp_path):
         for j in range(i + 1, 8):
             pairs.append("%s_%s" % (names[i], names[j]))
             dist.append(0.5 * (j - i))
-    wav = lambda t0, d: np.exp(-((np.abs(t - t0) - d / 2.0) / 0.08) ** 2) * np.cos(2 * np.pi * 5 * (np.abs(t - t0) - d / 2.0))
+    wav = lambda t0, d: np.exp(-(((np.abs(t - t0) - d / 2.0) / 0.08) ** 2)) * np.cos(
+        2 * np.pi * 5 * (np.abs(t - t0) - d / 2.0)
+    )
     daily = np.zeros((nblk, len(pairs), nl), np.float32)
     for k, (p, d) in enumerate(zip(pairs, dist)):
         for b in range(nblk):
@@ -64,5 +69,5 @@ def test_station_diagnosis(tmp_path):
     assert abs(abs(z["shift"][3, 4]) - 0.03) < 0.004 and s["limits"]["n"] == 96 and s["checked"]
     assert os.path.exists(tmp_path / "q" / "station_qc.png")
     c, lag = SK._shift_corr(wav(0, 1.0), wav(0.013, 1.0), 100, 301, 10)
-    assert c > 0.95 and abs(lag / fs - 0.013) < 0.002                  # between samples (0.02 s)
+    assert c > 0.95 and abs(lag / fs - 0.013) < 0.002  # between samples (0.02 s)
     assert SK.outlier_limits(np.zeros(5), np.zeros(5), fs) is None

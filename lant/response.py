@@ -7,6 +7,7 @@ domain to ground velocity, with a cosine pre-filter that leaves the correlation 
 correlation.fmin_hz and correlation.fmax_hz, zero below half the lower and above 1.25 times the upper edge) in place
 of a water level.
 """
+
 import glob
 import os
 
@@ -23,8 +24,12 @@ def load(path):
     if path in _CACHE:
         return _CACHE[path]
     import obspy
-    files = [path] if os.path.isfile(path) else sorted(f for f in glob.glob(os.path.join(path, "**", "*"), recursive=True)
-                                                       if os.path.isfile(f))
+
+    files = (
+        [path]
+        if os.path.isfile(path)
+        else sorted(f for f in glob.glob(os.path.join(path, "**", "*"), recursive=True) if os.path.isfile(f))
+    )
     if not files:
         raise ResponseError("data.response: no file at %s" % path)
     inv, bad = None, []
@@ -36,8 +41,10 @@ def load(path):
             continue
         inv = part if inv is None else inv + part
     if inv is None:
-        raise ResponseError("data.response: none of the %d files under %s is a response file ObsPy reads: %s"
-                            % (len(files), path, "; ".join(bad[:3])))
+        raise ResponseError(
+            "data.response: none of the %d files under %s is a response file ObsPy reads: %s"
+            % (len(files), path, "; ".join(bad[:3]))
+        )
     _CACHE[path] = inv
     return inv
 
@@ -47,6 +54,7 @@ def lookup(inv, net, sta, loc, cha, t):
     exact id first; otherwise the station code alone when it leaves one channel (the same channel code, or the only
     vertical one) - headers of node data often lack the network or location code."""
     import obspy
+
     t = obspy.UTCDateTime(t)
     sid = "%s.%s.%s.%s" % (net, sta, loc, cha)
     try:
@@ -81,7 +89,7 @@ def remove(tr, inv, seed_id, pre_filt):
     if pf[3] > nyq:
         pf[3] = nyq
         pf[2] = min(pf[2], 0.8 * nyq)
-    frac = min(0.05, (2.0 / pf[0]) / dur)             # end taper: two periods of the lowest frequency kept
+    frac = min(0.05, (2.0 / pf[0]) / dur)  # end taper: two periods of the lowest frequency kept
     tr.remove_response(output="VEL", pre_filt=pf, water_level=None, zero_mean=True, taper=True, taper_fraction=frac)
     del tr.stats.response
     return tr

@@ -4,6 +4,7 @@ The HDF5 measurement remains the full audit product. The CSV retains measured va
 and separate inversion columns matching the previous text export exactly. Jackknife
 uncertainty is conditional, uncalibrated and not used as a weight by DSurfTomo.
 """
+
 import csv
 import os
 
@@ -12,16 +13,31 @@ import numpy as np
 
 from .signal import runs_of
 
-FIELDS = ("pair", "lon1", "lat1", "lon2", "lat2", "frequency_hz", "period_s", "velocity_kms", "snr",
-          "uncertainty_kms", "accepted_qc", "used_in_inversion", "inversion_period_s", "inversion_velocity_kms",
-          "inversion_snr", "inversion_uncertainty_kms")
+FIELDS = (
+    "pair",
+    "lon1",
+    "lat1",
+    "lon2",
+    "lat2",
+    "frequency_hz",
+    "period_s",
+    "velocity_kms",
+    "snr",
+    "uncertainty_kms",
+    "accepted_qc",
+    "used_in_inversion",
+    "inversion_period_s",
+    "inversion_velocity_kms",
+    "inversion_snr",
+    "inversion_uncertainty_kms",
+)
 
 
 def longest_run(ok, snr):
     rr = runs_of(ok)
     if not rr:
         return ok
-    k0, k1 = max(rr, key=lambda t: (t[1] - t[0], np.nanmean(snr[t[0]:t[1]])))
+    k0, k1 = max(rr, key=lambda t: (t[1] - t[0], np.nanmean(snr[t[0] : t[1]])))
     out = np.zeros_like(ok)
     out[k0:k1] = True
     return out
@@ -55,13 +71,30 @@ def export(cfg, disp_path, stack_path, out_dir):
             geometry = ["%.8f" % a[i] for a in coords]
             for k, f in enumerate(freqs):
                 used = bool(selected[k])
-                writer.writerow([pair] + geometry + [repr(float(f)), repr(float(1 / f)), repr(float(vc[i, k])),
-                    repr(float(snr[i, k])), repr(float(jc[i, k])), int(okc[i, k]), int(used),
-                    "%.6f" % (1 / f), "%.5f" % vc[i, k] if used else "0.000",
-                    "%.3f" % snr[i, k] if used else "0.000", "%.5f" % jc[i, k] if used else "0.0000"])
+                writer.writerow(
+                    [pair]
+                    + geometry
+                    + [
+                        repr(float(f)),
+                        repr(float(1 / f)),
+                        repr(float(vc[i, k])),
+                        repr(float(snr[i, k])),
+                        repr(float(jc[i, k])),
+                        int(okc[i, k]),
+                        int(used),
+                        "%.6f" % (1 / f),
+                        "%.5f" % vc[i, k] if used else "0.000",
+                        "%.3f" % snr[i, k] if used else "0.000",
+                        "%.5f" % jc[i, k] if used else "0.0000",
+                    ]
+                )
     os.replace(target + ".tmp", target)
-    return dict(phase_curves=ncurves, phase_points=npoints, curves_with_several_segments=several,
-                points_dropped_by_one_segment=dropped)
+    return dict(
+        phase_curves=ncurves,
+        phase_points=npoints,
+        curves_with_several_segments=several,
+        points_dropped_by_one_segment=dropped,
+    )
 
 
 def read_curves(table, kind="C", tmin=0.0, tmax=99.0):
@@ -77,10 +110,17 @@ def read_curves(table, kind="C", tmin=0.0, tmax=99.0):
             if not (tmin - 1e-9 <= t <= tmax + 1e-9):
                 continue
             name = row["pair"]
-            curve = grouped.setdefault(name, dict(name=name, **{k: float(row[k]) for k in ("lon1", "lat1", "lon2", "lat2")},
-                                                  values=[]))
-            curve["values"].append((t, float(row["inversion_velocity_kms"]), float(row["inversion_snr"]),
-                                    float(row["inversion_uncertainty_kms"])))
+            curve = grouped.setdefault(
+                name, dict(name=name, **{k: float(row[k]) for k in ("lon1", "lat1", "lon2", "lat2")}, values=[])
+            )
+            curve["values"].append(
+                (
+                    t,
+                    float(row["inversion_velocity_kms"]),
+                    float(row["inversion_snr"]),
+                    float(row["inversion_uncertainty_kms"]),
+                )
+            )
     curves = []
     for name in sorted(grouped):
         curve = grouped[name]

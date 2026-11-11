@@ -3,9 +3,10 @@
 These functions are used unchanged by the reference, the dispersion and the figure code, so that every place
 applies exactly the same operation.
 """
+
 import numpy as np
 
-EARTH_RADIUS_KM = 6371.0      # the sphere DSurfTomo computes its distances on (sphere_km)
+EARTH_RADIUS_KM = 6371.0  # the sphere DSurfTomo computes its distances on (sphere_km)
 WGS84_A_KM, WGS84_F = 6378.137, 1.0 / 298.257223563
 
 
@@ -19,7 +20,7 @@ def branches(ccf, fs, maxlag):
     """Split two-sided CCFs [npair, 2L+1] into causal / acausal (time reversed) branches."""
     L = int(round(maxlag * fs))
     pos = ccf[:, L:]
-    neg = ccf[:, :L + 1][:, ::-1]
+    neg = ccf[:, : L + 1][:, ::-1]
     return pos, neg
 
 
@@ -65,14 +66,14 @@ def ridge_dp(img, vel, prior=None, prior_tol=0.3, smooth=0.02, valid=None):
     curve beyond prior_tol (relative)."""
     nf, nv = img.shape
     score = np.log(np.clip(img, 1e-3, None))
-    if prior is not None:                          # NaN prior: no pull at that frequency
+    if prior is not None:  # NaN prior: no pull at that frequency
         with np.errstate(invalid="ignore"):
             rel = np.abs(vel[None, :] - prior[:, None]) / prior[:, None]
         score = score - 20.0 * np.nan_to_num(np.clip(rel - prior_tol, 0, None))
     if valid is not None:
         score = np.where(valid[:, None], score, 0.0)
     dv = np.abs(vel[:, None] - vel[None, :]) / vel[None, :]
-    trans = -(dv / smooth) ** 2
+    trans = -((dv / smooth) ** 2)
     acc = score[0].copy()
     back = np.zeros((nf, nv), int)
     for k in range(1, nf):
@@ -156,10 +157,10 @@ def geodesic_km(lon1, lat1, lon2, lat2):
             cs = s1 * s2 + c1 * c2 * cl
             sig = np.arctan2(ss, cs)
             sa = np.where(ss > 0, c1 * c2 * sl / ss, 0.0)
-            ca2 = 1 - sa ** 2
+            ca2 = 1 - sa**2
             c2m = np.where(ca2 > 0, cs - 2 * s1 * s2 / ca2, 0.0)
             C = f / 16 * ca2 * (4 + f * (4 - 3 * ca2))
-            new = L + (1 - C) * f * sa * (sig + C * ss * (c2m + C * cs * (-1 + 2 * c2m ** 2)))
+            new = L + (1 - C) * f * sa * (sig + C * ss * (c2m + C * cs * (-1 + 2 * c2m**2)))
             done = np.max(np.abs(new - lam), initial=0.0) < 1e-13
             lam = new
             if done:
@@ -167,7 +168,7 @@ def geodesic_km(lon1, lat1, lon2, lat2):
         u2 = ca2 * (a * a - b * b) / (b * b)
         A = 1 + u2 / 16384 * (4096 + u2 * (-768 + u2 * (320 - 175 * u2)))
         B = u2 / 1024 * (256 + u2 * (-128 + u2 * (74 - 47 * u2)))
-        dsig = B * ss * (c2m + B / 4 * (cs * (-1 + 2 * c2m ** 2) - B / 6 * c2m * (-3 + 4 * ss ** 2) * (-3 + 4 * c2m ** 2)))
+        dsig = B * ss * (c2m + B / 4 * (cs * (-1 + 2 * c2m**2) - B / 6 * c2m * (-3 + 4 * ss**2) * (-3 + 4 * c2m**2)))
         dist = np.where(ss > 0, b * A * (sig - dsig), 0.0)
         az = np.degrees(np.arctan2(c2 * np.sin(lam), c1 * s2 - s1 * c2 * np.cos(lam)))
     if dist.ndim == 0:
@@ -187,8 +188,7 @@ def km_per_degree(lat0):
     """(km per degree of longitude, km per degree of latitude) on the WGS84 ellipsoid at latitude lat0."""
     e2 = WGS84_F * (2 - WGS84_F)
     w = np.sqrt(1 - e2 * np.sin(np.radians(lat0)) ** 2)
-    return (np.radians(1.0) * WGS84_A_KM / w * np.cos(np.radians(lat0)),
-            np.radians(1.0) * WGS84_A_KM * (1 - e2) / w ** 3)
+    return (np.radians(1.0) * WGS84_A_KM / w * np.cos(np.radians(lat0)), np.radians(1.0) * WGS84_A_KM * (1 - e2) / w**3)
 
 
 def nice_number(x, mode="nearest", steps=(1.0, 2.0, 2.5, 5.0)):
@@ -223,7 +223,7 @@ def octave_bands(freqs):
     edges = [f0]
     while edges[-1] * 2 < f1 * (1 - 1e-9):
         edges.append(edges[-1] * 2)
-    if len(edges) > 1 and f1 / edges[-1] < 2 ** 0.5:     # a short last band joins the previous one
+    if len(edges) > 1 and f1 / edges[-1] < 2**0.5:  # a short last band joins the previous one
         edges.pop()
     edges.append(f1 * (1 + 1e-9))
     return [(round(a, 6), round(b, 6)) for a, b in zip(edges[:-1], edges[1:])]
@@ -236,6 +236,7 @@ def band_key(lo, hi):
 def nearest_neighbour_km(lon, lat):
     """Distance of every station to its nearest neighbour (km), with a k-d tree on local x/y."""
     from scipy.spatial import cKDTree
+
     x, y = local_xy_km(lon, lat)
     if len(x) < 2:
         return np.array([np.nan] * len(x))

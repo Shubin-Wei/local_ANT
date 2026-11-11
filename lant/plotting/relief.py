@@ -7,6 +7,7 @@ tiles that cover the map are requested.  Maps wider than MAX_AUTO_DEG, beyond 60
 no tile available are drawn without relief, and the reason is returned for the figure report.
 A file name or a GMT remote grid (@earth_relief_...) is used as given; none (null) draws no relief.
 """
+
 import math
 import os
 import shlex
@@ -15,16 +16,18 @@ import urllib.request
 
 CACHE = os.path.expanduser(os.environ.get("LANT_RELIEF_CACHE", "~/.cache/lant/srtm1"))
 GMT6_CACHE = os.path.expanduser("~/.gmt/server/srtm1")
-MAX_AUTO_DEG = 3.0          # wider maps: no automatic relief (too many tiles); give a grid file in plots.topography
+MAX_AUTO_DEG = 3.0  # wider maps: no automatic relief (too many tiles); give a grid file in plots.topography
 _NOTE = {}
 
 
 def server():
     import tempfile
+
     try:
-        with tempfile.TemporaryDirectory() as d:           # GMT may leave gmt.history in its working directory
-            s = subprocess.run(["gmt", "get", "GMT_DATA_SERVER"], capture_output=True, text=True, timeout=30,
-                               cwd=d).stdout.strip()
+        with tempfile.TemporaryDirectory() as d:  # GMT may leave gmt.history in its working directory
+            s = subprocess.run(
+                ["gmt", "get", "GMT_DATA_SERVER"], capture_output=True, text=True, timeout=30, cwd=d
+            ).stdout.strip()
     except Exception:
         s = ""
     if not s.startswith("http"):
@@ -57,7 +60,7 @@ def tile(name):
         os.replace(dst + ".part", dst)
         return dst
     except urllib.error.HTTPError as exc:
-        if exc.code == 404:                       # no tile: open sea
+        if exc.code == 404:  # no tile: open sea
             open(os.path.join(CACHE, name + ".none"), "w").close()
         return None
     except Exception:
@@ -86,7 +89,11 @@ def grid(cfg, W, E, S, N, tmp):
         _NOTE[key] = out
         return out
     dst = os.path.join(CACHE, "cut_%s.nc" % key)
-    if not os.path.exists(dst) and not _mosaic_gdal(paths, W, E, S, N, dst, tmp) and not _mosaic_gmt(paths, W, E, S, N, dst, tmp):
+    if (
+        not os.path.exists(dst)
+        and not _mosaic_gdal(paths, W, E, S, N, dst, tmp)
+        and not _mosaic_gmt(paths, W, E, S, N, dst, tmp)
+    ):
         return None, "the SRTM tiles could not be read or joined (GMT needs GDAL with JPEG 2000): no relief"
     _NOTE[key] = (dst, "SRTM 1-arc-second relief (%d tile%s)" % (len(paths), "s" if len(paths) > 1 else ""))
     return _NOTE[key]
@@ -95,13 +102,17 @@ def grid(cfg, W, E, S, N, tmp):
 def _mosaic_gdal(paths, W, E, S, N, dst, tmp):
     """Tiles joined by a GDAL virtual mosaic and cut to the map (seamless; needs gdalbuildvrt / gdal_translate)."""
     import shutil
+
     if not (shutil.which("gdalbuildvrt") and shutil.which("gdal_translate")):
         return False
     vrt = os.path.join(tmp, "relief.vrt")
     q = shlex.quote
     tif = os.path.join(tmp, "relief.tif")
-    cmd = ("gdalbuildvrt -q %s %s && gdal_translate -q -projwin %.6f %.6f %.6f %.6f -ot Float32 %s %s && "
-           "gmt grdconvert %s=gd %s=nf" % (q(vrt), " ".join(map(q, paths)), W, N, E, S, q(vrt), q(tif), q(tif), q(dst + ".part")))
+    cmd = (
+        "gdalbuildvrt -q %s %s && gdal_translate -q -projwin %.6f %.6f %.6f %.6f -ot Float32 %s %s && "
+        "gmt grdconvert %s=gd %s=nf"
+        % (q(vrt), " ".join(map(q, paths)), W, N, E, S, q(vrt), q(tif), q(tif), q(dst + ".part"))
+    )
     ok = subprocess.run(cmd, shell=True, capture_output=True, cwd=tmp).returncode == 0 and os.path.exists(dst + ".part")
     if ok:
         os.replace(dst + ".part", dst)
@@ -116,7 +127,11 @@ def _mosaic_gmt(paths, W, E, S, N, dst, tmp):
         lo0 = int(nm[4:7]) * (1 if nm[3] == "E" else -1)
         if lo0 <= W and E <= lo0 + 1 and la0 <= S and N <= la0 + 1:
             src = p + ("=gd" if p.endswith(".jp2") else "")
-            r = subprocess.run("gmt grdcut %s -R%.6f/%.6f/%.6f/%.6f -G%s" % (shlex.quote(src), W, E, S, N, shlex.quote(dst)),
-                               shell=True, capture_output=True, cwd=tmp)
+            r = subprocess.run(
+                "gmt grdcut %s -R%.6f/%.6f/%.6f/%.6f -G%s" % (shlex.quote(src), W, E, S, N, shlex.quote(dst)),
+                shell=True,
+                capture_output=True,
+                cwd=tmp,
+            )
             return r.returncode == 0 and os.path.exists(dst)
     return False
