@@ -6,8 +6,24 @@ All results are written under `project.output_dir` of the configuration; the raw
 
 ## Project entry points
 
-Open `REPORT.md` first. `README.md` explains ownership and operating rules. `notes.md` holds appended notes and decisions. `results/dispersion/` is replaced after a complete disp step. `results/model/` (solver inputs and model), `results/validation/` (finished checks and the evaluation) and `results/reproduce/` (effective configuration, station geometry, starting-model files) are replaced together after a complete evaluate step, so rebuilding or rerunning the inversion keeps the previous evaluated model until the new one is evaluated. `REPORT.md` names the run each of them comes from and marks it when the step has run again since. Scientific products remain available independently of working caches. `work/` is not disposable as a whole.
+Open `REPORT.md` first: the state of every step and the next command, key numbers, the items left for you to judge, the main figures, and links to the retained results with the run each comes from. `README.md` explains the directories and the operating rules. `notes.md` holds your notes and decisions (`lant note`).
 
+## results/: retained results
+
+`results/dispersion/` is replaced after a complete disp step; `results/model/`, `results/validation/` and `results/reproduce/` are replaced together after a complete evaluate step, so rebuilding or rerunning the inversion keeps the previous evaluated model until the new one is evaluated. Unregistered files in these directories are never replaced. They stay readable after `lant clean-work`; `work/` is not disposable as a whole.
+
+| File | Content |
+|---|---|
+| ★ `model/vs_model.csv` | the 3-D model: `longitude_deg`, `latitude_deg` (WGS84), `depth_km`, `vs_km_s`, sorted by depth, latitude, longitude; the values exactly as DSurfTomo wrote them. Nodes far from the ray paths keep the starting model: read it with the checkerboards |
+| ★ `dispersion/curves.csv` | every pair and measurement frequency: measured values, `accepted_qc`, `used_in_inversion` and the values given to DSurfTomo |
+| `dispersion/disp.h5` | all measurements with rejection reasons and diagnostics |
+| `dispersion/median_vs_reference.txt` | median measured curve against the reference |
+| `figures/` | result figures (below) |
+| `validation/evaluation.json` | residual statistics of the starting and final model, checkerboard recovery per depth, control inversions |
+| `validation/residuals_start.csv`, `residuals_final.csv` | travel time observed and predicted per pair and period, kept or rejected by DSurfTomo's rule |
+| `reproduce/` | `effective.yaml` (configuration with every value), `stations.csv`, the average curve and 1-D starting model, and the solver files `DSurfTomo.in`, `surfdata.dat`, `MOD`, `DSurfTomo.inMeasure.dat` |
+
+The per-pair diagnostic figures stay in `work/05_dispersion/pair_figures/`; the checkerboard and control projects with their recovered models stay in `work/06_inversion/`.
 
 ## .lant/: the run record
 
@@ -20,8 +36,11 @@ Open `REPORT.md` first. `README.md` explains ownership and operating rules. `not
 | `config.yaml`, `config_history/` | the complete configuration of the latest run (all defaults included) and the earlier ones |
 | `run_log.jsonl` | start, end, duration and outcome of every step |
 | `provenance/` | code version (with a fingerprint of uncommitted changes), versions of dependencies, fingerprints of third-party programs |
-| `../notes.md` | your judgements and reasons (written by hand, or by an AI assistant from your words) |
+| `../notes.md` | your judgements and reasons, appended with `lant note` (an AI assistant writes your words, not its own decisions) |
 | `lock` | run lock; only one `lant` process can write to an output directory at a time |
+| `artifacts.json`, `published.json` | the files lant wrote (for `lant status` and `lant clean-work`) and the run each retained result comes from |
+| `backups/` | step outputs kept by `--rebuild`, and the output of interrupted solver projects |
+| `lant.log` | detailed output of the steps (10 MiB per file, three older files kept) |
 
 ## work/01_clean/: preparing the raw records
 

@@ -6,8 +6,24 @@
 
 ## 工程入口
 
-先打开 `REPORT.md`。`README.md` 说明产物归属和操作规则；`notes.md` 追加笔记和决策。`results/dispersion/` 在 disp 完整完成后替换。`results/model/`（求解器输入和模型）、`results/validation/`（已完成的检查和评估）、`results/reproduce/`（有效配置、台站几何、起始模型文件）在 evaluate 完整完成后一起替换；重建或重跑反演时，上一次评估过的模型一直保留到新模型评估完。`REPORT.md` 写明它们各来自哪一次运行，该步骤之后又运行过时会标出。科学成果独立于工作缓存保留，不能整删 `work/`。
+先打开 `REPORT.md`：每一步的状态和下一条命令、关键数字、留给你判断的事项、主要图件，以及保留成果的链接和各自来自哪次运行。`README.md` 说明各目录和操作规则。`notes.md` 是你的笔记和决定（`lant note`）。
 
+## results/：保留成果
+
+`results/dispersion/` 在 disp 完整完成后替换；`results/model/`、`results/validation/`、`results/reproduce/` 在 evaluate 完整完成后一起替换，所以重建或重跑反演时，上一次评估过的模型一直保留到新模型评估完。这些目录里未登记的文件不会被替换。`lant clean-work` 之后它们仍可读；`work/` 不能整个删除。
+
+| 文件 | 内容 |
+|---|---|
+| ★ `model/vs_model.csv` | 三维模型：`longitude_deg`、`latitude_deg`（WGS84）、`depth_km`、`vs_km_s`，按深度、纬度、经度排序；数值与 DSurfTomo 写出的完全相同。远离射线的节点保持起始模型：要结合棋盘图看 |
+| ★ `dispersion/curves.csv` | 每个台对、每个测量频率：测量值、`accepted_qc`、`used_in_inversion` 和交给 DSurfTomo 的值 |
+| `dispersion/disp.h5` | 全部测量，含拒绝原因和诊断量 |
+| `dispersion/median_vs_reference.txt` | 实测中位曲线与参考曲线的比较 |
+| `figures/` | 成果图（见下） |
+| `validation/evaluation.json` | 起始模型和最终模型的残差统计、各深度的棋盘恢复、对照反演 |
+| `validation/residuals_start.csv`、`residuals_final.csv` | 每个台对和周期的观测、预测走时，以及是否被 DSurfTomo 的规则保留 |
+| `reproduce/` | `effective.yaml`（含全部取值的配置）、`stations.csv`、平均曲线和一维起始模型，以及求解器文件 `DSurfTomo.in`、`surfdata.dat`、`MOD`、`DSurfTomo.inMeasure.dat` |
+
+逐台对的诊断图留在 `work/05_dispersion/pair_figures/`；棋盘、对照工程及其恢复模型留在 `work/06_inversion/`。
 
 ## .lant/：运行记录
 
@@ -20,8 +36,11 @@
 | `config.yaml`、`config_history/` | 最近一次运行的完整配置（含全部默认值）和历次配置 |
 | `run_log.jsonl` | 每一步的起止时间、耗时、成败 |
 | `provenance/` | 代码版本（含未提交改动的指纹）、依赖版本、第三方程序的指纹 |
-| `../notes.md` | 你的判断和理由（手工或由 AI 助手按你的话写入） |
+| `../notes.md` | 你的判断和理由，用 `lant note` 追加（AI 助手写的是你的话，不是它自己的决定） |
 | `lock` | 运行锁；同一输出目录同时只能有一个 `lant` 进程写入 |
+| `artifacts.json`、`published.json` | lant 写过的文件（供 `lant status`、`lant clean-work` 使用），以及每个保留成果来自哪次运行 |
+| `backups/` | `--rebuild` 保留的步骤输出，以及被中断求解工程的输出 |
+| `lant.log` | 各步骤的详细输出（每份 10 MiB，保留三份旧文件） |
 
 ## work/01_clean/：原始记录整理
 
