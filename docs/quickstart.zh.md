@@ -20,8 +20,18 @@ lant check                          # 全部显示 ok 即可；缺什么会给�
 
 合成数据由一个已知一维模型的 Rayleigh 平面波噪声场生成，因此可以把结果和真值比较。
 
+**一条命令：**
+
 ```bash
-python examples/synthetic/make_synthetic.py --quick --out ~/lant_quick     # 10 台、6 小时，约 1 分钟
+lant demo --out ~/lant_demo        # 生成数据、跑完整条流程、打印报告位置
+```
+
+demo 会自己确认判断点，这只因为数据是它自己生成的；它拒绝在不是它创建的目录里运行。完成后打开 `~/lant_demo/output/REPORT.md`。
+
+**逐步运行**，看流程在哪里停下来等你判断：
+
+```bash
+python -m lant.synthetic --quick --out ~/lant_quick     # 10 台、6 小时，约 1 分钟
 lant run all -c ~/lant_quick/synthetic.yaml
 ```
 
@@ -29,10 +39,10 @@ lant run all -c ~/lant_quick/synthetic.yaml
 
 | 停在 | 要回答的问题 | 看什么 | 合成数据上 |
 |---|---|---|---|
-| clean | 没有响应文件，全部台站是不是同一型号？ | `work/01_clean/report.txt` | 是：`lant confirm clean -c … --reason "DECISION_AND_EVIDENCE"` |
-| stack（有候选时） | 列出的台站子叠加要不要剔除？ | `work/03_stack/station_qc/station_qc.png` | 合成数据没有坏台站，保留：`lant confirm stack -c … --reason "DECISION_AND_EVIDENCE"` |
-| reference | F-J 拾取是不是基阶脊线？ | `work/04_reference/fj.png` | 是：`lant confirm reference -c … --reason "DECISION_AND_EVIDENCE"` |
-| inversion | 一维起始模型和它对平均曲线的拟合是否合理？ | `results/figures/4_start_model.png` | 是：`lant confirm inversion -c … --reason "DECISION_AND_EVIDENCE"` |
+| clean | 没有响应文件，全部台站是不是同一型号？ | `work/01_clean/report.txt` | 是：`lant confirm clean -c … --reason "synthetic data with a known answer"` |
+| stack（有候选时） | 列出的台站子叠加要不要剔除？ | `work/03_stack/station_qc/station_qc.png` | 合成数据没有坏台站，保留：`lant confirm stack -c … --reason "synthetic data with a known answer"` |
+| reference | F-J 拾取是不是基阶脊线？ | `work/04_reference/fj.png` | 是：`lant confirm reference -c … --reason "synthetic data with a known answer"` |
+| inversion | 一维起始模型和它对平均曲线的拟合是否合理？ | `results/figures/4_start_model.png` | 是：`lant confirm inversion -c … --reason "synthetic data with a known answer"` |
 
 每次确认后再运行一次 `lant run all -c ~/lant_quick/synthetic.yaml`，它会从停下的地方接着跑。任何时候都可以用
 

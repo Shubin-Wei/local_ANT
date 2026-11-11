@@ -20,8 +20,18 @@ lant check                          # everything should read ok; missing pieces 
 
 The synthetic data are a noise field of plane Rayleigh waves in a known 1-D model, so the results can be compared with the truth.
 
+**In one command:**
+
 ```bash
-python examples/synthetic/make_synthetic.py --quick --out ~/lant_quick     # 10 stations, 6 hours, about 1 minute
+lant demo --out ~/lant_demo        # writes the data, runs the whole chain, prints where the report is
+```
+
+The demo confirms the judgement points itself, which is right only because it made the data; it refuses to work in a directory it did not create. Open `~/lant_demo/output/REPORT.md` when it is done.
+
+**Step by step**, to see where the chain stops for you:
+
+```bash
+python -m lant.synthetic --quick --out ~/lant_quick     # 10 stations, 6 hours, about 1 minute
 lant run all -c ~/lant_quick/synthetic.yaml
 ```
 
@@ -29,10 +39,10 @@ The chain stops where a scientific judgement is needed and prints the files to l
 
 | Stops at | Question to answer | Look at | On the synthetic data |
 |---|---|---|---|
-| clean | without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | yes: `lant confirm clean -c … --reason "DECISION_AND_EVIDENCE"` |
-| stack (when there are candidates) | remove the station sub-stacks listed? | `work/03_stack/station_qc/station_qc.png` | there are no faulty stations, keep them: `lant confirm stack -c … --reason "DECISION_AND_EVIDENCE"` |
-| reference | do the F-J picks follow the fundamental-mode ridge? | `work/04_reference/fj.png` | yes: `lant confirm reference -c … --reason "DECISION_AND_EVIDENCE"` |
-| inversion | are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | yes: `lant confirm inversion -c … --reason "DECISION_AND_EVIDENCE"` |
+| clean | without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | yes: `lant confirm clean -c … --reason "synthetic data with a known answer"` |
+| stack (when there are candidates) | remove the station sub-stacks listed? | `work/03_stack/station_qc/station_qc.png` | there are no faulty stations, keep them: `lant confirm stack -c … --reason "synthetic data with a known answer"` |
+| reference | do the F-J picks follow the fundamental-mode ridge? | `work/04_reference/fj.png` | yes: `lant confirm reference -c … --reason "synthetic data with a known answer"` |
+| inversion | are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | yes: `lant confirm inversion -c … --reason "synthetic data with a known answer"` |
 
 After each confirmation run `lant run all -c ~/lant_quick/synthetic.yaml` again; it continues where it stopped. At any time
 

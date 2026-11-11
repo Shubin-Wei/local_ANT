@@ -50,6 +50,7 @@ conda env create -f environment.yml && conda activate lant     # Python、ObsPy�
 pip install -e .
 lant install-external                                  # DSurfTomo 和 pDSurfTomo（固定版本）
 lant check                                                      # 缺什么、怎么装，都会列出
+lant demo                                                       # 已知答案的合成台阵，几分钟跑完
 ```
 
 ## 快速开始
@@ -61,7 +62,7 @@ lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
 这条命令写出 `/data/result/config.yaml` 并开始运行。停下时会打印要看的文件和下一条命令，例如
 
 ```bash
-lant confirm reference -c /data/result/config.yaml --reason "DECISION_AND_EVIDENCE"
+lant confirm reference -c /data/result/config.yaml --reason "拾取沿基阶脊（fj.png）"
 lant run all -c /data/result/config.yaml          # 从第一个不成立的步骤接着跑
 ```
 

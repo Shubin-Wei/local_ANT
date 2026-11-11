@@ -50,6 +50,7 @@ conda env create -f environment.yml && conda activate lant     # Python, ObsPy, 
 pip install -e .
 lant install-external                                  # DSurfTomo and pDSurfTomo, fixed versions
 lant check                                                      # says what is missing and how to install it
+lant demo                                                       # a synthetic array with a known answer, a few minutes
 ```
 
 ## Quick start
@@ -61,7 +62,7 @@ lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
 writes `/data/result/config.yaml` and runs the chain. When it stops it prints what to look at and the next command, for example
 
 ```bash
-lant confirm reference -c /data/result/config.yaml --reason "DECISION_AND_EVIDENCE"
+lant confirm reference -c /data/result/config.yaml --reason "picks follow the fundamental ridge (fj.png)"
 lant run all -c /data/result/config.yaml          # continues from the first step that does not stand
 ```
 
