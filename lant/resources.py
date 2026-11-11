@@ -3,9 +3,10 @@
 import os
 import shutil
 from pathlib import Path
+from typing import Optional
 
 
-def available_memory(proc=Path("/proc"), cgroup=Path("/sys/fs/cgroup")):
+def available_memory(proc: Path = Path("/proc"), cgroup: Path = Path("/sys/fs/cgroup")) -> Optional[int]:
     limits = []
     try:
         fields = dict(line.split(":", 1) for line in (proc / "meminfo").read_text().splitlines())
@@ -38,7 +39,7 @@ def available_memory(proc=Path("/proc"), cgroup=Path("/sys/fs/cgroup")):
     return min(limits) if limits else None
 
 
-def check_disk(directory, required_bytes):
+def check_disk(directory, required_bytes: float) -> int:
     free = shutil.disk_usage(directory).free
     if required_bytes > free:
         raise RuntimeError(

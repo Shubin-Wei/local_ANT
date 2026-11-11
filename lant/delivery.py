@@ -32,7 +32,7 @@ def atomic_text(path, text):
             os.unlink(tmp)
 
 
-def initialize(cfg):
+def initialize(cfg: dict) -> None:
     root = Path(cfg["project"]["output_dir"])
     marker = root / ".lant" / "layout.json"
     if marker.exists():
@@ -125,7 +125,7 @@ def publish(cfg, step):
         atomic_text(dest / "reproduce" / "stations.csv", stations.read_text())
 
 
-def write_report(cfg):
+def write_report(cfg: dict) -> None:
     from . import manifest, report
 
     root = Path(cfg["project"]["output_dir"])

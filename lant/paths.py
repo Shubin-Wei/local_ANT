@@ -2,7 +2,7 @@
 import os
 
 
-def P(cfg, *parts):
+def P(cfg: dict, *parts: str) -> str:
     if parts and parts[0] in ("01_clean", CCF, STACK, REFERENCE, DISP, INV):
         parts = ("work",) + parts
     elif parts and parts[0] == FIG:

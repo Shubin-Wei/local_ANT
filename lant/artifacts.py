@@ -53,7 +53,7 @@ def register(cfg, before):
     atomic_text(Path(records.rec_dir(cfg)) / "artifacts.json", json.dumps(previous, indent=1) + "\n")
 
 
-def audit(cfg):
+def audit(cfg: dict) -> dict:
     current, owned = snapshot(cfg), load(cfg)
     unknown = sorted(p for p in current if p not in owned and p not in (".lant/artifacts.json", ".lant/lock"))
     missing = sorted(p for p in owned if p not in current)
@@ -93,7 +93,7 @@ def cleanup_plan(cfg, selection):
     )
 
 
-def clean(cfg, selection, execute=False):
+def clean(cfg: dict, selection, execute: bool = False) -> dict:
     """Delete registered, unchanged caches only after scientific products are complete."""
     from . import manifest, report
     from .delivery import write_report
