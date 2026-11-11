@@ -10,7 +10,8 @@ import os
 import shutil
 import subprocess
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+from ..processes import run as run_process, workers
+from ..progress import track
 
 import numpy as np
 
@@ -76,7 +77,7 @@ def run_one(d, binary, threads):
         open(os.path.join(d, "ParallelConfig.in"), "w").write(
             "tt_senK_lsmr = parallel, parallel, default\nThreadNum = %d\nInvResultDir = InvResult\n" % threads)
     with open(os.path.join(d, "run.log"), "w") as fh:
-        rc = subprocess.run([binary, "DSurfTomo.in"], cwd=d, env=env, stdout=fh, stderr=subprocess.STDOUT).returncode
+        rc = run_process([binary, "DSurfTomo.in"], cwd=d, env=env, stdout=fh, stderr=subprocess.STDOUT).returncode
     if rc != 0:
         return d, "FAILED: exit status %d (see %s/run.log)" % (rc, d)
     if status(d) != "done":
@@ -88,8 +89,10 @@ def run_one(d, binary, threads):
 def run_projects(cfg, dirs):
     inv = cfg["inversion"]
     binary = solver_binary(inv["solver"])
-    with ThreadPoolExecutor(max_workers=int(inv["njobs"])) as ex:
-        res = list(ex.map(lambda d: run_one(d, binary, int(inv["threads"])), dirs))
+    with workers(max_workers=int(inv["njobs"])) as ex:
+        from concurrent.futures import as_completed
+        futures = [ex.submit(run_one, d, binary, int(inv["threads"])) for d in dirs]
+        res = [future.result() for future in track(as_completed(futures), len(futures), "solver projects")]
     for d, msg in res:
         print("  %s %s" % (d, msg), flush=True)
     failed = [d for d, m in res if m.startswith("FAILED")]
@@ -185,7 +188,7 @@ def _forward_once(cfg, project, depz, vs, synthetic=False, threads=None):
         if os.path.basename(binary) == "pDSurfTomo":
             open(os.path.join(tmp, "ParallelConfig.in"), "w").write(
                 "tt_senK_lsmr = parallel, parallel, default\nThreadNum = %d\nInvResultDir = InvResult\n" % threads)
-        r = subprocess.run([binary, "DSurfTomo.in"], cwd=tmp, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        r = run_process([binary, "DSurfTomo.in"], cwd=tmp, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         res = os.path.join(tmp, "residualFirst.dat")
         if r.returncode != 0 or not os.path.exists(res):
             raise RuntimeError("forward run failed (exit status %d):\n" % r.returncode + r.stdout.decode(errors="ignore")[-2000:])

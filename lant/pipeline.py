@@ -229,8 +229,8 @@ def step_run(cfg, what="all"):
 
 def precheck_projects(cfg, dirs):
     """lant.inversion.run.precheck for every project about to run -> {dir: reasons} of the invalid ones."""
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=int(cfg["inversion"]["njobs"])) as ex:
+    from .processes import workers
+    with workers(max_workers=int(cfg["inversion"]["njobs"])) as ex:
         res = list(ex.map(lambda d: (d, RUN.precheck(cfg, d)), dirs))
     for d, r in res:
         st = r["stats"]
