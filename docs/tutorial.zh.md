@@ -21,8 +21,8 @@ pip install -e .
 仓库不含第三方源码，由脚本从官方仓库下载固定版本并编译到 `external/`：
 
 ```bash
-bash tools/install_external.sh            # DSurfTomo + fwd1d、pDSurfTomo
-bash tools/install_external.sh dsurftomo  # 只装 DSurfTomo
+lant install-external            # DSurfTomo + fwd1d、pDSurfTomo
+lant install-external dsurftomo  # 只装 DSurfTomo
 ```
 
 | 程序 | 用途 | 必需 |

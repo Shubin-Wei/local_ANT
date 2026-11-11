@@ -6,7 +6,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def external_path(*parts):
-    return os.path.join(os.environ.get("LANT_EXTERNAL", os.path.join(ROOT, "external")), *parts)
+    # A source checkout keeps its existing development installation. Wheels use a writable user cache.
+    checkout = os.path.join(ROOT, "external")
+    default = checkout if os.path.isfile(os.path.join(ROOT, "pyproject.toml")) else os.path.join(
+        os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "lant", "external")
+    return os.path.join(os.environ.get("LANT_EXTERNAL", default), *parts)
 
 
 # Periods a project may carry: the NP of the solver's CalSurfG (DSurfTomo src/CalSurfG.f90 NP=60; pDSurfTomo
@@ -27,4 +31,4 @@ def solver_binary(name):
     q = shutil.which(exe)
     if q:
         return q
-    raise RuntimeError("%s not found in %s or on PATH: run `bash tools/install_external.sh %s`" % (exe, external_path("bin"), name))
+    raise RuntimeError("%s not found in %s or on PATH: run `lant install-external %s`" % (exe, external_path("bin"), name))

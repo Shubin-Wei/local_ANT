@@ -16,3 +16,6 @@ lant = "lant.cli:main"
 
 [tool.setuptools]
 packages = ["lant", "lant.inversion", "lant.plotting"]
+
+[tool.setuptools.package-data]
+lant = ["_external/*.sh", "_external/*.patch", "_external/*.f90"]

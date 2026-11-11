@@ -9,7 +9,7 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 | Symptom | Cause and remedy |
 |---|---|
 | `lant: command not found` | `pip install -e .` was not run in the repository, or the environment with lant is not active |
-| `lant check` lists DSurfTomo or fwd1d as missing | run `bash tools/install_external.sh dsurftomo` (needs git, make, gfortran) |
+| `lant check` lists DSurfTomo or fwd1d as missing | run `lant install-external dsurftomo` (needs git, make, gfortran) |
 | `conda env create` hangs at "Solving environment" | add `--solver libmamba`, or use mamba / micromamba |
 
 ## Configuration

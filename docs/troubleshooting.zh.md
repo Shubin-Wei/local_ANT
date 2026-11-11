@@ -9,7 +9,7 @@
 | 现象 | 原因与处理 |
 |---|---|
 | `lant: command not found` | 没有在仓库目录里执行 `pip install -e .`，或没有激活装了 lant 的环境 |
-| `lant check` 列出 DSurfTomo 或 fwd1d 缺失 | 运行 `bash tools/install_external.sh dsurftomo`（需要 git、make、gfortran） |
+| `lant check` 列出 DSurfTomo 或 fwd1d 缺失 | 运行 `lant install-external dsurftomo`（需要 git、make、gfortran） |
 | `conda env create` 长时间停在 Solving environment | 加 `--solver libmamba`，或用 mamba / micromamba |
 
 ## 配置

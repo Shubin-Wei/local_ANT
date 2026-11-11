@@ -8,7 +8,7 @@ This repository is a complete workflow for high-frequency ambient-noise surface-
 
 Follow [docs/ai_workflow.md](docs/ai_workflow.md). In short:
 
-1. `lant check` first; install what it lists as missing (`bash tools/install_external.sh`).
+1. `lant check` first; install what it lists as missing (`lant install-external`).
 2. Start with `lant run all --raw DIR --stations FILE --out DIR` (or `lant init -o CONFIG` and `lant run all -c CONFIG`). All results go to the user's output directory. **Do not write results into the repository, do not change the raw data, do not edit `lant/`.**
 3. After every stop run `lant status -c CONFIG --json`: it gives the state of each step, the reason, and the next command. Read `OUT/.lant/steps/<step>.md` and the files it lists before going on.
 4. Where the chain stops for a judgement, show the user the items under "FOR YOU TO JUDGE" with the figures, and **let the user decide: never run `lant confirm` on your own.** Record the user's decision and reason in `OUT/notes.md`.

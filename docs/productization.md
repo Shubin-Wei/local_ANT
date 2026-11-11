@@ -45,3 +45,7 @@ Clean estimates memory and storage before writing the archive; cc rechecks immed
 ## Dispersion table
 
 `work/05_dispersion/curves.csv` is the solver-facing table, retained under `results/dispersion/`. It stores measured values, QC acceptance and inversion selection separately. The inversion columns deliberately preserve the former text export's rounding (period: six decimals, velocity: five, SNR: three, uncertainty: five, coordinates: eight). `disp.h5` retains rejection codes and full diagnostics. One-segment selection and missing-value semantics are unchanged.
+
+## Installation resources
+
+`lant install-external [dsurftomo|pdsurftomo]` uses resources bundled in the wheel and source distribution. Installed packages default to `$XDG_CACHE_HOME/lant/external` (or `~/.cache/lant/external`); a source checkout uses its `external/` directory. `LANT_EXTERNAL` overrides both. The source wrapper remains a convenience entry point. Compiler inputs and the existing memory-only patch moved into `lant/_external/` without scientific changes.

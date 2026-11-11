@@ -8,7 +8,7 @@
 
 按 [docs/ai_workflow.zh.md](docs/ai_workflow.zh.md) 做。要点：
 
-1. 先 `lant check`；缺的东西按它列出的命令安装（`bash tools/install_external.sh`）。
+1. 先 `lant check`；缺的东西按它列出的命令安装（`lant install-external`）。
 2. 用 `lant run all --raw 目录 --stations 台站表 --out 目录` 开始（或 `lant init -o 配置` 后 `lant run all -c 配置`）。所有结果写到使用者的输出目录。**不在仓库里写结果，不改原始数据，不改 `lant/`。**
 3. 每次停下后运行 `lant status -c 配置 --json`：它给出每一步的状态、原因和下一条命令。先读 `输出目录/.lant/steps/<步骤>.md` 和它列出的文件，再往下走。
 4. 流程停下来等判断时，把报告里 “FOR YOU TO JUDGE” 下的事项连同图交给使用者，**由使用者决定：不得自行运行 `lant confirm`。** 把使用者的决定和理由记到 `输出目录/notes.md`。

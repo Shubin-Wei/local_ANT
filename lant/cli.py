@@ -76,8 +76,8 @@ def _quick_config(a):
     return paths_
 
 
-MIN_VERSIONS = {"numpy": "1.21", "scipy": "1.7", "h5py": "3.0", "obspy": "1.3", "matplotlib": "3.5", "yaml": "5.4",
-                "openpyxl": "3.0"}                   # as in pyproject.toml
+MIN_VERSIONS = {"numpy": "1.19", "scipy": "1.5", "h5py": "2.10", "obspy": "1.2", "matplotlib": "3.5", "yaml": "6.0",
+                "openpyxl": "3.1"}                   # as in pyproject.toml
 MIN_PYTHON = (3, 8)
 
 
@@ -115,7 +115,7 @@ def cmd_check(a):
         p = external_path(rel)
         good = os.path.isfile(p) and os.access(p, os.X_OK)
         rows.append((name, p if good else ("not executable: chmod +x %s" % p if os.path.exists(p)
-                                           else "MISSING: bash tools/install_external.sh %s" % what)))
+                                           else "MISSING: lant install-external %s" % what)))
         if not good and "optional" not in name:
             ok = False
     w = max(len(r[0]) for r in rows)
@@ -309,6 +309,17 @@ def cmd_plot(a):
         print("not drawn: %s (%s)" % (k, v))
 
 
+def cmd_install_external(a):
+    import subprocess
+    from .tools import external_path
+    script = os.path.join(os.path.dirname(__file__), "_external", "install.sh")
+    for exe in ("git", "make", "gfortran", "bash"):
+        if not shutil.which(exe):
+            raise RuntimeError("external installation needs %s on PATH" % exe)
+    env = dict(os.environ, LANT_EXTERNAL=external_path())
+    subprocess.run(["bash", script] + a.programs, env=env, check=True)
+
+
 def cmd_note(a):
     from . import artifacts, records
     from .delivery import atomic_text, initialize
@@ -384,6 +395,9 @@ def main(argv=None):
     q.add_argument("names", nargs="*")
     q.add_argument("-c", "--config")
     q.set_defaults(fn=cmd_plot)
+    q = sub.add_parser("install-external", help="build fixed third-party programs in a writable location")
+    q.add_argument("programs", nargs="*", choices=("dsurftomo", "pdsurftomo"))
+    q.set_defaults(fn=cmd_install_external)
     q = sub.add_parser("note", help="append a project note")
     q.add_argument("text")
     q.add_argument("-c", "--config")

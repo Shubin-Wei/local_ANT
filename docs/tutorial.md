@@ -21,8 +21,8 @@ If `conda env create` stays at "Solving environment" for a long time, use `--sol
 The repository holds no third-party source; a script downloads fixed versions from the official repositories and builds them in `external/`:
 
 ```bash
-bash tools/install_external.sh            # DSurfTomo + fwd1d, pDSurfTomo
-bash tools/install_external.sh dsurftomo  # DSurfTomo only
+lant install-external            # DSurfTomo + fwd1d, pDSurfTomo
+lant install-external dsurftomo  # DSurfTomo only
 ```
 
 | Program | Used for | Required |

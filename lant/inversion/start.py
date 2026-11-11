@@ -119,7 +119,7 @@ def _forward_sorted(depths, vs, periods, igr=0, minthk=3, iwave=0):
                            "octave (dispersion.per_octave) or a narrower band" % (len(periods), MAX_PERIODS))
     exe = external_path("bin", "fwd1d")
     if not os.path.exists(exe):
-        raise RuntimeError("%s not found: run `bash tools/install_external.sh dsurftomo`" % exe)
+        raise RuntimeError("%s not found: run `lant install-external dsurftomo`" % exe)
     with tempfile.TemporaryDirectory() as d:
         mf, pf = os.path.join(d, "m.txt"), os.path.join(d, "p.txt")
         with open(mf, "w") as fh:

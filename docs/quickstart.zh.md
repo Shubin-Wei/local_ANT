@@ -12,7 +12,7 @@
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
 conda env create -f environment.yml && conda activate lant
 pip install -e .
-bash tools/install_external.sh      # 下载并编译 DSurfTomo、pDSurfTomo
+lant install-external      # 下载并编译 DSurfTomo、pDSurfTomo
 lant check                          # 全部显示 ok 即可；缺什么会给出安装命令
 ```
 

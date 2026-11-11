@@ -12,7 +12,7 @@ You need Linux, conda (or mamba) and git.
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
 conda env create -f environment.yml && conda activate lant
 pip install -e .
-bash tools/install_external.sh      # downloads and builds DSurfTomo and pDSurfTomo
+lant install-external      # downloads and builds DSurfTomo and pDSurfTomo
 lant check                          # everything should read ok; missing pieces come with their install command
 ```
 

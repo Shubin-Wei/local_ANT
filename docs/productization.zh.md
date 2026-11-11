@@ -45,3 +45,7 @@ clean 在写归档前估算内存和空间，cc 分配任务前再次检查。�
 ## 频散汇总表
 
 `work/05_dispersion/curves.csv` 是反演读取表，并保留到 `results/dispersion/`。测量值、质控接受标记、实际反演选择分别记录。独立反演列有意保留原文本精度（周期六位、速度五位、信噪比三位、不确定度五位、坐标八位小数）。`disp.h5` 保留拒绝原因和完整诊断。连续区段筛选与缺测语义不变。
+
+## 安装资源
+
+`lant install-external [dsurftomo|pdsurftomo]` 使用 wheel 和源码发行包内的资源。安装包默认写入 `$XDG_CACHE_HOME/lant/external`（或 `~/.cache/lant/external`），源码工作区使用自身 `external/`；两者都可用 `LANT_EXTERNAL` 覆盖。源码脚本保留为便捷入口。编译输入及既有内存补丁移动至 `lant/_external/`，不改变科学实现。
