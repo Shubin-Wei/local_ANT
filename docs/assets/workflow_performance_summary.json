@@ -1,0 +1,49 @@
+{
+  "before_commit": "e70fbe0746448be6362d062dccbdac37bc4df252",
+  "after_commit": "8c85a68256b368ab0ba17acaec24a0309868a39b",
+  "python": "3.12.13",
+  "numpy": "1.26.4",
+  "cores": 8,
+  "stations": 16,
+  "hours": 6,
+  "protocol": "Frozen sources; identical six-hour/16-station records; eight-core benchmark; separate fresh outputs; includes confirmations, startup and all diagnostics/figures; excludes generation. New snapshot warmed first; baseline already warmed by earlier run. One warm comparison per version on a shared server, not a universal speed guarantee.",
+  "before_s": 118.96323619806208,
+  "after_s": 104.54656564607285,
+  "time_reduction_percent": 12.118593115596562,
+  "ratio": 1.137897122329152,
+  "diagnostic_pngs": 35,
+  "single_renderer_s": 22.36537114600651,
+  "eight_renderers_s": 4.558278634212911,
+  "pngs_byte_identical": true,
+  "phase_curves": 101,
+  "curve_points": 2233,
+  "quality_masks_and_reasons_identical": true,
+  "final_model_difference": {
+    "max_abs_kms": 0.00021000000000004349,
+    "rms_kms": 1.7979921912322238e-05
+  },
+  "step_seconds": {
+    "before": {
+      "clean": 1.0,
+      "cc": 3.0,
+      "stack": 1.0,
+      "reference": 2.0,
+      "disp": 23.0,
+      "inversion": 10.0,
+      "run": 41.0,
+      "evaluate": 2.0,
+      "figures": 26.0
+    },
+    "after": {
+      "clean": 1.0,
+      "cc": 2.0,
+      "stack": 1.0,
+      "reference": 2.0,
+      "disp": 7.0,
+      "inversion": 10.0,
+      "run": 40.0,
+      "evaluate": 2.0,
+      "figures": 27.0
+    }
+  }
+}

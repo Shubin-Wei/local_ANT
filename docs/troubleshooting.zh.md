@@ -9,7 +9,7 @@
 | 现象 | 原因与处理 |
 |---|---|
 | `lant: command not found` | 没有激活装了 lant 的环境（`conda activate lant`）；不用 conda 时，没有在仓库目录里执行 `pip install -e .` |
-| `lant check` 列出 DSurfTomo 或 fwd1d 缺失 | 运行 `lant install-external dsurftomo`（需要 git、make、gfortran） |
+| `lant check` 列出 numba 缺失或版本不对 | 重建环境：`conda env create -f environment.yml` |
 | `conda env create` 长时间停在 Solving environment | 加 `--solver libmamba`，或用 mamba / micromamba |
 
 ## 配置
@@ -38,23 +38,23 @@
 
 | 现象 | 原因与处理 |
 |---|---|
-| `N processes instead of correlation.nproc` | 内存不够同时跑设定的进程数，自动减少，结果不变，只是更慢 |
+| `N days at a time, so that they fit into the memory` | 内存不够每个核跑一个进程，同时跑的减少（其余排队），结果不变，只是更慢 |
 | `One process alone does not fit` | 一天全部台对的逐小时互相关放不进内存。最有效的是把 `data.velocity_range_kms` 写成本区的实际范围（时延窗与最慢速度成反比）；大台阵另用 `correlation.max_distance_km` 只算一定距离内的台对 |
-| `a worker process ended unexpectedly` | clean、cc 或 disp 的一个工作进程被杀掉，最常见的是内存不够（`dmesg` 里能看到 OOM killer）。这一步停下，不再等那个丢失的任务；释放内存或减小这一步的 `nproc` 后重跑 |
+| `a worker process ended unexpectedly` | clean、cc 或 disp 的一个工作进程被杀掉，最常见的是内存不够（`dmesg` 里能看到 OOM killer）。这一步停下，不再等那个丢失的任务；释放内存，或这次把 `resources.cores` 设小，再重跑 |
 | `02_ccf` 占用磁盘很大 | 同上：时延窗决定文件大小。clean 报告中有估计 |
 
 ## stack
 
 | 现象 | 原因与处理 |
 |---|---|
-| 候选很多，而且多数是“shift” | 先看 `station_qc.png`：相关系数低的子叠加时移测不准。时移候选要求同一台站各台对的时移一致（超过其标准误差），真正的钟差会表现为同一台站连续若干子叠加的一致时移。默认速度范围很宽时诊断时窗很长、频带很宽，噪声比例高；写窄 `data.velocity_range_kms` 后重跑 |
+| 候选很多，而且多数是“shift” | 先看 `2_station_qc.png`：相关系数低的子叠加时移测不准。时移候选要求同一台站各台对的时移一致（超过其标准误差），真正的钟差会表现为同一台站连续若干子叠加的一致时移。默认速度范围很宽时诊断时窗很长、频带很宽，噪声比例高；写窄 `data.velocity_range_kms` 后重跑 |
 | 不想剔除任何数据 | `lant confirm stack`（保留全部）；剔除候选用 `--exclude-candidates`；剔除特定台站日写 `stack.exclude_station_days` |
 
 ## reference
 
 | 现象 | 原因与处理 |
 |---|---|
-| `the F-J ridge could be followed over only N frequencies` | 线状台阵的 F-J 谱上找不到连续的基阶脊线。看 `fj.png`：若肉眼能看到基阶，在 `reference.track_start_band_hz` 写出它清楚的频带；若脊线在你给的速度范围之外，修改 `data.velocity_range_kms`；都不行时借用邻近台阵的曲线（`reference.source: file`） |
+| `the F-J ridge could be followed over only N frequencies` | 线状台阵的 F-J 谱上找不到连续的基阶脊线。看 `3_fj_phase_velocity.png`：若肉眼能看到基阶，在 `reference.track_start_band_hz` 写出它清楚的频带；若脊线在你给的速度范围之外，修改 `data.velocity_range_kms`；都不行时借用邻近台阵的曲线（`reference.source: file`） |
 | `only N clear picks that follow each other`（面状） | 台对太少或频带内面波能量弱。看 `results/figures/2_ccf_moveout_*.png` 是否有随台距移动的波列 |
 | 拾到的是高阶模式 | 曲线整体偏快、频率高端上翘时很可能是高阶。面状台阵改用 `reference.fj_mode: track_fundamental`，或缩小速度范围，或借用曲线 |
 | 测量频带下限比预期高 | 频带下限由最长台对等于 `dispersion.qc.lam_c` 个参考波长推出，这是两台法的有效范围，不是错误 |
@@ -64,19 +64,19 @@
 | 现象 | 原因与处理 |
 |---|---|
 | 接受的点很少 | `.lant/steps/disp.md` 按原因统计了被拒的点。原因主要是 snr 时，叠加时间不够或频带内无能量；主要是 wavelength / path_short 时，台距相对波长太短；主要是 off_band 时，该频率超出了噪声源激发的频带 |
-| `median_vs_reference.txt` 显示系统偏离 | 参考曲线可能拾错（高阶、跳周），回到 reference 检查 `fj.png` |
-| 测线：参考曲线只覆盖测量频带的一小段，高频的中位数随速度范围设置而变 | 参考曲线拾取范围以外，整周数靠沿频率递推，群速度拾取不受参考约束，可能混入一支偏快的点。在一条实测测线上，默认速度范围 0.1–5 km/s 时参考只覆盖 1.7–2.8 Hz，3–13 Hz 的中位数比写成本区范围 1–4 km/s 时高 4–9 %，多出的点比两次都接受的点快 8–16 %，与 F-J 脊线不符。测线务必写本区的速度范围，并看 `fj.png` 中拾取是否沿脊线到达混叠线 |
+| `median_vs_reference.txt` 显示系统偏离 | 参考曲线可能拾错（高阶、跳周），回到 reference 检查 `3_fj_phase_velocity.png` |
+| 测线：参考曲线只覆盖测量频带的一小段，高频的中位数随速度范围设置而变 | 参考曲线拾取范围以外，整周数靠沿频率递推，群速度拾取不受参考约束，可能混入一支偏快的点。在一条实测测线上，默认速度范围 0.1–5 km/s 时参考只覆盖 1.7–2.8 Hz，3–13 Hz 的中位数比写成本区范围 1–4 km/s 时高 4–9 %，多出的点比两次都接受的点快 8–16 %，与 F-J 脊线不符。测线务必写本区的速度范围，并看 `3_fj_phase_velocity.png` 中拾取是否沿脊线到达混叠线 |
 | 想放宽质控门限多得点 | 不建议。确需修改时用 `lant note` 记下理由，并在报告中说明 |
 
 ## inversion 与 run
 
 | 现象 | 原因与处理 |
 |---|---|
-| `periods ... more than DSurfTomo allows` | DSurfTomo 最多 60 个周期（pDSurfTomo 80 个）。按提示减小 `dispersion.per_octave`，或缩短导出的周期范围 |
+| `periods ... the solver accepts at most 60` | 最多 60 个周期（DSurfTomo 中 CalSurfG 的上限）。按提示减小 `dispersion.per_octave`，或缩短导出的周期范围 |
 | `inversion.sparsity = ... reserves too little` | 手工给的稀疏预留比例太小，DSurfTomo 会以段错误退出。改为 `auto` |
 | DSurfTomo `segmentation fault` | 先看 `work/06_inversion/main/run.log` 末尾。常见原因：稀疏预留不够（`inversion.sparsity: auto` 已按网格和路径估计）、内存不够（增大 `grid_spacing_deg` 或减小 `grid_refine`）、栈空间不够 |
 | 工程被预检标为 invalid | 起始模型下 DSurfTomo 的剔除规则会去掉一半以上的数据，或残差系统偏离。说明起始模型与数据不匹配；检查参考曲线与一维模型拟合（`results/figures/4_start_model.png`） |
-| 主工程运行很慢 | 运行时间随网格节点数、周期数和台站数增长。用 `inversion.solver: pdsurftomo`（并行），或加大网格间距 |
+| 主工程运行很慢 | 运行时间随网格节点数、周期数和台站数增长。程序用空闲核的 80 %（见 run 步骤报告的 COMPUTING RESOURCES）；加大网格间距或减少周期会更快 |
 
 ## evaluate
 

@@ -10,7 +10,7 @@
   disp       05_dispersion two-station phase velocities, QC, export of the curves, single-pair figures
   inversion  06_inversion  average curve, depth nodes, 1-D starting model, main project, checkerboards, controls
                                                                                                    [confirm inversion]
-  run        06_inversion  precheck, then DSurfTomo / pDSurfTomo on the main project and the check projects
+  run        06_inversion  precheck, then the Python DSurfTomo on the main project and the check projects
   evaluate   06_inversion  residuals of the final model, checkerboard recovery, control differences
   figures    figures       the standard figure set (lant.plotting)
 A step after a confirmation point does not run before `lant confirm <step>` (lant.confirm).
@@ -185,16 +185,12 @@ def check_dirs(cfg):
     return [inv_dir(cfg, sub, n) for sub, n in json.load(open(p))["projects"] if os.path.isdir(inv_dir(cfg, sub, n))]
 
 
+@records.timed_phase("automatic_noise")
 def checkerboard_noise(cfg, main):
     """inversion.noise auto: the relative rms of the residuals of the final main model that DSurfTomo's rejection
     rule keeps (one forward run; kept in work/06_inversion/checkerboard_noise.json while the main model is unchanged)."""
     p = inv_dir(cfg, "checkerboard_noise.json")
-    model = os.path.join(main, "DSurfTomo.inMeasure.dat")
-    stamp = os.path.getmtime(model)
-    if os.path.exists(p):
-        old = json.load(open(p))
-        if old.get("model_mtime") == stamp:
-            return old
+    # Reuse the exact forward request, not a separately cached mtime-only RMS.
     _, R, _ = RUN.evaluate(cfg, main)
     kept = R[:, 5] != 0
     rel = (R[kept, 2] - R[kept, 1]) / R[kept, 2]
@@ -202,7 +198,6 @@ def checkerboard_noise(cfg, main):
         value=float(np.sqrt(np.mean(rel**2))),
         n_kept=int(kept.sum()),
         n=int(len(R)),
-        model_mtime=stamp,
         reason="relative rms of the %d residuals of the final main model kept by DSurfTomo's rejection rule "
         "(of %d)" % (int(kept.sum()), len(R)),
     )
@@ -218,7 +213,14 @@ def _run_batch(cfg, dirs, main):
             "the main project cannot be inverted: %s (work/06_inversion/main/precheck.json); check the starting "
             "model and the data" % "; ".join(invalid[main])
         )
-    res = RUN.run_projects(cfg, [d for d in dirs if d not in invalid])
+
+    def completed(directory, message):
+        if directory == main and not message.startswith("FAILED"):
+            from .inversion.preview import publish
+
+            publish(cfg, main)
+
+    res = RUN.run_projects(cfg, [d for d in dirs if d not in invalid], on_done=completed)
     res["invalid"] = invalid
     return res
 
@@ -271,16 +273,18 @@ def step_run(cfg, what="all"):
     return res
 
 
+@records.timed_phase("prechecks")
 def precheck_projects(cfg, dirs):
-    """lant.inversion.run.precheck for every project about to run -> {dir: reasons} of the invalid ones."""
-    from .processes import workers
+    """lant.inversion.run.precheck for every project about to run -> {dir: reasons} of the invalid ones.  One after
+    the other in this process, each with all the cores of the step (the forward runs in Numba's thread pool, which
+    is not shared between threads of this process)."""
+    from . import resources
+    from .progress import track
 
-    with workers(max_workers=int(cfg["inversion"]["njobs"])) as ex:
-        from .progress import track
-
-        res = list(
-            track(ex.map(lambda d: (d, RUN.precheck(cfg, d)), dirs), len(dirs), "prechecks (forward runs)", eta=False)
-        )
+    groups = sorted({os.path.basename(d) if os.path.basename(d) == "main" else os.path.basename(os.path.dirname(d))
+                     for d in dirs})  # fmt: skip
+    plan = resources.plan(cfg, 1, None, "prechecks (forward runs: %s)" % ", ".join(groups))
+    res = [(d, RUN.precheck(cfg, d, plan["threads_each"])) for d in track(dirs, len(dirs), "prechecks (forward runs)")]
     for d, r in res:
         st = r["stats"]
         print(
@@ -301,7 +305,7 @@ def precheck_state(d):
 
 
 def recovery_radius(cfg):
-    """Checkerboard statistics use the nodes within twice the median nearest-station distance of a station."""
+    """Nodes within twice the median nearest-station distance of a station: the colour range of the figures."""
     from . import auto
 
     nn = auto.load(cfg).get("geometry", {}).get("median_nearest_km")
@@ -310,9 +314,8 @@ def recovery_radius(cfg):
     return round(2 * float(nn), 3)
 
 
+@records.timed_phase("evaluation")
 def step_evaluate(cfg):
-    from . import data as D
-
     main = inv_dir(cfg, "main")
     if RUN.status(main) != "done":
         raise RuntimeError("%s has not finished: run `lant run run` first" % main)
@@ -322,13 +325,12 @@ def step_evaluate(cfg):
             cfg, main, os.path.join(out, "residuals_final"), cfg["checks"]["iteration_residuals"]
         )
     }
-    stations = D.used_stations(cfg)
     s["invalid"] = {os.path.basename(d): precheck_state(d)[1] for d in check_dirs(cfg) if precheck_state(d)[0] is False}
     s["checkerboards"] = {}
     for d in check_dirs(cfg):
         name = os.path.basename(d)
         if os.path.dirname(d).endswith("checkerboards") and RUN.status(d) == "done":
-            s["checkerboards"][name] = RUN.checker_recovery(d, stations, edge_km=recovery_radius(cfg))
+            s["checkerboards"][name] = RUN.checker_recovery(d)
     s["controls"] = {}
     base = RUN.read_model(os.path.join(main, "DSurfTomo.inMeasure.dat"))
     for d in check_dirs(cfg):
@@ -341,7 +343,10 @@ def step_evaluate(cfg):
             ):
                 raise RuntimeError("%s: the model grid differs from the main project (or has missing nodes)" % d)
             diff = m[3] - base[3]
+            meta = json.load(open(os.path.join(d, "project.json")))
             s["controls"][os.path.basename(d)] = dict(
+                weight=meta.get("weight"),
+                damp=meta.get("damp"),
                 rms_km_s=float(np.sqrt(np.nanmean(diff**2))),
                 max_abs_km_s=float(np.nanmax(np.abs(diff))),
                 rms_by_depth={
@@ -351,6 +356,9 @@ def step_evaluate(cfg):
                 main_residual_std_ms=RUN.logged_residuals(main),
             )
     json.dump(s, open(os.path.join(out, "evaluation.json"), "w"), indent=1)
+    from .artifacts import prune_check_projects
+
+    s["pruned_solver_files"] = prune_check_projects(cfg, check_dirs(cfg))
     return s
 
 
@@ -395,8 +403,17 @@ def run_step(cfg, name, **kw):
         code = provenance.record(records.rec_dir(cfg))
         inputs = manifest.raw_inputs(cfg) if name == "clean" else None
         t0 = time.time()
+        from . import resources
+
+        resources.begin_step(cfg)
         try:
             s = FUNCS[name](cfg, **kw)
+            from .runtime_identity import assert_unchanged
+
+            assert_unchanged()
+            if isinstance(s, dict):
+                s["resources"] = resources.usage()
+                records.log(cfg, step=name, event="resources", **s["resources"])
             records.write_summary(cfg, name, s)
             st.failed = list(s.get("failed") or []) if isinstance(s, dict) else []
             dropped = name in confirm.VALUE_KEYS and name not in cfg.get("_confirmed", {})

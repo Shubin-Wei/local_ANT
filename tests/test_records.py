@@ -20,7 +20,7 @@ def test_manifest_gate_confirm(tmp_path):
         """
         project: {output_dir: out, array_type: surface}
         data: {raw_dir: raw, station_file: sta.csv, %s}
-        clean: {nproc: 2}
+        resources: {cores: 2}
         correlation: {fs: auto}
         """
         % REQ,
@@ -58,9 +58,9 @@ def test_manifest_gate_confirm(tmp_path):
     rc = report.resolved(config.load(p))
     assert manifest.status(rc)["clean"]["state"] == "done"
     text = open(p).read()
-    assert text.count(CF.BEGIN) == 1 and "clean: {nproc: 2}" in text  # the user's part is untouched
+    assert text.count(CF.BEGIN) == 1 and "resources: {cores: 2}" in text  # the user's part is untouched
     # computing resources do not change results: the step and its confirmation stand
-    rc["clean"]["nproc"] = 7
+    rc["resources"]["cores"] = 7
     assert manifest.status(rc)["clean"]["state"] == "done"
     # a changed parameter, then a changed raw file
     rc["data"]["min_trace_length_s"] = 5.0
@@ -161,3 +161,45 @@ def test_step_progress_names_its_place_in_the_chain(tmp_path, capsys):
     with records.Step(cfg, "run"):
         pass
     assert "[lant] [6/9] run " in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("solver failed"), KeyboardInterrupt()])
+def test_phase_records_failure_and_monotonic_wall_time(tmp_path, monkeypatch, failure):
+    import json
+
+    from lant import records
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    clock = iter([10.0, 14.25])
+    monkeypatch.setattr(records.time, "perf_counter", lambda: next(clock))
+    with pytest.raises(type(failure)):
+        with records.phase(cfg, "prechecks", project="main"):
+            raise failure
+    events = [json.loads(line) for line in (tmp_path / ".lant/run_log.jsonl").read_text().splitlines()]
+    assert events[0]["event"] == "phase_start" and events[-1]["status"] == "failed"
+    assert events[-1]["seconds"] == 4.25 and events[-1]["project"] == "main"
+
+
+def test_solver_project_timing_reports_failed_and_skipped_projects(tmp_path, monkeypatch):
+    import json
+
+    from lant.inversion import run
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    monkeypatch.setattr(run, "status", lambda d: "new")
+    monkeypatch.setattr("lant.inversion.solver.memory_estimate", lambda d: 1e6)
+    monkeypatch.setattr(run, "run_one", lambda d, t: (d, "FAILED: fixture" if d == "bad" else "skipped (done)"))
+    notified = []
+    summary = run.run_projects(cfg, ["bad", "complete"], on_done=lambda *r: notified.append(r))
+    assert sorted(notified) == [("bad", "FAILED: fixture"), ("complete", "skipped (done)")]
+    events = [json.loads(line) for line in (tmp_path / ".lant/run_log.jsonl").read_text().splitlines()]
+    timings = {
+        event["project"]: event
+        for event in events
+        if event.get("phase") == "solver_project" and event["event"] == "phase"
+    }
+    assert summary["failed"] == ["bad"]
+    assert timings["bad"]["status"] == "failed" and timings["complete"]["status"] == "skipped"
+    assert all(event["seconds"] >= 0 for event in timings.values())

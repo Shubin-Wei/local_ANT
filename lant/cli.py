@@ -1,8 +1,7 @@
 """lant: ambient-noise surface-wave tomography for dense arrays, from raw records to a 3-D Vs model.
 
 Getting started
-  lant check                                check the installation (Python packages, GMT, DSurfTomo)
-  lant install-external [PROGRAM ...]       build DSurfTomo and fwd1d (dsurftomo) and/or pDSurfTomo (pdsurftomo)
+  lant check                                check the installation (Python packages, GMT)
   lant demo [--out DIR]                     run a small synthetic array with a known answer (a few minutes)
   lant run all --raw DIR --stations FILE --out DIR
                                             your data: writes OUT/config.yaml and runs the whole chain
@@ -29,7 +28,6 @@ Documentation: docs/quickstart.md and docs/tutorial.md (https://github.com/Shubi
 import argparse
 import json
 import os
-import shutil
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -104,15 +102,16 @@ def _quick_config(a):
 
 
 MIN_VERSIONS = {
-    "numpy": "1.19",
-    "scipy": "1.5",
+    "numpy": "1.26",
+    "scipy": "1.12",
+    "numba": "0.61",
     "h5py": "2.10",
     "obspy": "1.2",
     "matplotlib": "3.5",
     "yaml": "6.0",
     "openpyxl": "3.1",
 }  # as in pyproject.toml
-MIN_PYTHON = (3, 8)
+MIN_PYTHON = (3, 11)
 
 
 def _vtuple(v):
@@ -122,10 +121,9 @@ def _vtuple(v):
 
 
 def cmd_check(a):
-    from .tools import external_path
-
     ok = True
     rows = []
+    cfg = _cfg(a.config) if getattr(a, "config", None) else None
     py = sys.version_info[:3]
     rows.append(
         ("python", "%d.%d.%d%s" % (py + ("" if py >= MIN_PYTHON else "  TOO OLD: needs >= %d.%d" % MIN_PYTHON,)))
@@ -157,26 +155,22 @@ def cmd_check(a):
             v or "MISSING: conda install -c conda-forge gmt   (maps and sections cannot be drawn without it)",
         )
     )
-    for name, rel, what in (
-        ("DSurfTomo", "bin/DSurfTomo", "dsurftomo"),
-        ("fwd1d (1-D starting model)", "bin/fwd1d", "dsurftomo"),
-        ("pDSurfTomo (optional)", "bin/pDSurfTomo", "pdsurftomo"),
-    ):
-        p = external_path(rel)
-        good = os.path.isfile(p) and os.access(p, os.X_OK)
-        rows.append(
-            (
-                name,
-                p
-                if good
-                else (
-                    "not executable: chmod +x %s" % p
-                    if os.path.exists(p)
-                    else "MISSING: lant install-external %s" % what
-                ),
-            )
-        )
-        if not good and "optional" not in name:
+    from importlib.metadata import PackageNotFoundError, version
+
+    if (cfg["plots"]["backend"] if cfg else "gmt") == "pygmt":
+        for package in ("pygmt", "rasterio"):
+            try:
+                rows.append(("plots.backend pygmt: " + package, version(package)))
+            except PackageNotFoundError:
+                rows.append(("plots.backend pygmt: " + package, "MISSING: conda env create -f environment.yml"))
+                ok = False
+        try:
+            from pygmt.clib import Session
+
+            with Session() as session:
+                rows.append(("PyGMT library", session.info["version"]))
+        except Exception as exc:  # PyGMT may fail during import with its own GMTCLibError.
+            rows.append(("PyGMT library", "UNAVAILABLE: %s; install GMT 6 and Ghostscript (environment.yml)" % exc))
             ok = False
     w = max(len(r[0]) for r in rows)
     for k, v in rows:
@@ -458,30 +452,6 @@ def cmd_plot(a):
         print("not drawn: %s (%s)" % (k, v))
 
 
-def _external_program(value):
-    if value not in ("dsurftomo", "pdsurftomo"):
-        raise argparse.ArgumentTypeError("choose dsurftomo or pdsurftomo")
-    return value
-
-
-def cmd_install_external(a):
-    import subprocess
-
-    from .tools import external_path
-
-    script = os.path.join(os.path.dirname(__file__), "_external", "install.sh")
-    for exe in ("git", "make", "gfortran", "bash"):
-        if not shutil.which(exe):
-            raise RuntimeError("external installation needs %s on PATH" % exe)
-    env = dict(os.environ, LANT_EXTERNAL=external_path())
-    result = subprocess.run(["bash", script] + a.programs, env=env)
-    if result.returncode:
-        raise RuntimeError(
-            "external compilation failed (exit %d); inspect the compiler output and verify "
-            "git, make and gfortran before retrying" % result.returncode
-        )
-
-
 def cmd_note(a):
     from . import artifacts, records
     from .delivery import append_note, initialize
@@ -503,7 +473,7 @@ def cmd_clean_work(a):
     from .artifacts import clean
 
     cfg = _cfg(a.config)
-    selection = a.cache or ["archive", "cc"]
+    selection = a.cache or ["archive", "cc", "forward"]
     plan = clean(cfg, selection)
     print(json.dumps(plan, indent=1))
     if a.execute:
@@ -572,7 +542,8 @@ def main(argv=None):
         q.add_argument(f, help=h)
     q.add_argument("--force", action="store_true", help="overwrite an existing file")
     q.add_argument("--full", action="store_true", help="write all keys with their defaults and sources")
-    command("check", cmd_check, "check the installation: Python packages, GMT, DSurfTomo")
+    q = command("check", cmd_check, "check the installation: Python packages, GMT, selected solver")
+    q.add_argument("-c", "--config", help="also check optional implementations selected by this configuration")
     q = command("demo", cmd_demo, "run a small synthetic array with a known answer through the whole chain")
     q.add_argument(
         "--out", default="lant-demo", metavar="DIR", help="a new directory for the demo (default: %(default)s)"
@@ -624,20 +595,14 @@ def main(argv=None):
     q = command("plot", cmd_plot, "draw the figures again")
     q.add_argument("names", nargs="*", metavar="NAME", help="figures to draw (default: all)")
     q.add_argument("-c", "--config", **config)
-    q = command("install-external", cmd_install_external, "build fixed third-party programs in a writable location")
-    q.add_argument(
-        "programs",
-        nargs="*",
-        type=_external_program,
-        metavar="PROGRAM",
-        help="dsurftomo and/or pdsurftomo (default: both)",
-    )
     q = command("note", cmd_note, "append a note to OUT/notes.md (also while a step runs)")
     q.add_argument("text", help="the note, in quotes")
     q.add_argument("-c", "--config", **config)
     q = command("clean-work", cmd_clean_work, "preview, or remove, the rebuildable caches of a finished project")
     q.add_argument("-c", "--config", **config)
-    q.add_argument("--cache", action="append", choices=("archive", "cc"), help="which caches (default: both)")
+    q.add_argument(
+        "--cache", action="append", choices=("archive", "cc", "forward"), help="which caches (default: all three)"
+    )
     q.add_argument("--execute", action="store_true", help="remove them (default: preview only)")
     q.add_argument("--yes", action="store_true", help="acknowledge the displayed impact")
     a = p.parse_args(argv)

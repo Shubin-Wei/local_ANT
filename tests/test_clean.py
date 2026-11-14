@@ -20,7 +20,7 @@ def test_clean_mixed_formats(tmp_path):
         """
         project: {output_dir: out, array_type: surface}
         data: {raw_dir: raw, station_file: sta.csv, %s}
-        clean: {nproc: 2}
+        resources: {cores: 2}
         """
         % REQ,
     )
@@ -65,7 +65,7 @@ def test_clean_long_names_nan_polarity(tmp_path):
     p = write_cfg(
         tmp_path,
         "project: {output_dir: out, array_type: surface}\ndata: {raw_dir: raw, station_file: sta.csv, "
-        "%s}\nclean: {nproc: 1}\n" % REQ,
+        "%s}\nresources: {cores: 1}\n" % REQ,
     )
     cfg = config.load(p)
     s = clean.run(cfg)
@@ -105,7 +105,8 @@ def test_other_input_formats(tmp_path):
         stas.append(Station(code, 30.0 + 0.01 * (k % 2), 100.0 + 0.01 * (k // 2), 0.0))
     Inventory(networks=[Network("ZZ", stations=stas)]).write(str(tmp_path / "sta.xml"), format="STATIONXML")
     p = write_cfg(
-        tmp_path, "project: {output_dir: out}\ndata: {raw_dir: raw, station_file: sta.xml, %s}\nclean: {nproc: 1}" % REQ
+        tmp_path,
+        "project: {output_dir: out}\ndata: {raw_dir: raw, station_file: sta.xml, %s}\nresources: {cores: 1}" % REQ,
     )
     s = pipeline.run_step(config.load(p), "clean")
     assert s["formats"] == {"GSE2": 3} and s["stations"] == 3 and s["station_hours"] == 6.0
@@ -144,7 +145,8 @@ def test_segy_input(tmp_path):
     st.write(str(raw / "S01_shot.sgy"), format="SEGY", data_encoding=5)
     (tmp_path / "sta.csv").write_text("station,lat,lon,elev\n" + "\n".join(rows) + "\n")
     p = write_cfg(
-        tmp_path, "project: {output_dir: out}\ndata: {raw_dir: raw, station_file: sta.csv, %s}\nclean: {nproc: 1}" % REQ
+        tmp_path,
+        "project: {output_dir: out}\ndata: {raw_dir: raw, station_file: sta.csv, %s}\nresources: {cores: 1}" % REQ,
     )
     s = pipeline.run_step(config.load(p), "clean")
     assert s["formats"] == {"SEGY": 75} and s["stations"] == 3 and s["station_hours"] == 6.0
@@ -158,7 +160,7 @@ def test_segy_input(tmp_path):
     p2 = write_cfg(
         tmp_path,
         "project: {output_dir: out2}\ndata: {raw_dir: raw, station_file: sta.csv, %s}\n"
-        "clean: {nproc: 1, write_archive: false}" % REQ,
+        "clean: {write_archive: false}\nresources: {cores: 1}" % REQ,
     )
     pipeline.run_step(config.load(p2), "clean")
     idx = json.load(open(tmp_path / "out2" / "work" / "01_clean" / "archive_index.json"))["traces"]

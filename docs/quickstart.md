@@ -11,11 +11,12 @@ Requirements: Linux, conda (or mamba) and git.
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
 conda env create -f environment.yml && conda activate lant   # also installs lant from this checkout
-lant install-external                                        # downloads and builds DSurfTomo and pDSurfTomo
 lant check                                                   # every line should read ok
 ```
 
 `lant check` names the install command for anything missing.
+
+The inversion is the Python port of DSurfTomo in this same environment; no separate solver installation is needed. Its comparison with the original is in [python_backends.md](python_backends.md).
 
 ## 2. Verify the installation with the demo (about 5 minutes)
 
@@ -23,14 +24,14 @@ lant check                                                   # every line should
 lant demo --out ~/lant_demo
 ```
 
-The demo generates a small synthetic array (plane Rayleigh waves in a known 1-D model), runs the whole chain and prints the location of the report, `~/lant_demo/output/REPORT.md`. It confirms the judgement points itself, which is legitimate only because it generated the data; it refuses to run in a directory it did not create.
+The demo generates a small synthetic array (a known 1-D background with a ±6 % checkerboard), runs the whole chain and prints the location of the report, `~/lant_demo/output/REPORT.md`. It confirms the judgement points itself, which is legitimate only because it generated the data; it refuses to run in a directory it did not create.
 
 ## 3. A run step by step
 
 To see where the chain stops for the user, generate the same data and run them yourself:
 
 ```bash
-python -m lant.synthetic --quick --out ~/lant_quick          # 10 stations, 6 hours, about 1 minute
+python -m lant.synthetic --quick --out ~/lant_quick          # 16 stations, 6 hours, about 1 minute
 lant run all -c ~/lant_quick/synthetic.yaml
 ```
 
@@ -39,8 +40,8 @@ The chain stops where a scientific judgement is needed and prints the files to l
 | Step | Question | Evidence | Answer for the synthetic data |
 |---|---|---|---|
 | `clean` | Without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | Yes |
-| `stack` (when candidates are listed) | Remove the listed station sub-stacks? | `work/03_stack/station_qc/station_qc.png` | No faulty stations: keep them |
-| `reference` | Do the F-J picks follow the fundamental-mode ridge? | `work/04_reference/fj.png` | Yes |
+| `stack` (when candidates are listed) | Remove the listed station sub-stacks? | `results/figures/2_station_qc.png` | No faulty stations: keep them |
+| `reference` | Do the F-J picks follow the fundamental-mode ridge? | `results/figures/3_fj_phase_velocity.png` | Yes |
 | `inversion` | Are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | Yes |
 
 Record each decision and run the chain again; it continues where it stopped:
@@ -57,7 +58,7 @@ When the chain has finished, compare the result with the truth:
 python examples/synthetic/compare_truth.py --dir ~/lant_quick
 ```
 
-It reports the difference between measured and true phase velocity per frequency, and between the inverted and the true model. Six hours of records give rougher numbers than the full example (16 stations, 3 days, about 300 MB and an hour of processing; leave out `--quick`); see [validation](validation.md).
+It draws input and recovered checkerboard maps, phase curves and Vs profiles in the README style. It prints deviations from the background curve and 3-D model errors against the saved truth; background-curve deviations are not path-velocity errors. Six hours of records give rougher numbers than the full example (16 stations, 3 days, about 300 MB and an hour of processing; leave out `--quick`); see [validation](validation.md).
 
 ## 4. Your own data
 
@@ -94,8 +95,8 @@ Start with `REPORT.md` in the output directory: the state of every step, key num
 | File | Purpose |
 |---|---|
 | `.lant/steps/<step>.md` | What each step did, the parameters it used (value and source), what is left for your judgement |
-| `work/01_clean/coverage.png` | Data available per station and day |
-| `work/04_reference/fj.png` | Whether the reference curve follows the fundamental mode |
+| `results/figures/0_data_coverage.png` | Data available per station and day |
+| `results/figures/3_fj_phase_velocity.png` | Whether the reference curve follows the fundamental mode |
 | `results/figures/3_dispersion_curves.png` | All dispersion curves and the reference |
 | `results/figures/5_depth_slices.png`, `5_sections.png`, `6_checkerboard_*.png` | The model and the scales it resolves; read them together |
 

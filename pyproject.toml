@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lant"
-version = "1.5.0"
+version = "2.0.0"
 description = "High-frequency ambient-noise surface-wave tomography for dense nodal arrays (raw data to 3-D Vs)"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "local_ANT contributors"}]
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 keywords = ["ambient noise", "surface-wave tomography", "seismology", "dense array", "nodal array",
             "phase velocity", "shear velocity", "DSurfTomo"]
 classifiers = [
@@ -19,14 +19,18 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Physics",
 ]
-dependencies = ["numpy>=1.19", "scipy>=1.5", "h5py>=2.10", "obspy>=1.2", "matplotlib>=3.5", "pyyaml>=6.0", "openpyxl>=3.1"]
+dependencies = [
+    "numpy>=1.26", "scipy>=1.12", "numba>=0.61", "h5py>=2.10", "obspy>=1.2", "matplotlib>=3.5",
+    "pyyaml>=6.0", "openpyxl>=3.1",
+]
 
 [project.optional-dependencies]
+pygmt = ["pygmt", "rasterio"]
 dev = ["pytest>=7,<9", "pytest-cov>=4,<6", "ruff==0.14.0", "build>=1.2,<1.3"]
 
 [project.urls]
@@ -41,11 +45,8 @@ lant = "lant.cli:main"
 [tool.setuptools]
 packages = ["lant", "lant.inversion", "lant.plotting"]
 
-[tool.setuptools.package-data]
-lant = ["_external/*.sh", "_external/*.patch", "_external/*.f90"]
-
 [tool.ruff]
-target-version = "py38"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
@@ -54,4 +55,5 @@ select = ["E4", "E7", "E9", "F", "W", "I", "B"]
 # E731/E741: lambdas and short names such as l are the style of the scientific code.
 # B007/B008/B023: loop-bound lambdas called in the same iteration and default arguments that bind the current loop
 # value are intended (figures.py, maps.py, stations.py), not late-binding bugs.
-ignore = ["E731", "E741", "B007", "B008", "B023"]
+# B905 (zip without strict=, active from target py310): the existing zips pair arrays of one length by construction.
+ignore = ["E731", "E741", "B007", "B008", "B023", "B905"]

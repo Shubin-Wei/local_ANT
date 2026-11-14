@@ -25,7 +25,7 @@ If you know them, add: the rough range of surface-wave velocities, whether there
 7. **Report numbers and figures only**, without words such as "stable", "reliable", "passed"; say what was not checked and what the data limit.
 8. **Write files in two places only**: notes with `lant note "text" -c CONFIG`, and temporary scripts, extracts or figures under `OUT/scratch/` (delete them when no longer needed). Nothing else in the output directory, the raw-data directory or the repository; never edit `work/`, `results/`, `.lant/`, REPORT.md or README.md. `lant status --json` lists every file in the output directory that lant did not write (`artifacts.unregistered`, also at the top of the directory) and the size of `scratch/`; keep the list empty except for what the user put there.
 
-Every new output directory holds `AGENTS.md` with these rules (read by Codex and other agents that use AGENTS.md) and a `CLAUDE.md` that imports it (Claude Code reads CLAUDE.md first when there is one in the directory or above it). Whether an assistant loads them depends on the assistant; the file check in `lant status` does not.
+Every new output directory holds one file with the rules for AI assistants, written from one template for the assistant chosen in `project.ai_assistant`: `codex` writes `AGENTS.md`, `claude` (Claude Code) `CLAUDE.md`, `gemini` (Gemini CLI) `GEMINI.md`, each with the full text. The default `null` writes `AGENTS.md`, the open convention that many coding agents read. An existing file is never overwritten; after changing the assistant the file of the new one is added and the old one is left as it is. Verify context loading in the actual assistant: a Gemini model in another application need not use Gemini CLI conventions. See the official [Gemini CLI context documentation](https://google-gemini.github.io/gemini-cli/docs/cli/gemini-md.html) and [Claude Code memory documentation](https://code.claude.com/docs/en/memory). The artifact check in `lant status` is independent of context loading.
 
 ## 3. Who decides what
 
@@ -34,7 +34,7 @@ Every new output directory holds `AGENTS.md` with these rules (read by Codex and
 | The user gives | the three paths; if known: velocity range, response files, time zone, stations to exclude |
 | The program derives, the report shows the derivation | sampling rate, band, lag window, segment length, sub-stack length, F-J scan, measurement band and velocity axis, depth nodes, grid, velocity bounds, checkerboards, sections, colour scale |
 | The program lists, the user judges | clean: ambiguous names, coordinate mismatches, unknown orientation, unclear array type, responses not removed and models unknown; stack: remove the candidates or not; reference: is the picked ridge the fundamental mode; inversion: starting model, deepest node, velocity bounds |
-| The assistant may decide (and records with `lant note`) | processes and threads (from cores and the memory estimate); no clean archive when the disk is short |
+| The assistant may decide (and records with `lant note`) | no clean archive when the disk is short (the cores are the program's: `resources.cores` only when the user asks) |
 | The assistant must ask first | all judgements above; `data.rename`; excluding a whole station; borrowing a reference curve or starting model; any change of a quality-control threshold or of the regularisation; deleting existing results |
 
 ## 4. The procedure
@@ -55,10 +55,10 @@ lant status -c OUT/config.yaml --json                        # 2. after every st
 
 | Step | Look at | Common cases |
 |---|---|---|
-| clean | stations matched, stations without data, `coverage.png`, whether responses were removed, `pulse_1s.csv` | names do not match: ask for the naming rule, use `data.rename`; channel not recognised: `data.channel` |
-| cc | pairs, share of dropped segments, memory estimate | not enough memory: `correlation.max_distance_km` or a smaller `nproc` |
-| stack | `candidates.txt`, `station_qc/station_qc.png` | more candidates than expected by chance (1): the chain stops; show them, the user decides. One candidate: listed in the report only |
-| reference | `fj.png`: is the ridge continuous, is it the slowest branch; measured velocities against `velocity_range_kms` | possibly a higher mode: give your reasons, propose `track_fundamental`, a narrower velocity range or a borrowed curve; the user decides |
+| clean | stations matched, stations without data, `0_data_coverage.png`, whether responses were removed, `pulse_1s.csv` | names do not match: ask for the naming rule, use `data.rename`; channel not recognised: `data.channel` |
+| cc | pairs, share of dropped segments, memory estimate | not enough memory: `correlation.max_distance_km` |
+| stack | `candidates.txt`, `results/figures/2_station_qc.png` | more candidates than expected by chance (1): the chain stops; show them, the user decides. One candidate: listed in the report only |
+| reference | `3_fj_phase_velocity.png`: is the ridge continuous, is it the slowest branch; measured velocities against `velocity_range_kms` | possibly a higher mode: give your reasons, propose `track_fundamental`, a narrower velocity range or a borrowed curve; the user decides |
 | disp | accepted samples, rejections by reason, `3_dispersion_curves.png`, `median_vs_reference.txt` | few points: report which criterion rejects them; do not loosen it yourself |
 | inversion | `4_start_model.png`, `4_kernels.png`, number of periods, depth nodes | more periods than the solver takes: change `per_octave` as the message says |
 | run, evaluate | share kept by the precheck, residuals, checkerboard recovery, control differences | main project invalid in the precheck: stop and report |

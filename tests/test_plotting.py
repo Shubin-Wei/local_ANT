@@ -5,9 +5,59 @@ import os
 
 import h5py
 import numpy as np
+import pytest
 
 from lant import config
 from lant.plotting import ccf, dispersion, relief
+
+
+def test_start_model_draws_parameter_nodes_without_inventing_interfaces(tmp_path, monkeypatch):
+    from lant.plotting import inversion, style
+
+    model = np.array([[0, 1.2], [0.1, 1.7], [0.4, 2.8]])
+    np.savetxt(tmp_path / "vs1d.txt", model)
+    np.savetxt(tmp_path / "vs1d_fit.txt", [[0.1, 1.2, 1.21], [0.5, 2.0, 1.99]])
+    monkeypatch.setattr(style, "save", lambda figure, *args: figure)
+    fig = inversion.start_model(config.defaults(), str(tmp_path), "unused")
+    try:
+        model_line = fig.axes[1].lines[0]
+        assert model_line.get_drawstyle() == "default"
+        assert np.array_equal(model_line.get_xdata(), model[:, 1])
+        assert np.array_equal(model_line.get_ydata(), model[:, 0])
+        assert fig.axes[1].yaxis_inverted()
+        assert "not a detected interface" in fig.texts[0].get_text()
+    finally:
+        style.plt.close(fig)
+
+
+def test_residual_histogram_keeps_outliers_and_separates_mean_std_and_rms(tmp_path, monkeypatch):
+    from lant.plotting import inversion, style
+
+    # Include a tail beyond the previous 99.5-percentile window, with a nonzero mean.
+    observed = np.ones(201)
+    residual = np.full(201, 0.01)
+    residual[-1] = 0.8
+    csv = tmp_path / "residuals_final.csv"
+    np.savetxt(
+        csv,
+        np.c_[np.ones(201), observed, observed - residual, np.r_[np.ones(200), 0]],
+        delimiter=",",
+        header="period_s,t_obs_s,t_pred_s,kept_by_rule",
+        comments="",
+    )
+    monkeypatch.setattr(style, "save", lambda figure, *args: figure)
+    fig = inversion.residuals(config.defaults(), str(csv), {"residuals": {"iterations": []}}, "unused")
+    try:
+        assert "(ms)" in fig.axes[0].get_xlabel()
+        histogram = fig.axes[0].patches[0].get_xy()
+        assert histogram[:, 0].max() >= 800  # full tail is visible
+        table = next(iter(fig.axes[-1].tables))
+        assert table[(1, 4)].get_text().get_text() == "200 / 201"
+        assert table[(1, 1)].get_text().get_text() == "%.1f" % np.mean(1000 * residual)
+        assert table[(1, 2)].get_text().get_text() == "%.1f" % np.std(1000 * residual)
+        assert table[(1, 3)].get_text().get_text() == "%.1f" % np.sqrt(np.mean((1000 * residual) ** 2))
+    finally:
+        style.plt.close(fig)
 
 
 def test_band_edges_and_bands():
@@ -52,6 +102,32 @@ def test_moveout_window_and_example_pairs(tmp_path):
     assert all(ccf.nice_hz(lo) == lo and ccf.nice_hz(hi) == hi and hi > lo for _, (lo, hi) in pairs)
 
 
+def test_pair_figure_separates_reference_and_measured_wavelength_gates(tmp_path, monkeypatch):
+    from lant.plotting import style
+
+    path = tmp_path / "disp.h5"
+    f = np.geomspace(0.5, 10, 20)
+    ref = np.full(len(f), 2.0)
+    accepted = f >= 4
+    with h5py.File(path, "w") as h:
+        h["pairs"], h["freqs"], h["c_ref"] = [b"A_B"], f, ref
+    image = dict(freqs=f, vel=np.linspace(1, 3, 11), okc=accepted, vc=ref, vg=ref * 0.8, dist=1.0,
+                 branches={}, cref=ref, gimg=np.ones((len(f), 11)), tt=np.linspace(0, 2, 20), sym=np.zeros(20))  # fmt: skip
+    monkeypatch.setattr(dispersion, "_images", lambda *args: image)
+    monkeypatch.setattr(style, "save", lambda fig, *args: fig)
+    cfg = config.defaults()  # initial: d/lambda_ref >= 1; final: d/lambda_measured >= 2
+    fig = dispersion.pair_example(cfg, str(path), "unused", "A_B", "unused", vwin=[3, 1])
+    try:
+        ax = fig.axes[1]
+        limit = next(line for line in ax.lines if line.get_label().startswith("Final limit:"))
+        assert np.allclose(limit.get_ydata(), limit.get_xdata() / 2)
+        shade = next(c for c in ax.collections if c.get_label().startswith("Below"))
+        assert "= 1$" in shade.get_label()
+        assert any(line.get_label() == "Rejected candidate" for line in ax.lines)
+    finally:
+        style.plt.close(fig)
+
+
 def test_relief_tiles_and_limits(tmp_path):
     """SRTM tile names on both sides of the equator and of Greenwich; no automatic relief for wide or polar maps,
     none when switched off, a missing grid file named."""
@@ -70,7 +146,7 @@ def test_relief_tiles_and_limits(tmp_path):
 
 def test_checkerboard_noise_from_the_main_fit(tmp_path, monkeypatch):
     """inversion.noise auto: the relative rms of the residuals that DSurfTomo's rejection rule keeps; computed again
-    only when the main model changes."""
+    through the dependency-checked forward evaluator (never by model mtime)."""
     from lant import pipeline
 
     cfg = config.defaults()
@@ -85,10 +161,12 @@ def test_checkerboard_noise_from_the_main_fit(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline.RUN, "evaluate", lambda cfg, d: calls.append(d) or (None, R, None))
     nz = pipeline.checkerboard_noise(cfg, str(main))
     assert abs(nz["value"] - np.sqrt((0.02**2 + 0.02**2 + 0) / 3)) < 1e-12 and nz["n_kept"] == 3 and nz["n"] == 4
-    assert pipeline.checkerboard_noise(cfg, str(main))["value"] == nz["value"] and len(calls) == 1  # kept
+    assert (
+        pipeline.checkerboard_noise(cfg, str(main))["value"] == nz["value"] and len(calls) == 2
+    )  # evaluator owns exact reuse
     os.utime(main / "DSurfTomo.inMeasure.dat", (1e9, 1e9))
     pipeline.checkerboard_noise(cfg, str(main))
-    assert len(calls) == 2  # a new main model: computed again
+    assert len(calls) == 3  # mtime alone no longer decides whether the forward result stands
 
 
 def test_failed_figure_refresh_keeps_previous_complete_image(tmp_path):
@@ -117,6 +195,44 @@ def test_failed_figure_refresh_keeps_previous_complete_image(tmp_path):
     assert old.read_bytes() == b"new complete image"
     assert figure.done["replacement"] == [str(old)]
     assert sorted(p.name for p in tmp_path.iterdir()) == ["model.png"]
+
+
+def test_parallel_failure_keeps_previous_group_and_other_completed_outputs(tmp_path, monkeypatch):
+    from lant import config
+    from lant.plotting import figure_batch, figures
+
+    figure = figures._Figures.__new__(figures._Figures)
+    figure.out, figure.done, figure.skipped, figure.failed = str(tmp_path), {}, {}, set()
+    figure.todo, figure.seconds, figure.model = ["ccf_moveout", "stations"], {}, "unused"
+    figure.stations = {}
+    old = tmp_path / "2_ccf_moveout_1-2Hz.png"
+    old.write_bytes(b"previous complete moveout")
+    complete = tmp_path / "1_stations.png"
+    complete.write_bytes(b"completed worker output")
+    worker_results = [
+        dict(
+            drawn={},
+            not_drawn={"2_ccf_moveout_1-2Hz": "renderer failed"},
+            failed=["2_ccf_moveout_1-2Hz"],
+            figure_seconds={},
+            relief_notes=[],
+        ),
+        dict(
+            drawn={"stations": [str(complete)]},
+            not_drawn={},
+            failed=[],
+            figure_seconds={"stations": 1.0},
+            relief_notes=[],
+        ),
+    ]
+    monkeypatch.setattr(figures, "_Figures", lambda cfg, which: figure)
+    monkeypatch.setattr(figures, "resolve", lambda *args: {})
+    monkeypatch.setattr(figure_batch, "render", lambda cfg, which: worker_results)
+    result = figures.make_all(config.defaults())
+    assert old.read_bytes() == b"previous complete moveout"
+    assert result["drawn"]["stations"] == [str(complete)]
+    assert result["not_drawn"]["2_ccf_moveout_1-2Hz"] == "renderer failed"
+    assert result["figure_seconds"] == {"stations": 1.0}
 
 
 def test_nothing_to_draw_is_not_a_failure_and_obsolete_variants_go(tmp_path):
@@ -155,3 +271,136 @@ def test_figure_with_numbers_keeps_them_and_its_staged_files(tmp_path):
     figure.todo = ["ccf_stack_time"]
     figure.remove_old()
     assert (tmp_path / "2_ccf_stack_time_1.png").exists()
+
+
+def test_recovery_combines_heatmaps_and_depth_profiles_with_readable_labels(monkeypatch):
+    from lant.plotting import inversion, style
+
+    monkeypatch.setattr(style, "save", lambda figure, *args: figure)
+    evaluation = {
+        "checkerboards": {
+            "cb_1_2.5km": [{"depth_km": 0.0, "slope": 0.32, "r": 0.61}, {"depth_km": 0.2, "slope": 0.14, "r": 0.52}],
+            "cb_vertical_thick": [
+                {"depth_km": 0.0, "slope": 0.21, "r": 0.48},
+                {"depth_km": 0.2, "slope": -0.02, "r": -0.15},
+            ],
+        }
+    }
+    fig = inversion.recovery(config.defaults(), evaluation, "unused")
+    try:
+        titles = [ax.get_title(loc="left") for ax in fig.axes if ax.get_title(loc="left")]
+        assert "(a) Amplitude recovery" in titles and "(b) Pattern recovery" in titles
+        assert any("100% is ideal" in ax.get_ylabel() for ax in fig.axes)
+        assert any("1.0 is ideal" in ax.get_ylabel() for ax in fig.axes)
+        ticklabels = [t.get_text() for t in fig.axes[0].get_yticklabels()]
+        assert ticklabels == ["2.5 km cells", "Thick vertical"]
+        assert any("damped amplitude" in t.get_text() for t in fig.texts)
+        assert any("DWS > 0" in t.get_text() for t in fig.texts)
+    finally:
+        style.plt.close(fig)
+
+
+def test_station_map_and_line_section_layout_semantics(tmp_path, monkeypatch):
+    from lant.plotting import gmt, maps, sections
+
+    captured = []
+
+    def fake_run(tmp, pre, cmd, out, *args, **kwargs):
+        captured.append((tmp, list(pre), list(cmd)))
+        return [out + ".png"]
+
+    monkeypatch.setattr(gmt, "run", fake_run)
+    cfg = config.defaults()
+    cfg["plots"]["topography"] = None
+    stations = {
+        "S1": {"lon": 100.01, "lat": 30.00, "elev": 950.0},
+        "S2": {"lon": 100.01, "lat": 30.07, "elev": 980.0},
+        "S3": {"lon": 100.01, "lat": 30.14, "elev": 1020.0},
+    }
+    maps.station_map(cfg, stations, str(tmp_path / "1_stations"), inversion_count=2)
+    tmp, _, cmd = captured[-1]
+    legend = open(tmp + "/legend.txt").read()
+    assert "Recorded (3)" in legend and "Inversion (2)" in legend
+    assert any("-DjT" in c for c in cmd)
+
+    proj = tmp_path / "work" / "06_inversion" / "main"
+    proj.mkdir(parents=True)
+    np.savetxt(proj.parent / "vs1d.txt", [[0.0, 1.5], [0.2, 2.0], [0.5, 2.8]])
+    import json
+
+    (proj / "project.json").write_text(json.dumps({"depths": [0.0, 0.2, 0.5]}))
+    rows = [
+        [lon, lat, dep, 1.5 + dep + 0.05 * (lat - 30.00)]
+        for dep in (0.0, 0.2)
+        for lat in (29.99, 30.07, 30.15)
+        for lon in (100.00, 100.02)
+    ]
+    np.savetxt(proj / "DSurfTomo.inMeasure.dat", rows)
+    cfg["plots"]["vs_range"] = [1.2, 2.5]
+    cfg["plots"]["contour_step"] = 0.2
+    sections.line_section(cfg, str(proj), stations, str(tmp_path / "5_sections"), label="line_1")
+    tmp_sec, pre_sec, cmd_sec = captured[-1]
+    head0 = open(tmp_sec + "/r0_head.txt").read()
+    head1 = open(tmp_sec + "/r1_head.txt").read()
+    note = open(tmp_sec + "/note.txt").read()
+    assert "line_1 | Vs model" in head0 and "vertical exaggeration" not in head0
+    assert "Anomaly relative to 1-D reference" in head1
+    assert "V.E. =" in note and "resolution is not masked" in note
+    assert len(pre_sec) == 2
+
+
+def test_recovery_single_depth_and_full_negative_correlation(monkeypatch):
+    from lant.plotting import inversion, style
+
+    monkeypatch.setattr(style, "save", lambda figure, *args: figure)
+    evaluation = {"checkerboards": {"one": [{"depth_km": 0.1, "slope": 1.7, "r": -0.8}]}}
+    fig = inversion.recovery(config.defaults(), evaluation, "unused")
+    try:
+        assert fig.axes[0].collections[0].get_array().size == 1
+        assert fig.axes[0].collections[0].norm.vmax >= 170
+        assert fig.axes[2].get_xlim()[1] > 1.7
+        assert fig.axes[3].get_xlim()[0] < -0.8
+    finally:
+        style.plt.close(fig)
+    evaluation["checkerboards"]["cb_vertical"] = [{"depth_km": 0.2, "slope": 0.2, "r": 0.3}]
+    fig = inversion.recovery(config.defaults(), evaluation, "unused")
+    try:  # one horizontal and one depth-varying test on different depths: blank cells, no error
+        values = fig.axes[0].collections[0].get_array()
+        assert values.size == 4 and int(np.ma.count_masked(values)) == 2
+        assert [t.get_text() for t in fig.axes[0].get_yticklabels()] == ["one", "Depth-varying"]
+    finally:
+        style.plt.close(fig)
+    evaluation["checkerboards"]["bad"] = [{"depth_km": 0.2, "slope": 0.2, "r": 0.3}, {"depth_km": 0.1}]
+    with pytest.raises(ValueError, match="strictly increasing"):
+        inversion.recovery(config.defaults(), evaluation, "unused")
+
+
+def test_checker_labels():
+    from lant.plotting.inversion import _checker_label
+
+    assert _checker_label("cb_1.2km") == "1.2 km cells"
+    assert _checker_label("cb_2_3.7km") == "3.7 km cells"
+    assert _checker_label("cb_vertical") == "Depth-varying"
+
+
+def test_checkerboard_figures_follow_the_present_checks(tmp_path):
+    """A checkerboard directory left from an earlier configuration is not drawn (nor evaluated)."""
+    import json
+    import types
+
+    from lant import paths
+    from lant.plotting import figures
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    root = tmp_path / "work" / paths.INV
+    for name in ("cb_1km", "cb_old"):
+        (root / "checkerboards" / name).mkdir(parents=True)
+        (root / "checkerboards" / name / "DSurfTomo.inSyn.dat").write_text("")
+    (root / "checks.json").write_text(json.dumps(dict(projects=[["checkerboards", "cb_1km"]])))
+    drawn = []
+    F = types.SimpleNamespace(
+        cfg=cfg, todo=["checkerboards"], line=True, stations={}, path=str, attempt=lambda n, fn: drawn.append(n)
+    )
+    figures._checkerboards(F)
+    assert drawn == ["checkerboard_cb_1km"]

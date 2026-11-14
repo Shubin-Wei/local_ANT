@@ -34,14 +34,9 @@ from . import records
 # keys that set only the computing resources (processes, threads, task size, disk margin): changing them does not
 # change any result, so a step does not become out of date (and its confirmation stands)
 RESOURCE_KEYS = {
-    "clean.nproc",
+    "resources.cores",
     "clean.min_free_disk_factor",
-    "correlation.nproc",
-    "correlation.threads_per_process",
-    "dispersion.nproc",
     "dispersion.chunk",
-    "inversion.threads",
-    "inversion.njobs",
 }
 
 
@@ -71,9 +66,9 @@ def _save(cfg, m):
 
 
 def raw_inputs(cfg):
-    """Fingerprint of what the clean step reads: every candidate file under data.raw_dir (relative path, size,
-    modification time) and the content of the station table."""
+    """Fingerprint of clean inputs: raw-file metadata, station-table contents and response-source metadata."""
     from . import data as D
+    from .record_index import file_signature
 
     h = hashlib.sha1()
     d = cfg["data"]
@@ -83,8 +78,7 @@ def raw_inputs(cfg):
         return "unreadable: %s" % exc
     for f in sorted(files):
         try:
-            st = os.stat(f)
-            h.update(repr((os.path.relpath(f, d["raw_dir"]), st.st_size, st.st_mtime_ns)).encode())
+            h.update(repr((os.path.relpath(f, d["raw_dir"]), file_signature(f))).encode())
         except OSError:
             h.update(repr((f, "missing")).encode())
     try:
@@ -92,6 +86,13 @@ def raw_inputs(cfg):
             h.update(fh.read())
     except OSError:
         h.update(b"no station file")
+    if d.get("response"):
+        from . import response
+
+        try:
+            h.update(repr(response.identity(d["response"])).encode())
+        except (OSError, response.ResponseError) as exc:
+            h.update(("response unavailable: %s" % exc).encode())
     return h.hexdigest()[:16]
 
 
@@ -115,6 +116,7 @@ def record(
         to_confirm=list(to_confirm or []),
         basis=basis,
         error=error,
+        numerics=numerical_dependencies(cfg, step),
     )
     from .artifacts import required
 
@@ -139,6 +141,36 @@ def confirmed(cfg, step, rec):
         return True
     c = (cfg.get("_confirmed") or {}).get(step) or {}
     return c.get("_basis") == rec.get("basis")
+
+
+def numerical_dependencies(cfg, step):
+    """Only dependencies actually used by a selected numerical implementation."""
+    out = {}
+    if step in ("inversion", "figures"):
+        from .inversion.start import forward_identity
+
+        out["forward"] = forward_identity()
+    if step in ("run", "evaluate"):
+        from .inversion.solver import identity
+
+        out["solver"] = identity()
+    if step == "figures" and cfg["plots"]["backend"] == "pygmt":
+        from importlib.metadata import PackageNotFoundError, version
+
+        from .plotting import pygmt_backend
+
+        packages = {}
+        for name in ("pygmt", "rasterio"):
+            try:
+                packages[name] = version(name)
+            except PackageNotFoundError:
+                packages[name] = "missing"
+        with open(pygmt_backend.__file__, "rb") as source:
+            source_hash = hashlib.sha256(source.read()).hexdigest()
+        out["plots"] = dict(
+            packages=packages, adapter_sha256=source_hash, gmt_library_path=os.environ.get("GMT_LIBRARY_PATH")
+        )
+    return out
 
 
 def status(cfg, check_inputs=True):
@@ -183,8 +215,10 @@ def status(cfg, check_inputs=True):
             why = "required products missing: " + ", ".join(missing)
         elif changed:
             why = "parameters changed since it ran: %s%s" % (", ".join(changed[:8]), " ..." if len(changed) > 8 else "")
+        elif r.get("numerics", {}) != numerical_dependencies(cfg, s):
+            why = "numerical implementation or dependency versions changed since it ran"
         elif s == "clean" and check_inputs and r.get("inputs") and raw_inputs(cfg) != r["inputs"]:
-            why = "the raw files or the station table changed since it ran"
+            why = "the raw files, station table or response files changed since it ran"
         elif again:
             why = "step %s was run again since" % again[-1]
         elif broken:

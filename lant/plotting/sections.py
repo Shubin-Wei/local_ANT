@@ -89,24 +89,40 @@ def project_stations(stations, p0, p1, width_km):
     return s[m], el[m]
 
 
-def draw(cfg, rows, out, xlabel="Distance (km)", width=12.0, scale=None):
-    """rows: list of dict(x, z, v, sta, elev, label, zmax[, topo]).  One section per row, top to bottom.  The elevation
-    profile above a section is topo = (x, elevation) when given, otherwise the elevations of the stations drawn on it.
-    scale: dict(cpt, lo, hi, label) for values other than Vs (no isolines then); default the Vs colour table."""
-    fs = cfg["plots"]["font_scale"]
+def _default_scale(cfg, scale):
     if scale:
-        cpt, (lo, hi), cblabel, step = scale["cpt"], (scale["lo"], scale["hi"]), scale["label"], None
-    else:
-        cpt, (lo, hi), cblabel, step = (
-            cfg["plots"]["vs_cpt"],
-            cfg["plots"]["vs_range"],
-            "Vs (km/s)",
-            cfg["plots"]["contour_step"],
+        return dict(
+            cpt=scale["cpt"],
+            lo=scale["lo"],
+            hi=scale["hi"],
+            label=scale["label"],
+            step=scale.get("step"),
         )
+    lo, hi = cfg["plots"]["vs_range"]
+    return dict(
+        cpt=cfg["plots"]["vs_cpt"],
+        lo=lo,
+        hi=hi,
+        label="Vs (km/s)",
+        step=cfg["plots"]["contour_step"],
+    )
+
+
+def draw(cfg, rows, out, xlabel="Distance (km)", width=12.0, scale=None):
+    """rows: list of dict(x, z, v, sta, elev, label, zmax[, topo, scale]).  One section per row, top to bottom.  The
+    elevation profile above a section is topo = (x, elevation) when given, otherwise the elevations of the stations
+    drawn on it.  scale: dict(cpt, lo, hi, label[, step]) for values other than Vs; default the Vs colour table."""
+    fs = cfg["plots"]["font_scale"]
+    base_scale = _default_scale(cfg, scale)
+    per_row_scale = any(r.get("scale") is not None for r in rows)
     tmp = G.workdir()
-    pre = ["gmt makecpt -C%s -T%g/%g -Z -D > %s/vs.cpt" % (cpt, lo, hi, tmp)]
+    pre = []
+    if not per_row_scale:
+        pre.append(
+            "gmt makecpt -C%s -T%g/%g -Z -D > %s/vs.cpt" % (base_scale["cpt"], base_scale["lo"], base_scale["hi"], tmp)
+        )
     cmd = []
-    y = 2.2
+    y = 2.4 if per_row_scale else 2.9  # a single colour bar below the sections, and the note below it
     pos_rows = []
     for r in rows[::-1]:
         h, ve = panel_height(float(r["x"][-1] - r["x"][0]), float(r["zmax"]), width)
@@ -118,6 +134,10 @@ def draw(cfg, rows, out, xlabel="Distance (km)", width=12.0, scale=None):
         y += h + (TOPO_H + 0.45 if has_topo else 0) + 2.1 * fs  # x label of this row, head line of the next
     for i, (r, y0, h, has_topo) in enumerate(pos_rows[::-1]):
         tag = "%s/r%d" % (tmp, i)
+        rscale = _default_scale(cfg, r.get("scale")) if r.get("scale") is not None else base_scale
+        cpt_path = "%s/vs_%d.cpt" % (tmp, i) if per_row_scale else "%s/vs.cpt" % tmp
+        if per_row_scale:
+            pre.append("gmt makecpt -C%s -T%g/%g -Z -D > %s" % (rscale["cpt"], rscale["lo"], rscale["hi"], cpt_path))
         x, z, v = np.asarray(r["x"], float), np.asarray(r["z"], float), np.asarray(r["v"], float)
         keep = z <= r["zmax"] + 1e-9
         z, v = z[keep], v[keep]
@@ -137,23 +157,35 @@ def draw(cfg, rows, out, xlabel="Distance (km)", width=12.0, scale=None):
         pos = "-Xa2.0c -Ya%.3fc" % y0
         cmd += [
             "gmt xyz2grd %s.bin -bi3f %s -I%d+n/%d+n -G%s.nc" % (tag, R, len(xf), len(zf), tag),
-            "gmt grdimage %s.nc %s %s -C%s/vs.cpt" % (tag, J, pos, tmp),
+            "gmt grdimage %s.nc %s %s -C%s" % (tag, J, pos, cpt_path),
         ]
+        step = rscale.get("step")
         if step:
-            nd = max(1, len(("%.6f" % step).rstrip("0").split(".")[1]))  # 0.25 km/s: labels 1.25, 1.50
+            span = max(float(rscale["hi"] - rscale["lo"]), 1e-6)
+            cstep = step * 2 if span / step > 6.5 else step
+            nd = max(1, len(("%.6f" % cstep).rstrip("0").split(".")[1]))
             cmd.append(
-                "gmt grdcontour %s.nc %s %s -C%g -A%g+f%gp,Helvetica,gray10 -Gd3.5c -W0.2p,gray10 -S4 --FORMAT_FLOAT_MAP=%%.%df"
-                % (tag, J, pos, step, step, 5 * fs, nd)
+                "gmt grdcontour %s.nc %s %s -C%g -A%g+f%gp,Helvetica,gray15 -Gd8c -W0.25p,gray20 -S4 --FORMAT_FLOAT_MAP=%%.%df"
+                % (tag, J, pos, cstep, cstep, 5.5 * fs, nd)
             )
         if r.get("sta") is not None and len(r["sta"]):
             np.savetxt(tag + "_sta.txt", np.c_[r["sta"], np.zeros(len(r["sta"]))], fmt="%.4f")
-            cmd.append("gmt plot %s_sta.txt %s %s -Si%.2fc -Gblack -D0/0.07c -N" % (tag, J, pos, 0.13 * fs))
+            cmd.append("gmt plot %s_sta.txt %s %s -Si%.2fc -Gblack -D0/0.06c -N" % (tag, J, pos, 0.10 * fs))
         dx = G.nice_step(x[-1] - x[0], 5)
         dz = G.nice_step(r["zmax"], 3)
-        cmd.append(
-            "gmt basemap %s %s -BWSen -Bxa%gf%g+l'%s' -Bya%gf%g+l'Depth (km)'"
-            % (J, pos, dx, dx / 2, xlabel, dz, dz / 5)
+        is_bottom = i == len(pos_rows) - 1
+        x_axis_spec = (
+            "xa%gf%g+l'%s'" % (dx, dx / 2, xlabel) if (is_bottom or not per_row_scale) else "xa%gf%g" % (dx, dx / 2)
         )
+        cmd.append("gmt basemap %s %s -BWSen -B%s -Bya%gf%g+l'Depth (km)'" % (J, pos, x_axis_spec, dz, dz / 5))
+        if per_row_scale:
+            cb_len = max(2.2, min(h, 4.0))
+            comp = np.sqrt(max(cb_len, 1.5) / 15.0)
+            cmd.append(
+                "gmt colorbar -C%s %s %s -DJMR+o0.4c/0c+w%.2fc/0.22c -Bxaf+l'%s' "
+                "--FONT_ANNOT_PRIMARY=%gp,Helvetica --FONT_LABEL=%gp,Helvetica"
+                % (cpt_path, J, pos, cb_len, rscale["label"], 7.5 * fs / comp, 8.5 * fs / comp)
+            )
         if has_topo:
             se, el = np.asarray(r["topo"][0], float), np.asarray(r["topo"][1], float)
             ok = np.isfinite(el)
@@ -173,12 +205,8 @@ def draw(cfg, rows, out, xlabel="Distance (km)", width=12.0, scale=None):
             ylab = y0 + h + 0.35 + TOPO_H
         else:
             ylab = y0 + h + 0.25
-        # one line above the section (and its elevation panel): the ends (letter and direction) at the two sides,
-        # a name and the vertical exaggeration in the middle
-        ve = r["ve"]
-        mid = " ".join(
-            t for t in (r.get("label") or "", "" if abs(ve - 1) < 0.05 else "(vertical exaggeration %.2g)" % ve) if t
-        )
+        # Title line above the section: compass ends at left/right, clean variable/section name in center
+        mid = (r.get("label") or "").strip()
         with open(tag + "_head.txt", "w") as fh:
             if r.get("ends"):
                 fh.write(
@@ -186,13 +214,35 @@ def draw(cfg, rows, out, xlabel="Distance (km)", width=12.0, scale=None):
                     % (9 * fs, r["ends"][0], 9 * fs, r["ends"][1])
                 )
             if mid:
-                fh.write("0.5 0 %gp,Helvetica BC %s\n" % (8 * fs, mid))
+                fh.write("0.5 0 %gp,Helvetica-Bold BC %s\n" % (8.5 * fs, mid))
         cmd.append("gmt text %s_head.txt -R0/1/0/1 -JX%.3fc/1c -Xa2.0c -Ya%.3fc -F+f+j -N" % (tag, width, ylab + 0.12))
-    cmd.append(
-        "gmt colorbar -C%s/vs.cpt -Dx%.3fc/0.9c+w%.2fc/0.28c+h+jTC -Bxaf+l'%s' --FONT_ANNOT_PRIMARY=%gp,Helvetica "
-        "--FONT_LABEL=%gp,Helvetica" % (tmp, 2.0 + width / 2, min(8.0, 0.7 * width), cblabel, 8 * fs, 9 * fs)
+    if not per_row_scale:
+        cb_w = min(8.0, 0.7 * width)
+        comp = np.sqrt(max(cb_w, 1.5) / 15.0)
+        cmd.append(
+            "gmt colorbar -C%s/vs.cpt -Dx%.3fc/1.65c+w%.2fc/0.26c+h+jTC -Bxaf+l'%s' --FONT_ANNOT_PRIMARY=%gp,Helvetica "
+            "--FONT_LABEL=%gp,Helvetica"
+            % (tmp, 2.0 + width / 2, cb_w, base_scale["label"], 8 * fs / comp, 9 * fs / comp)
+        )
+    ve = rows[-1].get("ve", 1.0)
+    note_y = 1.15 if per_row_scale else 0.15  # below a single colour bar (1.65 cm) and its label
+    topo = any(t for _, _, _, t in pos_rows)
+    with open(tmp + "/note.txt", "w") as fh:
+        fh.write(
+            "0 0 %gp,Helvetica,gray25 BL Depth is below the model surface%s. V.E. = %.2gx; resolution is not masked.\n"
+            % (7.5 * fs, " (topography shown for reference)" if topo else "", ve)
+        )
+    cmd.append("gmt text %s/note.txt -R0/1/0/1 -JX%.3fc/0.5c -Xa2.0c -Ya%.3fc -F+f+j -N" % (tmp, width, note_y))
+    return G.run(
+        tmp,
+        pre,
+        cmd,
+        out,
+        cfg["plots"]["formats"],
+        cfg["plots"]["dpi"],
+        font=(7 * fs, 8 * fs),
+        backend=cfg["plots"]["backend"],
     )
-    return G.run(tmp, pre, cmd, out, cfg["plots"]["formats"], cfg["plots"]["dpi"], font=(7 * fs, 8 * fs))
 
 
 COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
@@ -216,6 +266,20 @@ def relief_along(cfg, lon, lat):
 
     W, E, S, N = min(lon) - 0.01, max(lon) + 0.01, min(lat) - 0.01, max(lat) + 0.01
     tmp = tempfile.mkdtemp(prefix="lant_track_")
+    if cfg["plots"]["backend"] == "pygmt":
+        import shutil
+
+        from .pygmt_backend import sample_grid
+
+        grid, _ = relief.grid(cfg, W, E, S, N, tmp)
+        if not grid:
+            shutil.rmtree(tmp)
+            return None
+        pts = os.path.join(tmp, "p.xy")
+        np.savetxt(pts, np.c_[lon, lat], fmt="%.6f")
+        z = sample_grid(tmp, grid, pts)
+        shutil.rmtree(tmp)
+        return z if len(z) == len(lon) else None
     try:
         grid, _ = relief.grid(cfg, W, E, S, N, tmp)
         if not grid:
@@ -314,6 +378,8 @@ def line_section(cfg, project, stations, out, label=None):
     el = np.array([st["elev"] for st in stations.values()])
     north_south = abs(u[1]) >= abs(u[0])
     topo = relief_along(cfg, slon, slat)
+    name = label or cfg["project"]["name"]
+    vs_scale = _default_scale(cfg, None)
     rows = [
         dict(
             x=x,
@@ -321,12 +387,38 @@ def line_section(cfg, project, stations, out, label=None):
             v=V,
             sta=s,
             elev=el,
-            label=label or cfg["project"]["name"],
+            label="%s | Vs model" % name,
             zmax=zmax,
             ends=compass(p0, p1),
             topo=(x, topo) if topo is not None else None,
+            scale=vs_scale,
         )
     ]
+    vs1d_candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(project)), "vs1d.txt"),
+        os.path.join(project, "vs1d.txt"),
+    ]
+    vs1d_path = next((p for p in vs1d_candidates if os.path.isfile(p)), None)
+    if vs1d_path:
+        m1d = np.loadtxt(vs1d_path, ndmin=2)
+        bg = np.interp(z, m1d[:, 0], m1d[:, 1])
+        update = 100.0 * (V - bg[:, None]) / np.where(bg[:, None] != 0, bg[:, None], np.nan)
+        finite_upd = np.abs(update[np.isfinite(update)])
+        limit = max(2.0, float(np.ceil(np.max(finite_upd)))) if finite_upd.size else 5.0
+        rows.append(
+            dict(
+                x=x,
+                z=z,
+                v=update,
+                sta=s,
+                elev=None,
+                topo=None,
+                label="Anomaly relative to 1-D reference",
+                zmax=zmax,
+                ends=compass(p0, p1),
+                scale=dict(cpt=G.PERT_CPT, lo=-limit, hi=limit, label="Anomaly (%)", step=None),
+            )
+        )
     return draw(
         cfg, rows, out, xlabel="Distance along the line from the %s end (km)" % ("south" if north_south else "west")
     )

@@ -15,6 +15,10 @@ The derivation of an "auto" value with the numbers of the present data is writte
 """
 
 DOC = {
+    "plots.backend": (
+        "choice",
+        "gmt: reference command interface; pygmt: isolated Python GMT C-API renderer; both require GMT",
+    ),
     # ------------------------------------------------------------------ project
     "project.name": ("choice", "project name (figures and records only)"),
     "project.array_type": (
@@ -24,6 +28,12 @@ DOC = {
         "surface / line",
     ),
     "project.output_dir": ("required", "every result, figure and record is written here"),
+    "project.ai_assistant": (
+        "choice",
+        "the one file of rules for AI assistants written into the project, with the full text: codex AGENTS.md, "
+        "claude CLAUDE.md, gemini GEMINI.md; null: AGENTS.md (the open convention read by many coding agents). "
+        "An existing file is never overwritten",
+    ),
     # ------------------------------------------------------------------ data
     "data.raw_dir": ("required", "raw-data directory, searched recursively; any layout and file names"),
     "data.format": (
@@ -75,7 +85,6 @@ DOC = {
         "steps read the raw files, and the 1-s periodic signal is not tested "
         "(response removal and moved nodes need the archive)",
     ),
-    "clean.nproc": ("technical", "processes"),
     "clean.encoding": ("technical", "miniSEED encoding of the archive"),
     "clean.min_free_disk_factor": (
         "technical",
@@ -133,11 +142,6 @@ DOC = {
         "where the clean step detects it (F test of the folded records); "
         "true: all stations; false: none",
     ),
-    "correlation.nproc": (
-        "technical",
-        "days processed at the same time (memory: one day of every station per process)",
-    ),
-    "correlation.threads_per_process": ("technical", "FFT threads per process"),
     # ------------------------------------------------------------------ stack
     "stack.block_hours": (
         "rule",
@@ -232,7 +236,7 @@ DOC = {
     ),
     "dispersion.phase_constant": (
         "theory",
-        "phase of the far-field 2-D Green's function, pi/4 (Lin et al. 2008 eq. 7)",
+        "pi/4 for the causal J0 correlation convention; the negative-time-derivative EGF convention needs its phase accounted for",
     ),
     "dispersion.min_dist_km": ("choice", "pairs shorter than this are not measured (0: lam_min alone rules)"),
     "dispersion.lam_min": (
@@ -253,7 +257,6 @@ DOC = {
         "empirical",
         "fewer groups with data: no error estimate, the sample is rejected",
     ),
-    "dispersion.nproc": ("technical", "processes"),
     "dispersion.chunk": ("technical", "pairs per task"),
     "dispersion.side_off_bands": ("choice", "bands 'lo-hi,...' where the side-lobe rule is not applied"),
     "dispersion.qc.snr_c": (
@@ -307,7 +310,9 @@ DOC = {
     "inversion.fine_zmax_km": ("choice", "see fine_step_km"),
     "inversion.grid_spacing_deg": (
         "rule",
-        "grid spacing [lat, lon]; auto: about half the median nearest-station distance after refinement",
+        "grid spacing [lat, lon] of the coarse grid; auto (set by the inversion step): the final cell is the median "
+        "measured wavelength c T / 3 km in both directions (user's rule; the lateral resolution is about a "
+        "wavelength), times grid_refine",
     ),
     "inversion.grid_refine": ("empirical", "every grid interval is divided by this once the extent is fixed"),
     "inversion.line_strip_cells": ("empirical", "lines: cells kept on each side of the stations across the line"),
@@ -319,12 +324,14 @@ DOC = {
     "inversion.start_model.minthk": ("technical", "1-D forward: sublayers per node interval"),
     "inversion.weight": (
         "empirical",
-        "DSurfTomo smoothing weight (Fang et al. 2015); set by hand in the usual range "
-        "(below 10, mostly below 5), not optimised; lines 1.5",
+        "DSurfTomo smoothing weight (Fang et al. 2015), fixed; default 1, calibrated with damp 0.1 on lant's areal "
+        "and line synthetic examples (smallest rms error against the true model, methods.md 8.4); checks inherit it",
     ),
     "inversion.damp": (
         "empirical",
-        "DSurfTomo damping (Fang et al. 2015); set by hand in the usual range 0.5-1.5, not optimised; lines 1.5",
+        "DSurfTomo damping, fixed: it limits the size of the model update of each iteration (LSMR damping); default "
+        "0.1 (the DSurfTomo manual's example), calibrated on lant's synthetic examples: 1 held the updates to a few "
+        "hundredths of a km/s, below 0.1 little changes (methods.md 8.4)",
     ),
     "inversion.sublayers": ("literature", "DSurfTomo: sublayers between depth nodes for the kernels (its manual: 2-5)"),
     "inversion.vmin": ("rule", "lower Vs bound; auto: 0.6 x the slowest Vs of the starting model"),
@@ -336,7 +343,10 @@ DOC = {
         "filling estimated from the paths and the grid, at least 0.05 (too little makes "
         "DSurfTomo stop with a segmentation fault; more only costs memory)",
     ),
-    "inversion.threshold": ("empirical", "DSurfTomo: residuals beyond this many quartiles get zero weight"),
+    "inversion.threshold": (
+        "empirical",
+        "DSurfTomo: keep signed residuals within threshold x [q25, q75]; not IQR fences",
+    ),
     "inversion.noise": (
         "rule",
         "Gaussian noise added to the synthetic travel times of the checkerboards, a fraction of "
@@ -344,24 +354,26 @@ DOC = {
         "DSurfTomo's rejection rule keeps, so that the synthetic data are as noisy as the real "
         "data fit (Rawlinson & Spakman 2016); the checkerboards then run after the main project",
     ),
-    "inversion.solver": ("choice", "dsurftomo (<= 60 periods) or pdsurftomo (parallel, <= 80 periods)"),
-    "inversion.threads": ("technical", "threads per project"),
-    "inversion.njobs": ("technical", "projects run at the same time"),
     # ------------------------------------------------------------------ checks
     "checks.checkerboards": (
         "rule",
-        "horizontal checkerboards [{name, cell_km}]; auto: cells of 0.12, 0.18 and 0.25 x "
-        "the aperture (lines: 0.165, 0.24, 0.34 x the line length, along the line)",
+        "horizontal checkerboards [{name, cell_km}], each a full inversion; cell_km is half the period of the "
+        "pattern; auto (set by the inversion step): three tests, cells of 1, 2 and 3 median measured wavelengths c T "
+        "(the lateral resolution is limited by the predominant wavelength, Yao et al. 2006; tests at several scales, "
+        "Rawlinson & Spakman 2016; the factors 1, 2, 3 are the user's choice); lines: along the line",
     ),
     "checks.vertical": (
         "rule",
-        "depth-varying checkerboards; auto: cell 0.18 x aperture, sign reversals at 0.21, 0.46, "
-        "0.71 x the deepest updated node",
+        "depth-varying checkerboards [{name, cell_km, reversal_depths_km}]; auto (set by the inversion step): one "
+        "test, cell 2 median wavelengths, one sign reversal at the median wavelength / 3 (depth of the largest "
+        "sensitivity of the Rayleigh phase velocity, rule of thumb of Fang et al. 2015); none when no updated depth "
+        "node lies on both sides of it",
     ),
     "checks.amplitude": ("empirical", "checkerboard perturbation, a fraction of the 1-D Vs of each depth"),
     "checks.controls": (
         "empirical",
-        "control inversions: reg_w<w>_d<d> other regularisation, start_grad<f> other starting model",
+        "control inversions: reg_x<f> the smoothing weight times f (stability of the model under the choice of the "
+        "weight), reg_w<w>_d<d> given weight and damping, start_grad<f> other starting model",
     ),
     "checks.precheck.min_kept": (
         "empirical",
@@ -374,7 +386,7 @@ DOC = {
     ),
     "checks.iteration_residuals": ("choice", "also evaluate the model of every iteration (one forward run each)"),
     # ------------------------------------------------------------------ plots
-    "plots.formats": ("choice", "figure formats"),
+    "plots.formats": ("choice", "figure format; [png] only"),
     "plots.dpi": ("choice", "resolution of the png figures"),
     "plots.topography": (
         "choice",
@@ -398,6 +410,13 @@ DOC = {
         "pair(s) of the single-pair figures (stack time, dispersion): a name or a list; "
         "default: three pairs at the 20 / 50 / 80 % quantiles of the distances of the "
         "pairs with long curves",
+    ),
+    # ------------------------------------------------------------------ resources
+    "resources.cores": (
+        "technical",
+        "cores of a step; auto: max(1, 0.8 x (usable CPUs - 1-minute load average)), without the load this run "
+        "caused itself (idle = not used by others), taken again at every step and solver project; parallel work is "
+        "also limited to half of the available memory (lant/resources.py); an integer is used as given",
     ),
 }
 
@@ -524,5 +543,5 @@ def template(
         lines.append("  line: " + dump(str(line)))
     for key in ("velocity_range_kms", "day_label", "response", "exclude_stations", "start_date", "end_date"):
         lines.append("  # %s: %s  # %s" % (key, dump(cfg["data"][key]), describe("data." + key)[1]))
-    lines += ["# plots:", "#   formats: " + dump(cfg["plots"]["formats"]) + "  # add pdf for vector output"]
+    lines += ["# plots:", "#   formats: " + dump(cfg["plots"]["formats"]) + "  # PNG figures"]
     return "\n".join(lines) + "\n"

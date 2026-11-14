@@ -27,9 +27,11 @@ KIND_ZH = {
 }
 
 ZH = {
+    "plots.backend": "gmt：参考命令接口；pygmt：独立 Python GMT C API 绘图；两者均保留 GMT 依赖",
     "project.name": "项目名（只用于图和记录）",
     "project.array_type": "auto：按台站分布判断（台站分布的长宽比，小于 3 为面状，大于 10 为线状，介于两者之间时在 clean 交给你确认）；或直接写 surface / line",
     "project.output_dir": "全部结果、图和记录都写在这里",
+    "project.ai_assistant": "写进工程的唯一一份 AI 助手规则文件，含完整规则：codex 写 AGENTS.md，claude 写 CLAUDE.md，gemini 写 GEMINI.md；null 写 AGENTS.md（许多编程助手都读的公开约定）。已有文件不覆盖",
     "data.raw_dir": "原始数据目录，递归搜索；目录结构和文件名不限",
     "data.format": "auto：由 ObsPy 逐个文件识别格式（MSEED、SAC、GSE2、SEG2 等）；或写一个 ObsPy 格式名",
     "data.file_patterns": "尝试读取的文件名模式",
@@ -49,7 +51,6 @@ ZH = {
     "data.start_date": "使用的第一个处理日（YYYY-MM-DD）",
     "data.end_date": "使用的最后一个处理日（YYYY-MM-DD）",
     "clean.write_archive": "写出清洗后的日文件（大小与原始数据相当）；false：后面的步骤直接读原始文件",
-    "clean.nproc": "进程数",
     "clean.encoding": "归档 miniSEED 的编码",
     "clean.min_free_disk_factor": "剩余磁盘小于归档估计大小的这个倍数时拒绝写",
     "correlation.fs_max": "最高处理采样率（Hz）；频带上限为 0.4 fs / (1 + sqrt(ln 2 / alpha))：小孔径、高频台阵可调高",
@@ -63,8 +64,6 @@ ZH = {
     "correlation.smooth_bins": "相干分母在频率上的平滑点数；1 = 不平滑（Xu et al. 2021 的互相干）",
     "correlation.max_over_std": "分段峰值超过该台站日标准差的这个倍数就丢弃（NoisePy 的 max_over_std，Jiang & Denolle 2020）",
     "correlation.remove_1s_comb": "逐小时扣除按 1 s 折叠出的波形（记录器每秒一次的相干噪声，Takagi et al. 2015）；auto：只对 clean 检出该信号的台站做（折叠记录的 F 检验）；true：全部台站；false：不做",
-    "correlation.nproc": "同时处理的天数（内存：每个进程装一天的全部台站）",
-    "correlation.threads_per_process": "每个进程的 FFT 线程数",
     "stack.block_hours": "刀切用的子叠加长度；auto：24、12、8、6、4、3、2、1 小时中能让中位台站至少有 8 个子叠加的最长者",
     "stack.station_qc.enabled": "台站诊断：列出相关系数或时移与其余不同的台站子叠加（不经你同意不会剔除）",
     "stack.station_qc.partners": "每个台站通过它与最近的这么多个台站组成的台对来比较",
@@ -92,13 +91,12 @@ ZH = {
     "dispersion.vmax": "速度轴上限；auto：1.3 × 最快速度",
     "dispersion.dv": "速度轴步长；auto：不超过 vmin / 100 的 1-2-2.5-5 系列步长",
     "dispersion.alpha": "高斯滤波器 exp(-alpha ((f - fc) / fc)^2) 的相对宽度，同 FTAN（Bensen et al. 2007）；越大越窄",
-    "dispersion.phase_constant": "二维格林函数远场相位 π/4（Lin et al. 2008 式 7）",
+    "dispersion.phase_constant": "因果 J0 互相关约定用 π/4；负时间导数 EGF 约定需另计相移，不能直接套用相位符号",
     "dispersion.min_dist_km": "短于此的台对不测（0：只按 lam_min）",
     "dispersion.lam_min": "路径短于这么多个参考波长就不测（Luo et al. 2015：1 个波长可以够）",
     "dispersion.anchor_max_lambda": "在路径长为 lam_min 到这么多个波长的地方定周数（周数少，参考曲线不至于差一周）",
     "dispersion.njack": "子叠加的分组刀切组数；auto：数据量不少于最满子叠加 25 % 的子叠加个数",
     "dispersion.min_jackknife_groups": "有数据的组少于此数：没有误差估计，该点被拒",
-    "dispersion.nproc": "进程数",
     "dispersion.chunk": "每个任务的台对数",
     "dispersion.side_off_bands": "不应用旁瓣规则的频带 'lo-hi,...'",
     "dispersion.qc.snr_c": "拾取到时处的信噪比（峰值 / 尾部噪声均方根）；文献用 4–10（Bensen et al. 2007 对全球数据用 10）",
@@ -119,7 +117,7 @@ ZH = {
     "inversion.depth_sequence_km": "深度节点；auto：步长 max(最短波长 / 4, 深度 / 4)，到最长波长的一半为止（经验法则，Foti et al. 2018）",
     "inversion.fine_step_km": "在 fine_zmax_km 以浅每隔这么多 km 加一个深度节点（0 = 不加）",
     "inversion.fine_zmax_km": "见 fine_step_km",
-    "inversion.grid_spacing_deg": "网格间距 [纬, 经]；auto：加密后约为台站最近邻距离中位数的一半",
+    "inversion.grid_spacing_deg": "粗网格间距 [纬, 经]；auto（由 inversion 步骤给出）：最终网格两个方向都取测量波长 c T 中位数 / 3（用户定的规则；横向分辨约为一个波长），再乘 grid_refine",
     "inversion.grid_refine": "范围定下后每个网格间隔再细分的倍数",
     "inversion.line_strip_cells": "线状台阵：台站两侧沿垂线方向各保留的网格数",
     "inversion.start_model.source": "invert：由本台阵平均曲线反演一维模型；file：深度、Vs 两列的文件",
@@ -128,26 +126,23 @@ ZH = {
     "inversion.start_model.damp": "一维反演：阻尼",
     "inversion.start_model.iterations": "一维反演：迭代次数",
     "inversion.start_model.minthk": "一维正演：每个节点间隔的子层数",
-    "inversion.weight": "DSurfTomo 平滑权重（Fang et al. 2015）；在常规范围（小于 10，多数小于 5）内人工取值，未经优化；线阵 1.5",
-    "inversion.damp": "DSurfTomo 阻尼（Fang et al. 2015）；在常规范围 0.5–1.5 内人工取值，未经优化；线阵 1.5",
+    "inversion.weight": "DSurfTomo 平滑权重（Fang et al. 2015），固定；默认 1，在 lant 的面状和线状合成算例上与阻尼 0.1 一起标定（与真实模型的均方根误差最小，methods.zh.md 第 8.4 节）；检验工程沿用",
+    "inversion.damp": "DSurfTomo 阻尼，固定：限制每轮模型改变量的大小（LSMR 的阻尼）；默认 0.1（DSurfTomo 手册例子的值），在合成算例上标定：取 1 时每轮改变量只有百分之几 km/s，低于 0.1 变化很小（methods.zh.md 第 8.4 节）",
     "inversion.sublayers": "DSurfTomo：算核函数时深度节点之间的子层数（手册：2–5）",
     "inversion.vmin": "Vs 下限；auto：0.6 × 起始模型最慢的 Vs",
     "inversion.vmax": "Vs 上限；auto：1.4 × 最快的 Vs",
     "inversion.iterations": "DSurfTomo 迭代次数",
     "inversion.sparsity": "DSurfTomo：为矩阵非零元预留的比例；auto：按路径和网格估计的填充率的两倍，不低于 0.05（预留太少 DSurfTomo 会以段错误退出；多留只多占内存）",
-    "inversion.threshold": "DSurfTomo：残差超出这么多个四分位距的数据权重为零",
+    "inversion.threshold": "DSurfTomo：保留 threshold × [q25, q75] 内的带符号残差，其余数据权重为零；不是四分位距围栏",
     "inversion.noise": "棋盘合成走时所加的高斯噪声，取各走时的比例；auto：主工程最终模型中被 DSurfTomo 剔除规则保留的残差的相对均方根，使合成数据与实际数据拟合后剩下的误差一样大（Rawlinson & Spakman 2016）；这时棋盘在主工程之后运行",
-    "inversion.solver": "dsurftomo（不超过 60 个周期）或 pdsurftomo（并行，不超过 80 个周期）",
-    "inversion.threads": "每个工程的线程数",
-    "inversion.njobs": "同时运行的工程数",
-    "checks.checkerboards": "水平棋盘 [{name, cell_km}]；auto：格子为孔径的 0.12、0.18、0.25 倍（线阵：沿测线，测线长度的 0.165、0.24、0.34 倍）",
-    "checks.vertical": "随深度变化的棋盘；auto：格子为孔径的 0.18 倍，在最深更新节点的 0.21、0.46、0.71 处变号",
+    "checks.checkerboards": "水平棋盘 [{name, cell_km}]，每个都是完整反演；cell_km 为图案的半周期；auto（由 inversion 步骤给出）：三个，格子为测量波长 c T 中位数的 1、2、3 倍（横向分辨受主要波长限制，Yao et al. 2006；多尺度检验，Rawlinson & Spakman 2016；1、2、3 倍为用户的选择）；线阵沿测线",
+    "checks.vertical": "随深度变化的棋盘 [{name, cell_km, reversal_depths_km}]；auto（由 inversion 步骤给出）：一个，格子为 2 倍波长中位数，在波长中位数 / 3 处变号一次（Rayleigh 相速度最敏感的深度，Fang et al. 2015 的经验法则）；该深度上下没有都可更新的深度节点时不做",
     "checks.amplitude": "棋盘扰动幅度，各深度一维 Vs 的比例",
-    "checks.controls": "对照反演：reg_w<w>_d<d> 换正则化，start_grad<f> 换起始模型",
+    "checks.controls": "对照反演：reg_x<f> 平滑权重乘以 f（看模型对权重选择的稳定性），reg_w<w>_d<d> 给定权重和阻尼，start_grad<f> 换起始模型",
     "checks.precheck.min_kept": "DSurfTomo 的剔除规则在第一次迭代保留的数据少于这个比例时，该工程判为无效",
     "checks.precheck.max_median_iqr": "……或残差中位数超出这么多个四分位距时",
     "checks.iteration_residuals": "同时评估每次迭代的模型（每次一遍正演）",
-    "plots.formats": "图的格式",
+    "plots.formats": "图的格式；仅支持 [png]",
     "plots.dpi": "png 图的分辨率",
     "plots.topography": "地图的地形底图；auto：从 GMT 数据服务器取 SRTM 1 角秒瓦片（Farr et al. 2007），存在 ~/.cache/lant/srtm1（只请求瓦片名；地图宽度不超过 3 度）；也可写网格文件或 GMT 远程网格；null：不画地形",
     "plots.vs_range": "色标范围；auto：台站下方模型的第 2–98 百分位，取到 0.1 km/s",
@@ -160,6 +155,10 @@ ZH = {
     "plots.pair_example": "单台对图（叠加时长、频散）画哪些台对：一个台对名或列表；默认在曲线较长的台对中按距离的 20 % / 50 % / 80 % 分位数取三对",
 }
 
+ZH["resources.cores"] = (
+    "每一步的核数；auto：max(1, 0.8 × (可用 CPU 数 − 1 分钟负载))，负载里扣掉本次运行自己造成的部分（“空闲”指别人没在用的核），"
+    "每一步、每个反演工程开始时重算；并行任务还受“估计峰值不超过可用内存一半”限制（lant/resources.py）；写整数则照用"
+)
 SECTIONS = [
     ("project", "project", "项目"),
     ("data", "data: raw data", "data：原始数据"),
@@ -180,6 +179,7 @@ SECTIONS = [
     ("inversion", "inversion: DSurfTomo (`06_inversion`)", "inversion：DSurfTomo 反演（`06_inversion`）"),
     ("checks", "checks: checkerboards, controls, precheck", "checks：棋盘、对照、预检"),
     ("plots", "plots: figures", "plots：出图"),
+    ("resources", "resources: computing resources", "resources：计算资源"),
 ]
 
 HEAD = {
@@ -259,6 +259,7 @@ A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
 }
 
 REFS = [
+    "Aster, R. C., Borchers, B., & Thurber, C. H. (2018). *Parameter Estimation and Inverse Problems* (3rd ed.), chapter 4. Elsevier.",
     "Bensen, G. D., et al. (2007). Processing seismic ambient noise data to obtain reliable broad-band surface wave dispersion measurements. *GJI*, 169, 1239–1260. doi:10.1111/j.1365-246X.2007.03374.x",
     "Brocher, T. M. (2005). Empirical relations between elastic wavespeeds and density in the Earth's crust. *BSSA*, 95, 2081–2092. doi:10.1785/0120050077",
     "Constable, S. C., Parker, R. L., & Constable, C. G. (1987). Occam's inversion. *Geophysics*, 52, 289–300. doi:10.1190/1.1442303",
@@ -273,6 +274,7 @@ REFS = [
     "Leys, C., Ley, C., Klein, O., Bernard, P., & Licata, L. (2013). Detecting outliers: do not use standard deviation around the mean, use absolute deviation around the median. *J. Exp. Soc. Psychol.*, 49, 764–766. doi:10.1016/j.jesp.2013.03.013",
     "Lin, F.-C., Moschetti, M. P., & Ritzwoller, M. H. (2008). Surface wave tomography of the western United States from ambient seismic noise: Rayleigh and Love wave phase velocity maps. *GJI*, 173, 281–298. doi:10.1111/j.1365-246X.2008.03720.x",
     "Luo, Y., Yang, Y., Xu, Y., Xu, H., Zhao, K., & Wang, K. (2015). On the limitations of interstation distances in ambient noise tomography. *GJI*, 201, 652–661. doi:10.1093/gji/ggv043",
+    "Morozov, V. A. (1966). On the solution of functional equations by the method of regularization. *Soviet Math. Dokl.*, 7, 414–417.",
     "Rawlinson, N., & Spakman, W. (2016). On the use of sensitivity tests in seismic tomography. *GJI*, 205, 1221–1243. doi:10.1093/gji/ggw084",
     "Seats, K. J., Lawrence, J. F., & Prieto, G. A. (2012). Improved ambient noise correlation functions using Welch's method. *GJI*, 188, 513–523. doi:10.1111/j.1365-246X.2011.05263.x",
     "Sens-Schönfelder, C. (2008). Synchronizing seismic networks with ambient noise. *GJI*, 174, 966–970. doi:10.1111/j.1365-246X.2008.03842.x",
@@ -284,7 +286,6 @@ REFS = [
     "Wang, J., Wu, G., & Chen, X. (2019). Frequency-Bessel transform method for effective imaging of higher-mode Rayleigh dispersion curves from ambient seismic noise data. *JGR Solid Earth*, 124, 3708–3723. doi:10.1029/2018JB016595",
     "Xu, Y., Lebedev, S., Meier, T., Bonadio, R., & Bean, C. J. (2021). Optimized workflows for high-frequency seismic interferometry using dense arrays. *GJI*, 227, 875–897. doi:10.1093/gji/ggab260",
     "Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis – I. Phase velocity maps. *GJI*, 166, 732–744. doi:10.1111/j.1365-246X.2006.03028.x",
-    "Zhu, S., Li, J., Chen, G., Fang, H., & Yao, H. (2026). pDSurfTomo: a high-performance parallel computing package for direct surface wave tomography. arXiv:2604.11920.",
 ]
 
 

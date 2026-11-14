@@ -61,31 +61,39 @@ def code_version():
 
 
 def environment():
-    from .tools import external_path
-
     pk = {}
     for m in PACKAGES:
         try:
             pk[m] = getattr(__import__(m), "__version__", "?")
         except ImportError:
             pk[m] = None
-    ext = {}
-    for b in ("DSurfTomo", "pDSurfTomo", "fwd1d"):
-        p = external_path("bin", b)
-        if os.path.isfile(p):
-            ext[b] = dict(path=p, sha1=_sha1_file(p))
+    from importlib.metadata import PackageNotFoundError, version
+
+    for name in ("numba", "pygmt", "rasterio"):
+        try:
+            pk[name] = version(name)
+        except PackageNotFoundError:
+            pass
     return dict(
         python=sys.version.split()[0],
         packages=pk,
         platform=platform.platform(),
         machine=platform.machine(),
-        external=ext,
     )
 
 
 def record(rec_dir):
     """Write .lant/provenance/<id>.json (once) and return the id."""
-    info = dict(code=code_version(), environment=environment())
+    from . import runtime_identity
+
+    runtime_identity.assert_unchanged()
+    runtime = runtime_identity.identity()
+    # The stable id describes code/environment, while each run records its PID/time separately.
+    info = dict(
+        code=code_version(),
+        environment=environment(),
+        runtime_source={k: runtime[k] for k in ("source_sha256", "sources", "root")},
+    )
     pid = hashlib.sha1(json.dumps(info, sort_keys=True).encode()).hexdigest()[:12]
     d = os.path.join(rec_dir, "provenance")
     os.makedirs(d, exist_ok=True)

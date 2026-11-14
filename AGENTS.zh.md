@@ -8,7 +8,7 @@
 
 按 [docs/ai_workflow.zh.md](docs/ai_workflow.zh.md) 做。要点：
 
-1. 先 `lant check`；缺的东西按它列出的命令安装（`lant install-external`）。
+1. 先 `lant check`；缺的东西按它列出的命令安装。
 2. 用 `lant run all --raw 目录 --stations 台站表 --out 目录` 开始（或 `lant init -o 配置` 后 `lant run all -c 配置`）。所有结果写到使用者的输出目录。**不在仓库里写结果，不改原始数据，不改 `lant/`。**
 3. 每次停下后运行 `lant status -c 配置 --json`：它给出每一步的状态、原因和下一条命令。先读 `输出目录/.lant/steps/<步骤>.md` 和它列出的文件，再往下走。
 4. 流程停下来等判断时，把报告里 “FOR YOU TO JUDGE” 下的事项连同图交给使用者，**由使用者决定：不得自行运行 `lant confirm`。** 把使用者的决定和理由记到 `输出目录/notes.md`。
@@ -19,12 +19,13 @@
 
 ## 修改本项目代码时
 
-- 结构：`lant/`（每步一个模块：`clean` `cc` `stack` `reference` `disp` `qc` `export`；`pipeline.py` 串起来；`manifest.py` 记录哪些结果成立；`auto.py` 是规则；`confirm.py` 是判断事项；`report.py` 是步骤报告；`params.py` 是每个键的含义和依据；另有 `response.py`、`stations.py`（台站表）、`station_match.py`（记录对应台站）、`pulse.py`（1 s 授时脉冲）、`fj.py`（F-J 谱和脊线）、`inversion/`、`plotting/`；工程基础设施：`paths.py`（目录布局）、`records.py`（步骤上下文、日志）、`artifacts.py`（文件登记、写锁上下文、缓存清理）、`delivery.py`（成果、REPORT、工程规则）、`progress.py`、`processes.py`（求解进程组、进程池看门狗）、`resources.py`（内存和磁盘）、`synthetic.py` 与 `demo.py`（已知答案的数据），`_external/`（第三方程序的编译脚本、补丁、fwd1d 源码）），`config/example.yaml`（完整模板，即 `lant init --full` 写出的内容），`docs/`，`examples/synthetic/`（与已知答案的比较），`tests/`（每个模块一个文件，公用函数在 `tests/util.py`）。
+- 结构：`lant/`（每步一个模块：`clean`（台站日归档由 `clean_archive.py` 处理）`cc` `stack` `reference` `disp` `qc` `export`；`pipeline.py` 串起来；`manifest.py` 记录哪些结果成立；`auto.py` 是规则；`confirm.py` 是判断事项；`report.py` 组装步骤报告；`step_descriptions.py` 描述各步骤已记录结果；`params.py` 是每个键的含义和依据；另有 `response.py`、`stations.py`（台站表）、`station_match.py`（记录对应台站）、`station_qc.py`（叠加步骤的台站诊断）、`pulse.py`（1 s 授时脉冲）、`fj.py`（F-J 谱和脊线）、`inversion/`（`run.py` 调度求解，`model_evaluation.py` 读取及评估模型）、`plotting/`（含 `figure_batch.py`，独立进程绘制主图）；工程基础设施：`record_index.py`（原始文件发现及头段缓存）、`paths.py`（目录布局）、`records.py`（步骤上下文、日志）、`artifacts.py`（文件登记、写锁上下文、缓存清理）、`delivery.py`（成果、REPORT、工程 README）、`assistant_rules.py`（工程里给 AI 助手的规则文件）、`progress.py`、`processes.py`（求解进程组、进程池看门狗）、`resources.py`（内存和磁盘）、`synthetic.py`、`synthetic_checkerboard.py` 与 `demo.py`（已知答案的数据）），`cc_kernel.py`（cc 的编译版台站对求和）、`config/example.yaml`（完整模板，即 `lant init --full` 写出的内容），`docs/`，`examples/synthetic/`（与已知答案的比较），`tests/`（每个模块一个文件，公用函数在 `tests/util.py`）。
 - 默认值只放在 `lant/config.py`；每个键都要在 `lant/params.py` 里有说明（有测试检查）。改了默认值或方法，要同步改两种语言的 `docs/parameters`（`python tools/make_parameter_doc.py`）、`docs/tutorial` 和 `docs/methods`，并在 `docs/history` 里记下改动。
 - 代码、配置、图中文字用英文。每份文档都有英文版（`x.md`）和中文版（`x.zh.md`），两版逐节对应。
 - 每个模块一个明确的职责，名字说明它做什么。约 500 行时检查是否混入了几个职责（混入了就拆；默认值表不算）；200 行以内不为凑小文件而拆。
 - 运行 `python -m pytest tests`，并用合成算例跑通改动涉及的步骤。
-- 不改 DSurfTomo 和 pDSurfTomo（只有安装脚本里 pDSurfTomo 的内存预留补丁）。
+- `dsurf_*` 模块逐句对应 DSurfTomo：改动其数值时必须重新与原版对比（docs/python_backends.zh.md）。
+- 核数由程序定（`resources.cores: auto`）；用户没要求不要设，只汇报每一步用了多少。
 - 方法和默认值要有出处：文献、理论，或明确标为“经验值”。不要自己造门限。
 
 ## 处理数据与开发仓库

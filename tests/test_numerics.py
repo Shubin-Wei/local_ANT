@@ -7,6 +7,7 @@ peak at the positive delay.
 
 import h5py
 import numpy as np
+import pytest
 from scipy.special import j0
 
 from lant import config, signal
@@ -128,6 +129,67 @@ def test_correlation_sign(monkeypatch):
     assert names == ["XX.A", "XX.B"] and abs(lag[np.argmax(x)] - 0.4) < 1e-9 and count[0, 0] > 100
 
 
+def test_pair_sums_match_the_segment_by_segment_sum():
+    """cc_kernel.pair_sums gives the sum the cc step formed with NumPy segment by segment (single-precision products
+    added in double precision, in segment order), with and without threads; zeroed stations add nothing."""
+    from lant import cc_kernel
+
+    rng = np.random.default_rng(5)
+    K, ns, nb = 7, 6, 37
+    spec = (rng.standard_normal((K, ns, nb)) + 1j * rng.standard_normal((K, ns, nb))).astype(np.complex64)
+    good = rng.random((K, ns)) > 0.2
+    spec[~good] = 0
+    iu, ju = np.triu_indices(ns, 1)
+    want = np.zeros((iu.size, nb), np.complex128)
+    for k in range(K - 1):  # the last segment is not part of the bin
+        want += np.conj(spec[k][iu]) * spec[k][ju]
+    for threads in (1, 3):
+        got = cc_kernel.pair_sums(spec, good, K - 1, iu, ju, np.full((iu.size, nb), np.nan, np.complex128), threads)
+        assert np.max(np.abs(got - want)) <= 1e-6 * np.max(np.abs(want))
+
+
+def test_day_ccf_written_hour_by_hour(monkeypatch, tmp_path):
+    """The hourly cross-coherences written to an HDF5 dataset as they are done equal those kept in memory."""
+    import h5py
+
+    from lant import cc
+    from lant import data as D
+
+    fs, n = 5.0, int(86400 * 5)
+    rng = np.random.default_rng(8)
+    recs = {k: rng.standard_normal(n).astype(np.float32) for k in ("XX.A", "XX.B", "XX.C")}
+    ok = np.ones(n, bool)
+    ok[15000:40000] = False  # hour 1 without data: never written, reads as zeros
+    monkeypatch.setattr(D, "read_day", lambda rows, t0, fs_: (recs[rows].copy(), ok.copy()))
+    opt = dict(fs=fs, seg_len=40.0, seg_step=20.0, maxlag=5.0, fmin=0.2, fmax=2.0, smooth_bins=1,
+               max_over_std=10.0, decomb=False, pair_chunk=2, threads=2)  # fmt: skip
+    by = {k: k for k in recs}
+    names, hourly, count, _, _ = cc.day_ccf(by, 0.0, opt)
+    with h5py.File(tmp_path / "x.h5", "w") as h:
+        res = cc.day_ccf(by, 0.0, opt, out=lambda nm, shape: h.create_dataset("hourly", shape, np.float32))
+        assert res[0] == names and np.array_equal(res[2], count) and np.array_equal(h["hourly"][:], hourly)
+    assert count.min() == 0 < count.max() and np.abs(hourly).max() > 0
+
+
+def test_failed_hourly_write_keeps_published_file(monkeypatch, tmp_path):
+    """A partial streamed file must not replace an earlier complete day or remain as an unregistered temp file."""
+    from lant import cc
+
+    path = tmp_path / "day_2024001.h5"
+    path.write_bytes(b"previous complete day")
+
+    def fail(*args, out, **kwargs):
+        dataset = out(["XX.A", "XX.B"], (24, 1, 3))
+        dataset[0] = 1
+        raise RuntimeError("reader or transform failed")
+
+    monkeypatch.setattr(cc, "day_ccf", fail)
+    monkeypatch.setattr(cc, "settings_of", lambda opt: {})
+    with pytest.raises(RuntimeError, match="transform failed"):
+        cc.process_day(("2024001", 0.0, {}, dict(out_dir=str(tmp_path))))
+    assert path.read_bytes() == b"previous complete day" and not (tmp_path / "day_2024001.h5.tmp").exists()
+
+
 def test_distance_on_the_ellipsoid():
     """geodesic_km against ObsPy (WGS84) at several latitudes and azimuths; the sphere differs by up to 0.6 %."""
     from obspy.geodetics import gps2dist_azimuth
@@ -144,3 +206,15 @@ def test_distance_on_the_ellipsoid():
     assert 0.001 < np.abs(sphere_km(lo1, la1, lo2, la2) / d - 1).max() < 0.007
     x, y = local_xy_km(np.r_[100.0, 100.03], np.r_[30.0, 30.02], 30.01, 100.015)
     assert abs(np.hypot(x[1] - x[0], y[1] - y[0]) / geodesic_km(100.0, 30.0, 100.03, 30.02)[0] - 1) < 1e-6
+
+
+def test_compiled_linear_detrend_is_scipy_bit_for_bit():
+    """cc_kernel.detrend_linear: scipy.signal.detrend(type="linear") with the same LAPACK least squares."""
+    from scipy.signal import detrend
+
+    from lant import cc_kernel
+
+    rng = np.random.default_rng(5)
+    for scale in (1e-3, 1.0, 1e4):
+        x = (scale * rng.standard_normal((7, 513)) + np.linspace(-3, 9, 513)).astype(np.float32).astype(np.float64)
+        assert np.array_equal(cc_kernel.detrend_linear(x), detrend(x, axis=1, type="linear"))

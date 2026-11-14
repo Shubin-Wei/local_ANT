@@ -11,11 +11,12 @@
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
 conda env create -f environment.yml && conda activate lant   # 同时从本仓库安装 lant
-lant install-external                                        # 下载并编译 DSurfTomo 和 pDSurfTomo
 lant check                                                   # 各项均应显示正常
 ```
 
 `lant check` 会对缺失项给出安装命令。
+
+反演就是当前环境中的 DSurfTomo Python 移植版，不需要另装求解器。与原生程序的对比见 [python_backends.zh.md](python_backends.zh.md)。
 
 ## 2. 用演示检验安装（约 5 分钟）
 
@@ -23,14 +24,14 @@ lant check                                                   # 各项均应显�
 lant demo --out ~/lant_demo
 ```
 
-演示生成一个小型合成台阵（已知一维模型中的 Rayleigh 平面波），运行完整流程，并给出报告位置 `~/lant_demo/output/REPORT.md`。演示会自行确认判断点；这只在数据由它自己生成时才成立，因此它拒绝在不是由它创建的目录中运行。
+演示生成一个小型合成台阵（已知一维背景上的 ±6 % 棋盘格），运行完整流程，并给出报告位置 `~/lant_demo/output/REPORT.md`。演示会自行确认判断点；这只在数据由它自己生成时才成立，因此它拒绝在不是由它创建的目录中运行。
 
 ## 3. 逐步运行
 
 如需了解流程在哪些地方停下等待使用者判断，可生成同样的数据并手动运行：
 
 ```bash
-python -m lant.synthetic --quick --out ~/lant_quick          # 10 个台站、6 小时记录，约 1 分钟
+python -m lant.synthetic --quick --out ~/lant_quick          # 16 个台站、6 小时记录，约 1 分钟
 lant run all -c ~/lant_quick/synthetic.yaml
 ```
 
@@ -39,8 +40,8 @@ lant run all -c ~/lant_quick/synthetic.yaml
 | 步骤 | 判断事项 | 依据 | 合成数据上的答案 |
 |---|---|---|---|
 | `clean` | 未提供响应文件时：所有台站是否为同一型号仪器？ | `work/01_clean/report.txt` | 是 |
-| `stack`（列出候选时） | 是否剔除所列的台站子叠加？ | `work/03_stack/station_qc/station_qc.png` | 没有故障台站，保留 |
-| `reference` | F-J 拾取是否沿基阶脊？ | `work/04_reference/fj.png` | 是 |
+| `stack`（列出候选时） | 是否剔除所列的台站子叠加？ | `results/figures/2_station_qc.png` | 没有故障台站，保留 |
+| `reference` | F-J 拾取是否沿基阶脊？ | `results/figures/3_fj_phase_velocity.png` | 是 |
 | `inversion` | 一维起始模型及其对平均曲线的拟合是否合理？ | `results/figures/4_start_model.png` | 是 |
 
 记录每项决定后重新运行，流程从停止处继续：
@@ -57,7 +58,7 @@ lant status -c ~/lant_quick/synthetic.yaml                     # 各步骤状态
 python examples/synthetic/compare_truth.py --dir ~/lant_quick
 ```
 
-输出各频率上实测与真实相速度之差，以及反演模型与真实模型之差。6 小时记录得到的数字比完整算例粗略（完整算例为 16 个台站、3 天，约 300 MB，处理约 1 小时；去掉 `--quick` 即可生成），见[验证](validation.zh.md)。
+它按 README 风格画出输入与恢复棋盘格、相速度曲线和 Vs 剖面；输出相对背景曲线的偏差，以及相对所存真模型的三维模型误差。背景曲线偏差不是逐路径相速度误差。6 小时记录得到的数字比完整算例粗略（完整算例为 16 个台站、3 天，约 300 MB，处理约 1 小时；去掉 `--quick` 即可生成），见[验证](validation.zh.md)。
 
 ## 4. 处理自己的数据
 
@@ -94,8 +95,8 @@ lant run all -c /data/result/config.yaml
 | 文件 | 用途 |
 |---|---|
 | `.lant/steps/<步骤>.md` | 每一步做了什么、使用的参数（数值和来源）、留给你判断的事项 |
-| `work/01_clean/coverage.png` | 各台站各天的数据量 |
-| `work/04_reference/fj.png` | 参考曲线是否沿基阶 |
+| `results/figures/0_data_coverage.png` | 各台站各天的数据量 |
+| `results/figures/3_fj_phase_velocity.png` | 参考曲线是否沿基阶 |
 | `results/figures/3_dispersion_curves.png` | 全部频散曲线及参考曲线 |
 | `results/figures/5_depth_slices.png`、`5_sections.png`、`6_checkerboard_*.png` | 模型及其可分辨的尺度，须结合起来看 |
 

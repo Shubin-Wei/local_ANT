@@ -27,10 +27,10 @@ from collections import defaultdict
 import numpy as np
 
 from . import stations as ST
-
-
-class DataError(ValueError):
-    pass
+from .record_index import DataError as DataError
+from .record_index import build_index as build_index
+from .record_index import find_files as find_files
+from .record_index import read_quiet as read_quiet
 
 
 # --------------------------------------------------------------------------------------------- station tables
@@ -107,116 +107,6 @@ def used_stations(cfg):
     sta = read_canonical(p)
     ex = set(resolve_names(cfg["data"]["exclude_stations"], sta, "data.exclude_stations"))
     return {k: v for k, v in sta.items() if k not in ex}
-
-
-# --------------------------------------------------------------------------------------------- raw file index
-def find_files(raw_dir, patterns, ignore):
-    if not raw_dir or not os.path.isdir(raw_dir):
-        raise DataError("data.raw_dir %s is not a directory" % raw_dir)
-    out = []
-    for root, dirs, files in os.walk(raw_dir, followlinks=True):
-        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
-        for f in sorted(files):
-            if any(fnmatch.fnmatch(f, p) for p in patterns) and not any(fnmatch.fnmatch(f, p) for p in ignore):
-                out.append(os.path.join(root, f))
-    return out
-
-
-def read_quiet(path, **kw):
-    """obspy.read without the warnings of the reader -> (stream, number of warnings).  Recorder files often carry
-    blocks that are not data (padding of pre-allocated files): the miniSEED reader skips them with one warning
-    each, hundreds of thousands per file; they are counted, not printed."""
-    import warnings
-
-    import obspy
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        st = obspy.read(path, **kw)
-    return st, len(w)
-
-
-def _scan_one(args):
-    path, fmt = args
-    try:
-        st, nwarn = read_quiet(path, format=None if fmt == "auto" else fmt, headonly=True)
-    except Exception as exc:  # not a seismic data file, or corrupt
-        return path, None, "%s: %s" % (type(exc).__name__, str(exc)[:150])
-    rows = []
-    for tr in st:
-        s = tr.stats
-        coord, cmpinc = None, None
-        if "sac" in s:
-            sac = s.sac
-            la, lo = sac.get("stla"), sac.get("stlo")
-            if la is not None and lo is not None and abs(la) <= 90 and la != -12345.0 and lo != -12345.0:
-                el = sac.get("stel", -12345.0)
-                coord = (float(lo), float(la), float(el) if el != -12345.0 else np.nan)
-            ci = sac.get("cmpinc")
-            if ci is not None and ci != -12345.0:
-                cmpinc = float(ci)
-        rows.append(
-            dict(
-                file=path,
-                net=s.network,
-                sta=s.station,
-                channel=s.channel,
-                location=s.location,
-                fs=float(s.sampling_rate),
-                start=s.starttime.timestamp,
-                end=s.endtime.timestamp + 1.0 / s.sampling_rate,
-                npts=int(s.npts),
-                format=str(s.get("_format", "")),
-                coord=coord,
-                cmpinc=cmpinc,
-            )
-        )
-    return path, rows, nwarn
-
-
-def build_index(cfg, nproc=4):
-    """Scan the headers of every candidate file -> index dict (all channels)."""
-    from multiprocessing import Pool
-
-    from .processes import pool_results
-
-    d = cfg["data"]
-    files = find_files(d["raw_dir"], d["file_patterns"], d["ignore_patterns"])
-    if not files:
-        raise DataError("no candidate files under %s" % d["raw_dir"])
-    # headers read by an earlier run are used again for the files that have not changed (path, size, time)
-    cache_path = os.path.join(cfg["project"]["output_dir"], "work", "01_clean", "header_cache.json")
-    cache, sig = {}, {}
-    try:
-        c = json.load(open(cache_path))
-        if c.get("format") == d["format"]:
-            cache = c["files"]
-    except (OSError, ValueError, KeyError):
-        pass
-    for f in files:
-        st = os.stat(f)
-        sig[f] = [st.st_size, int(st.st_mtime)]
-    todo = [f for f in files if f not in cache or cache[f][0] != sig[f]]
-    with Pool(nproc) as pool:
-        tasks = [(f, d["format"]) for f in todo]
-        new = {r[0]: r for r in pool_results(pool, _scan_one, tasks, chunksize=16, ordered=True)}
-    res = [new[f] if f in new else (f, cache[f][1], cache[f][2]) for f in files]
-    try:
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        with open(cache_path + ".tmp", "w") as fh:
-            json.dump(dict(format=d["format"], files={r[0]: [sig[r[0]], r[1], r[2]] for r in res}), fh)
-        os.replace(cache_path + ".tmp", cache_path)
-    except OSError:
-        pass
-    traces, unreadable, skipped = [], [], []
-    for path, rows, err in res:
-        if rows is None:
-            unreadable.append((path, err))
-        else:
-            traces.extend(rows)
-            if err:
-                skipped.append((path, int(err)))
-    return dict(raw_dir=d["raw_dir"], n_files=len(files), unreadable=unreadable, traces=traces, reader_warnings=skipped)
 
 
 def orientation(tr):

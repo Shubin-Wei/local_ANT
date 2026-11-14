@@ -193,3 +193,59 @@ def test_stray_files_at_the_top_of_the_project_are_reported(tmp_path):
     found = artifacts.audit(cfg)
     assert found["unregistered"] == ["check_dispersion.py", "tmp_plots/a.png"]
     assert found["scratch"] == dict(files=1, bytes=9)
+
+
+@pytest.mark.parametrize("step", ["run", "evaluate"])
+def test_step_protects_unknown_forward_cache_files(tmp_path, step):
+    cfg = setup_project(tmp_path)
+    entry = tmp_path / ".lant/forward_cache/user.npz"
+    entry.parent.mkdir()
+    entry.write_bytes(b"user data")
+    with pytest.raises(RuntimeError, match="unregistered files"):
+        with records.Step(cfg, step):
+            pytest.fail("must not overwrite an unknown cache entry")
+    assert entry.read_bytes() == b"user data"
+
+
+def test_forward_cleanup_is_optional_and_preserves_other_state(tmp_path, monkeypatch):
+    from lant import delivery, manifest
+
+    cfg = setup_project(tmp_path)
+    cfg["data"]["raw_dir"] = str(tmp_path)
+    folder = tmp_path / ".lant/forward_cache"
+    folder.mkdir()
+    before = artifacts.snapshot(cfg)
+    (folder / "registered.npz").write_bytes(b"cached")
+    artifacts.register(cfg, before)
+    (folder / "unknown.npz").write_bytes(b"user")
+    manifest._save(cfg, {"steps": {"cc": {"state": "done"}}})
+    monkeypatch.setattr(manifest, "status", lambda *a, **kw: {"evaluate": {"state": "done"}})
+    monkeypatch.setattr(delivery, "write_report", lambda _: None)
+    plan = artifacts.clean(cfg, ["forward"])
+    assert [v["path"] for v in plan["files"]] == [".lant/forward_cache/registered.npz"]
+    artifacts.clean(cfg, ["forward"], execute=True)
+    assert not (folder / "registered.npz").exists()
+    assert (folder / "unknown.npz").read_bytes() == b"user"
+    assert "cache_cleaned" not in manifest.load(cfg)["steps"]["cc"]
+
+
+def test_pruning_removes_only_unread_registered_solver_files_of_check_projects(tmp_path):
+    from lant import config, paths
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path / "project")
+    root = Path(cfg["project"]["output_dir"])
+    inv = Path(paths.P(cfg, paths.INV))
+    cb, main = inv / "checkerboards" / "cb_1km", inv / "main"
+    names = ["DSurfTomo.inMeasure.dat.iter001", "residualFirst.dat", "residualLast.dat", "velmap2dRc.dat"]
+    keep = ["DSurfTomo.in", "DSurfTomo.in.log", "DSurfTomo.inSyn.dat", "Vs_model.real", "MOD", "run.log"]
+    with artifacts.writing(cfg, "run"):
+        for d in (cb, main):
+            d.mkdir(parents=True, exist_ok=True)
+            for n in names + keep:
+                (d / n).write_text(n)
+    (cb / "velmap2dRc.dat").write_text("changed by hand")
+    out = artifacts.prune_check_projects(cfg, [str(cb), str(main)])
+    assert out["files"] == 3 and out["kept"] == [(cb / "velmap2dRc.dat").relative_to(root).as_posix()]
+    assert sorted(p.name for p in cb.iterdir()) == sorted(keep + ["velmap2dRc.dat"])
+    assert sorted(p.name for p in main.iterdir()) == sorted(names + keep)  # the main project is never pruned

@@ -47,13 +47,6 @@ def test_noninteractive_rebuild_and_cleanup_require_yes(tmp_path, monkeypatch, c
     assert not (tmp_path / "out").exists()
 
 
-def test_install_external_defaults_to_both_programs(monkeypatch):
-    called = []
-    monkeypatch.setattr(cli, "cmd_install_external", lambda args: called.append(args.programs))
-    cli.main(["install-external"])
-    assert called == [[]]
-
-
 def test_multiline_dispatch_preserves_execution_options(monkeypatch):
     import subprocess
 
@@ -144,11 +137,13 @@ def test_finished_chain_says_where_to_look(tmp_path):
     }
     for step, data in summaries.items():
         (rec / ("%s.json" % step)).write_text(json.dumps(data))
+    (tmp_path / "results/figures").mkdir(parents=True)
+    (tmp_path / "results/figures/1_stations.png").write_bytes(b"")  # counted as published, not as drawn
     lines = delivery.finish_lines({"project": {"output_dir": str(tmp_path)}})
     assert lines[0].endswith("REPORT.md") and "results" in lines[1]
     assert lines[2] == (
         "  10 stations, 1 processing day; 35 phase-velocity curves (840 points); residual rms of all 810 "
-        "travel times 20.7 -> 8.1 ms; 1 checkerboard test; 1 figure"
+        "travel times 20.7 -> 8.1 ms; 1 checkerboard test; 1 figure in results/figures"
     )
 
 

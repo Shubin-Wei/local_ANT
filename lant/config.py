@@ -28,6 +28,7 @@ DEFAULTS = {
         "name": "my_array",
         "array_type": "auto",  # auto: from the station geometry (array_type_of) | surface (areal array) | line
         "output_dir": None,  # required
+        "ai_assistant": None,  # the one rules file written: codex AGENTS.md, claude CLAUDE.md, gemini GEMINI.md; null AGENTS.md
     },
     "data": {
         "raw_dir": None,  # required: directory searched recursively; any layout, any file names
@@ -78,7 +79,6 @@ DEFAULTS = {
     },
     "clean": {
         "write_archive": True,  # write the cleaned day files (work/01_clean/archive); False = later steps read the raw files
-        "nproc": 4,
         "encoding": "FLOAT32",  # miniSEED encoding of the archive (FLOAT32 keeps integer and float data exactly
         # up to 2**24 counts; use INT32 or STEIM2 for integer data to save space)
         "min_free_disk_factor": 1.2,  # refuse to write the archive if free disk < factor x the estimated size
@@ -100,8 +100,6 @@ DEFAULTS = {
         "remove_1s_comb": "auto",  # removal of a UTC-locked 1-s periodic signal (logger timing pulses,
         # Takagi et al. 2015): subtract the waveform folded modulo 1 s, hour by hour.
         # auto: for the stations where the clean step detects it | true: all | false
-        "nproc": 4,
-        "threads_per_process": 2,
     },
     "stack": {
         "block_hours": "auto",  # sub-stack length for the jackknife; auto: the longest of 24, 12, 8, 6, 4, 3, 2, 1 h
@@ -150,7 +148,6 @@ DEFAULTS = {
         "anchor_max_lambda": 3.5,  # cycle count anchored only where the path is 1.0-3.5 wavelengths
         "njack": 5,  # jackknife groups; "auto" = blocks with >= 25 % of the fullest block
         "min_jackknife_groups": 3,
-        "nproc": 8,
         "chunk": 20,
         "side_off_bands": "",  # bands 'lo-hi,...' where the side-lobe rule is not applied
         "qc": {  # phase velocity; every threshold of the measurement is here (none hidden)
@@ -191,8 +188,8 @@ DEFAULTS = {
             "iterations": 14,
             "minthk": 3,  # smooth: curvature of the model (jumping)
         },
-        "weight": 1.0,
-        "damp": 1.0,
+        "weight": 1.0,  # smoothing weight, fixed (calibrated on the synthetic examples, docs/methods.md 8.4)
+        "damp": 0.1,  # damping, fixed (calibrated on the synthetic examples, docs/methods.md 8.4)
         "sublayers": 3,
         "vmin": "auto",  # auto: 0.6 x the slowest Vs of the starting model
         "vmax": "auto",  # auto: 1.4 x the fastest
@@ -200,26 +197,26 @@ DEFAULTS = {
         "sparsity": "auto",  # auto: twice the estimated filling of DSurfTomo's matrix, at least 0.05
         "threshold": 3.0,
         "noise": "auto",  # checkerboard noise; auto: relative rms of the kept residuals of the main model
-        "solver": "dsurftomo",  # dsurftomo | pdsurftomo
-        "threads": 4,
-        "njobs": 1,  # projects run at the same time
     },
     "checks": {
         # horizontal checkerboards: cell size (half wavelength) north-south and east-west in km
-        # auto: cells of 0.12, 0.18 and 0.25 x the array aperture
+        # auto: one test, cell = max(median measured wavelength, 2 x median nearest-station distance)
         "checkerboards": "auto",
         # depth-varying checkerboards: the lateral pattern changes sign at each of these depths
-        # auto: cell 0.18 x aperture, sign reversals at 0.21, 0.46, 0.71 x the deepest updated node
+        # auto: one test, the same cell, one sign reversal at the median measured wavelength / 3
         "vertical": "auto",
         "amplitude": 0.10,  # checkerboard perturbation, a fraction of the 1-D Vs of each depth (+-10 %)
-        # reg_w<w>_d<d>: other regularisation; start_grad<f>: starting model x(1 + f) at the surface to x(1 - f) at the
-        # deepest updatable node, centred on the data (start_x<f>, a uniform factor, fails with DSurfTomo's rejection
-        # rule: the precheck marks it invalid)
-        "controls": ["start_grad0.05"],  # add e.g. "reg_w0.5_d0.5", "reg_w2_d2" for other regularisation
+        # reg_x<f>: the smoothing weight of the main project times f (the damping as there); reg_w<w>_d<d>: given
+        # weight and damping; start_grad<f>: starting model x(1 + f) at the surface to x(1 - f) at the deepest
+        # updatable node, centred on the data (start_x<f>, a uniform factor, fails with DSurfTomo's rejection rule:
+        # the precheck marks it invalid).  Add reg_x0.5 and reg_x2 to see how much the model depends on the weight
+        # (two more inversions: not run by default, user's decision 2026-11-13)
+        "controls": ["start_grad0.05"],
         "precheck": {"min_kept": 0.5, "max_median_iqr": 1.0},  # a project is invalid below / beyond these
         "iteration_residuals": False,  # evaluate also the model of every iteration (one forward run each)
     },
     "plots": {
+        "backend": "gmt",  # gmt reference | pygmt candidate using the GMT C API
         "formats": ["png"],
         "dpi": 300,
         "topography": "auto",  # auto: SRTM 1" tiles from the GMT data server; a grid file; null = no relief
@@ -233,13 +230,17 @@ DEFAULTS = {
         "font_scale": 1.0,
         "pair_example": None,  # pair(s) of the single-pair figures (default: three, short / middle / long)
     },
+    "resources": {
+        "cores": "auto",  # auto: 80 % of the idle cores, taken again at every step and solver project
+        # (lant/resources.py); an integer is used as given
+    },
 }
 
 LINE_OVERRIDES = {
     "data": {"min_trace_length_s": 600.0},
     "reference": {"fj_mode": "track_fundamental"},
     "dispersion": {"njack": "auto"},
-    "inversion": {"median_min_pairs": 20, "grid_refine": 1, "line_strip_cells": 1.0, "weight": 1.5, "damp": 1.5},
+    "inversion": {"median_min_pairs": 20, "grid_refine": 1, "line_strip_cells": 1.0},
 }
 
 REQUIRED = [("project", "output_dir"), ("data", "raw_dir"), ("data", "station_file")]
@@ -290,6 +291,20 @@ REMOVED = {  # keys of earlier versions: what to do instead
     "dispersion.qc.smooth_c": "removed in 1.4 (it changed nothing in the tests with noise and a second arrival, "
     "docs/validation.md); delete the key",
 }
+_CORES = (
+    "removed in 2.0: the program sets the number of processes and threads from resources.cores (default auto: 80 % "
+    "of the idle cores, docs/parameters.md); delete the key"
+)
+REMOVED.update({k: _CORES for k in (
+    "clean.nproc", "correlation.nproc", "correlation.threads_per_process", "dispersion.nproc",
+    "inversion.threads", "inversion.njobs",
+)})  # fmt: skip
+REMOVED.update({
+    "inversion.solver": "removed in 2.0: the inversion is always the Python port of DSurfTomo (DSurfTomo and "
+    "pDSurfTomo are no longer used); delete the key",
+    "inversion.start_model.forward": "removed in 2.0: the 1-D forward calculation is always DSurfTomo's surfdisp96 "
+    "(ported; fwd1d and disba are no longer used); delete the key",
+})  # fmt: skip
 
 
 def _merge(base, over, where=""):
@@ -400,11 +415,12 @@ def load(path):
                 except (KeyError, TypeError) as exc:
                     raise ConfigError("confirmed.%s: unknown key %s" % (step, key)) from exc
     validate(cfg)
-    marker = os.path.join(cfg["project"]["output_dir"], ".lant", "layout.json")
+    root = cfg["project"]["output_dir"]
+    marker = os.path.join(root, ".lant", "layout.json")
+    from .delivery import LAYOUT_VERSION, old_project_message
+
     if os.path.exists(marker):
         import json
-
-        from .delivery import LAYOUT_VERSION
 
         try:
             with open(marker) as fh:
@@ -412,7 +428,9 @@ def load(path):
         except (ValueError, AttributeError) as exc:
             raise ConfigError("invalid layout record %s: %s" % (marker, exc)) from exc
         if version != LAYOUT_VERSION:
-            raise ConfigError("unsupported project layout version: %r" % version)
+            raise ConfigError(old_project_message(root, version))
+    elif os.path.exists(os.path.join(root, ".lant", "manifest.json")):
+        raise ConfigError(old_project_message(root, None))
     return cfg
 
 
@@ -520,16 +538,11 @@ INTEGERS = [
     ("dispersion", "per_octave"),
     ("dispersion", "min_jackknife_groups"),
     ("dispersion", "qc", "min_run"),
-    ("dispersion", "nproc"),
     ("dispersion", "chunk"),
-    ("correlation", "nproc"),
-    ("correlation", "threads_per_process"),
     ("correlation", "smooth_bins"),
     ("inversion", "iterations"),
     ("inversion", "sublayers"),
     ("inversion", "grid_refine"),
-    ("inversion", "threads"),
-    ("inversion", "njobs"),
     ("inversion", "median_min_pairs"),
     ("inversion", "start_model", "iterations"),
     ("inversion", "start_model", "minthk"),
@@ -543,8 +556,33 @@ ORDERED = [
 ]
 
 
+_NUMBER = r"([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)"
+_CONTROL = re.compile(r"^(?:(reg_x|start_x|start_grad)%s|reg_w%s_d%s)$" % (_NUMBER, _NUMBER, _NUMBER))
+
+
+def _check_controls(controls):
+    """checks.controls before anything runs (lant.inversion.project.build_checks builds them after the main project):
+    reg_x<f> and start_x<f> with f > 0, start_grad<f> with 0 < |f| < 0.5, reg_w<w>_d<d> with w, d > 0, no repeats."""
+    if not isinstance(controls, list):
+        raise ConfigError("checks.controls must be a list, not %r" % (controls,))
+    for name in controls:
+        m = _CONTROL.match(str(name))
+        if m:
+            kind, values = m.group(1) or "reg_w", [float(x) for x in m.groups()[1:] if x is not None]
+            ok = 0 < abs(values[0]) < 0.5 if kind == "start_grad" else all(v > 0 for v in values)
+        if not m or not ok:
+            raise ConfigError(
+                "checks.controls: %r is not a control: use reg_x<f> or start_x<f> (f > 0), start_grad<f> "
+                "(0 < |f| < 0.5) or reg_w<w>_d<d> (w, d > 0)" % (name,)
+            )
+    if len(set(controls)) != len(controls):
+        raise ConfigError("checks.controls: a control is listed twice: %r" % (controls,))
+
+
 def validate(cfg):
     """Checks that do not need the data (values still "auto" are checked after they are resolved)."""
+    if cfg["project"]["ai_assistant"] not in (None, "codex", "gemini", "claude"):
+        raise ConfigError("project.ai_assistant must be null, codex, gemini or claude")
     c, d = cfg["correlation"], cfg["dispersion"]
     num = lambda *v: not any(is_auto(x) for x in v)
     for keys in POSITIVE:
@@ -646,6 +684,10 @@ def validate(cfg):
     if cfg["reference"]["fj_mode"] not in ("max_peak", "track_fundamental"):
         raise ConfigError("reference.fj_mode must be 'max_peak' or 'track_fundamental'")
     sm = cfg["inversion"]["start_model"]
+    if cfg["plots"]["backend"] not in ("gmt", "pygmt"):
+        raise ConfigError("plots.backend must be 'gmt' or 'pygmt'")
+    if cfg["plots"]["formats"] != ["png"]:
+        raise ConfigError("plots.formats must be [png]; workflow figures are PNG only")
     if sm["source"] not in ("invert", "file") or (sm["source"] == "file" and not sm["file"]):
         raise ConfigError("inversion.start_model.source must be 'invert', or 'file' with start_model.file")
     if cfg["inversion"]["wave"] != "rayleigh_phase":
@@ -653,8 +695,19 @@ def validate(cfg):
             "inversion.wave %r: only rayleigh_phase (Rayleigh-wave phase velocities) is supported"
             % cfg["inversion"]["wave"]
         )
-    if cfg["inversion"]["solver"] not in ("dsurftomo", "pdsurftomo"):
-        raise ConfigError("inversion.solver must be 'dsurftomo' or 'pdsurftomo'")
+    _check_controls(cfg["checks"]["controls"])
+    for k in ("weight", "damp"):
+        v = cfg["inversion"][k]
+        if is_auto(v):
+            raise ConfigError(
+                "inversion.%s: auto was removed in 2.0 (the weight and the damping are fixed defaults calibrated on "
+                "synthetic data, docs/parameters.md): give a positive number or delete the key" % k
+            )
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not np_isfinite(v) or v <= 0:
+            raise ConfigError("inversion.%s must be a positive number, not %r" % (k, v))
+    n = cfg["resources"]["cores"]
+    if n != "auto" and (isinstance(n, bool) or not isinstance(n, int) or n < 1):
+        raise ConfigError("resources.cores must be auto or a whole number >= 1, not %r" % (n,))
     seq = cfg["inversion"]["depth_sequence_km"]
     if num(seq) and (seq[0] != 0 or any(round(b, 3) <= round(a, 3) for a, b in zip(seq[:-1], seq[1:]))):
         raise ConfigError(

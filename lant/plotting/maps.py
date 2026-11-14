@@ -3,7 +3,7 @@
 Style (as in ambient-noise papers): hill-shaded relief (plots.topography; coloured under the station map, light grey
 under the model maps, plain background without relief), model values resampled bilinearly for display (node values
 unchanged), clipped to the convex hull of the stations and drawn 35 % transparent over the relief, GMT "seis" colour
-table red (slow) to blue (fast) for Vs, red - white - blue for the checkerboards, one scale bar, one colour bar per
+table red (slow) to blue (fast) for Vs, a red - white - blue scale for checkerboards, one scale bar, one colour bar per
 figure.  No geological information is drawn.
 """
 
@@ -54,7 +54,10 @@ def _ticks(W, E, S, N):
 def _geo_format(*steps):
     """--FORMAT_GEO_MAP with as many decimals as the annotation steps need (0.025 degrees: three), at least two."""
     nd = max([2] + [len(("%.6f" % s).rstrip("0").split(".")[1]) for s in steps])
-    return "--FORMAT_GEO_MAP=ddd.%sF" % ("x" * nd)
+    # GMT 6.6's ddd.xxx formatting can drop a leading fractional zero when
+    # longitude/latitude annotation steps differ (30.075 becomes 30.75).
+    # Decimal-degree formatting uses the explicit floating format for both axes.
+    return "--FORMAT_GEO_MAP=DF --FORMAT_FLOAT_OUT=%%.%df --FORMAT_FLOAT_MAP=%%.%df" % (nd, nd)
 
 
 def _write(path, text):
@@ -62,24 +65,25 @@ def _write(path, text):
         f.write(text)
 
 
-def station_map(cfg, stations, out, excluded=None, title=None):
-    """Stations over coloured, hill-shaded relief; excluded stations (data.exclude_stations) as red crosses; legend
-    outside the map, elevation colour bar, scale bar."""
+def station_map(cfg, stations, out, excluded=None, title=None, inversion_count=None):
+    """Matched records over relief at true geographic proportions, with a bounded height and internal legend.
+    The inversion count, when known, is separate from the number of stations with records."""
     excluded = excluded or {}
     allst = list(stations.values()) + list(excluded.values())
     W, E, S, N = _region([s["lon"] for s in allst], [s["lat"] for s in allst])
     tmp = G.workdir()
-    np.savetxt(tmp + "/sta.xy", np.array([(s["lon"], s["lat"]) for s in stations.values()]), fmt="%.6f")
+    sta_xy = np.array([(s["lon"], s["lat"]) for s in stations.values()])
+    np.savetxt(tmp + "/sta.xy", sta_xy, fmt="%.6f")
     if excluded:
         np.savetxt(tmp + "/exc.xy", np.array([(s["lon"], s["lat"]) for s in excluded.values()]), fmt="%.6f")
     fs = cfg["plots"]["font_scale"]
-    width = 14.0
+    width = min(12.0, 14.0 / G.mercator_height(1.0, W, E, S, N))
     H = G.mercator_height(width, W, E, S, N)
-    P = "-R%.5f/%.5f/%.5f/%.5f -JM%gc -Xa2.2c -Ya1.6c" % (W, E, S, N, width)
+    P = "-R%.5f/%.5f/%.5f/%.5f -JM%gc -Xa2.2c -Ya1.8c" % (W, E, S, N, width)
     pre, relief = G.relief_cmds(cfg, tmp, W, E, S, N, palette="elevation")
     dx, dy = _ticks(W, E, S, N)
     km, latc = G.scale_km(W, E, S, N)
-    sym = 0.32 * fs * (1.0 if len(stations) < 120 else 0.8)
+    sym = 0.17 * fs * (1.0 if len(stations) < 120 else 0.8)
     cmd = []
     if relief:
         cmd.append("gmt grdimage %s/topo.nc -I%s/shade.nc -C%s/relief.cpt %s" % (tmp, tmp, tmp, P))
@@ -89,27 +93,36 @@ def station_map(cfg, stations, out, excluded=None, title=None):
     _write(tmp + "/title.txt", (title or cfg["project"]["name"]) + "\n")
     cmd += [
         "gmt basemap %s -BWSne -Bxa%gf%g -Bya%gf%g --FONT_ANNOT_PRIMARY=%gp,Helvetica %s"
-        % (P, dx, dx / 4, dy, dy / 4, 11 * fs, _geo_format(dx, dy)),
-        "gmt text %s/title.txt -R0/1/0/1 -JX%gc/%gc -Xa2.2c -Ya1.6c -F+cTC+f%gp,Helvetica+jBC -D0/0.35c -N"
-        % (tmp, width, H, 14 * fs),
-        "gmt basemap %s -LjBL+c%.4f+w%gk+f+l'%g km'+o0.6c/0.6c --MAP_SCALE_HEIGHT=0.15c --FONT_ANNOT_PRIMARY=%gp,Helvetica "
-        "--FONT_LABEL=%gp,Helvetica" % (P, latc, km, km, 10 * fs, 10 * fs),
+        % (P, dx, dx / 4, dy, dy / 4, 9 * fs, _geo_format(dx, dy)),
+        "gmt text %s/title.txt -R0/1/0/1 -JX%gc/%gc -Xa2.2c -Ya1.8c -F+cTC+f%gp,Helvetica+jBC -D0/0.28c -N"
+        % (tmp, width, H, 11 * fs),
+        "gmt basemap %s -LjBL+c%.4f+w%gk+f+l'%g km'+o0.45c/0.45c --MAP_SCALE_HEIGHT=0.14c --FONT_ANNOT_PRIMARY=%gp,Helvetica "
+        "--FONT_LABEL=%gp,Helvetica" % (P, latc, km, km, 9 * fs, 9 * fs),
     ]
-    leg = "S 0.3c t %.2fc white 0.6p,black 0.75c Stations used (%d)\n" % (sym, len(stations))
+    leg = "S 0.14c t %.2fc white 0.6p,black 0.38c Recorded (%d)\n" % (sym, len(stations))
     if excluded:
-        leg += "S 0.3c x %.2fc - 1.6p,red 0.75c Stations excluded (%d)\n" % (0.8 * sym, len(excluded))
+        leg += "S 0.14c x %.2fc - 1.6p,red 0.38c Excluded (%d)\n" % (0.8 * sym, len(excluded))
+    if inversion_count is not None:
+        leg += "L %gp,Helvetica L Inversion (%d)\n" % (7.5 * fs, inversion_count)
     _write(tmp + "/legend.txt", leg)
+    # Place internal legend in the upper corner (TL or TR) with more clearance from the stations
+    ux = (sta_xy[:, 0] - W) / max(E - W, 1e-9)
+    uy = (N - sta_xy[:, 1]) / max(N - S, 1e-9)
+    corner = "TR" if np.min(np.hypot(1.0 - ux, uy)) > np.min(np.hypot(ux, uy)) else "TL"
+    leg_w = min(2.35, max(1.9, 0.41 * width))
     cmd.append(
-        "gmt legend %s/legend.txt %s -DJTR+jTL+w6.2c+o0.4c/0c -F+p0.5p+gwhite --FONT_ANNOT_PRIMARY=%gp,Helvetica"
-        % (tmp, P, 11 * fs)
+        "gmt legend %s/legend.txt %s -Dj%s+j%s+w%.2fc+o0.15c/0.15c -F+p0.3p,gray60+gwhite@10 --FONT_ANNOT_PRIMARY=%gp,Helvetica"
+        % (tmp, P, corner, corner, leg_w, 7.5 * fs)
     )
     if relief:
+        cb_w = min(5.0, 0.82 * width)
+        scale_comp = np.sqrt(max(cb_w, 1.5) / 15.0)
         cmd.append(
-            "gmt colorbar -C%s/relief.cpt %s -DJBR+jBL+w%.2fc/0.35c+o0.6c/0c -Bxaf+l'Elevation (m)' "
+            "gmt colorbar -C%s/relief.cpt %s -DJBC+w%.2fc/0.22c+h+o0c/0.95c -Bxaf+l'Elevation (m)' "
             "--FONT_ANNOT_PRIMARY=%gp,Helvetica --FONT_LABEL=%gp,Helvetica"
-            % (tmp, P, min(5.0, 0.45 * H), 10 * fs, 11 * fs)
+            % (tmp, P, cb_w, 8 * fs / scale_comp, 9 * fs / scale_comp)
         )
-    return G.run(tmp, pre, cmd, out, cfg["plots"]["formats"], cfg["plots"]["dpi"])
+    return G.run(tmp, pre, cmd, out, cfg["plots"]["formats"], cfg["plots"]["dpi"], backend=cfg["plots"]["backend"])
 
 
 def _hull(stations, tmp):
@@ -228,7 +241,16 @@ def panels(
         "--FONT_LABEL=%gp,Helvetica"
         % (tmp, x0 + total / 2, y0 - 0.9, min(9.0, total * 0.7), "+e" if extend else "", annot, label, 9 * fs, 10 * fs)
     )
-    return G.run(tmp, pre, cmd, out, cfg["plots"]["formats"], cfg["plots"]["dpi"], font=(7 * fs, 8 * fs))
+    return G.run(
+        tmp,
+        pre,
+        cmd,
+        out,
+        cfg["plots"]["formats"],
+        cfg["plots"]["dpi"],
+        font=(7 * fs, 8 * fs),
+        backend=cfg["plots"]["backend"],
+    )
 
 
 def depth_slices(cfg, model, stations, out, depths=None, traces=None):
@@ -282,12 +304,17 @@ def checker_layers(project):
 
 def checkerboard(cfg, project, stations, out, depths=None, vertical=False):
     """Input pattern and the recovered model at up to seven depths, in per cent of the 1-D background, red (slow)
-    - white - blue (fast); labels boxed in the panels.  vertical: the input changes with depth, so every recovered
+    - white (zero) - blue (fast); labels boxed in the panels.  vertical: the input changes with depth, so every recovered
     depth is shown next to its input (input and recovery in alternate panels)."""
     tru, syn, bg = checker_layers(project)
     dep = np.unique(np.round(syn[:, 2], 3))
     avail = [z for z in cfg["plots"]["slice_depths_km"] if np.min(np.abs(dep - z)) < 1e-3]
-    depths = depths or (avail[:4] if vertical else avail[:7])
+    if not depths and vertical:  # spread over the depth range, so that the sign reversal shows
+        idx = np.unique(np.round(np.linspace(0, len(avail) - 1, min(4, len(avail)))).astype(int))
+        depths = [avail[i] for i in idx]
+    depths = depths or avail[:7]
+    if not depths:
+        raise RuntimeError("no plots.slice_depths_km lies on a depth node of %s" % project)
     layers, labels = [], []
 
     def lay(a, z):
@@ -382,7 +409,9 @@ def slices_3d(cfg, model, stations, out, depths=None):
     pre += r_pre
     if relief:  # elevations mapped onto [TOP, TOP + RELIEF_Z] of the depth axis (relief exaggerated)
         pre += [
-            "read ZMIN ZMAX <<< \"$(gmt grdinfo -C %s/topo.nc | awk '{print $6, $7}')\"" % tmp,
+            dict(action="range", grid=tmp + "/topo.nc")
+            if cfg["plots"]["backend"] == "pygmt"
+            else "read ZMIN ZMAX <<< \"$(gmt grdinfo -C %s/topo.nc | awk '{print $6, $7}')\"" % tmp,
             "gmt grdsample %s/topo.nc -R%.5f/%.5f/%.5f/%.5f -I%.7f -G%s/topo_s.nc"
             % (tmp, W, E, S, N, max(E - W, N - S) / 400, tmp),
             "gmt grdgradient %s/topo_s.nc -A315 -Nt0.45 -G%s/shade_s.nc" % (tmp, tmp),
@@ -433,16 +462,26 @@ def slices_3d(cfg, model, stations, out, depths=None):
         % (tmp, -2.2 if relief else 0, colorbar_ticks(lo_, hi_), R2)
     )
     if relief:
-        pre.append(
-            "gmt makecpt -C%s -T$ZMIN/$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{print (b>a)?b:a+1}') -Z > %s/elev.cpt"
-            % (G.ELEV_CPT, tmp)
-        )
-        pre.append(
-            "ESTEP=$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{r=(b-a)/2; if(r<=0)r=1; p=10^int(log(r)/log(10)); if(p>r)p/=10; "
-            "m=r/p; s=(m<1.5)?1:(m<3.5)?2:(m<7.5)?5:10; print s*p}')"
-        )
-        cmd.append(
-            "gmt colorbar -C%s/elev.cpt -DjBC+w4c/0.3c+h+o4.6c/-2.6c -Bxa${ESTEP}f$(awk -v s=$ESTEP 'BEGIN{print s/5}')"
-            "+l'Elevation (m)' %s" % (tmp, R2)
-        )
-    return G.run(tmp, pre, cmd, out, cfg["plots"]["formats"], cfg["plots"]["dpi"], font=(9 * fs, 10 * fs))
+        if cfg["plots"]["backend"] == "pygmt":
+            pre.append(dict(action="palette", grid=tmp + "/topo.nc", palette="elevation", output=tmp + "/elev.cpt"))
+            ticks = "-Bxa${ESTEP}f${ESTEP_MINOR}"
+        else:
+            pre.append(
+                "gmt makecpt -C%s -T$ZMIN/$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{print (b>a)?b:a+1}') -Z > %s/elev.cpt"
+                % (G.ELEV_CPT, tmp)
+            )
+            pre.append(
+                "ESTEP=$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{r=(b-a)/2; if(r<=0)r=1; p=10^int(log(r)/log(10)); if(p>r)p/=10; m=r/p; s=(m<1.5)?1:(m<3.5)?2:(m<7.5)?5:10; print s*p}')"
+            )
+            ticks = "-Bxa${ESTEP}f$(awk -v s=$ESTEP 'BEGIN{print s/5}')"
+        cmd.append("gmt colorbar -C%s/elev.cpt -DjBC+w4c/0.3c+h+o4.6c/-2.6c %s+l'Elevation (m)' %s" % (tmp, ticks, R2))
+    return G.run(
+        tmp,
+        pre,
+        cmd,
+        out,
+        cfg["plots"]["formats"],
+        cfg["plots"]["dpi"],
+        font=(9 * fs, 10 * fs),
+        backend=cfg["plots"]["backend"],
+    )

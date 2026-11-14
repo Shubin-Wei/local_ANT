@@ -6,4 +6,7 @@ control -> DSurfTomo direct inversion for 3-D Vs (areal arrays) or narrow-strip 
 figures.  Command line: `lant --help`; documentation: docs/tutorial.md.
 """
 
-__version__ = "1.5.0"
+__version__ = "2.0.0"
+
+# Freeze source identity before CLI and pipeline modules can be imported lazily.
+from . import runtime_identity as _runtime_identity  # noqa: E402,F401

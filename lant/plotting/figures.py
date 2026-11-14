@@ -7,7 +7,7 @@
   3_dispersion_pair_<k>  the same pairs: waveform, phase and group images with the accepted picks
   3_dispersion_curves    all phase-velocity curves, mean and standard deviation
   4_start_model          average curve, 1-D model fit and the starting model
-  4_kernels              depth sensitivity of the phase velocity for the starting model (fwd1d finite differences)
+  4_kernels              illustrative 1-D sensitivity (surfdisp96 finite differences; not the inversion Jacobian)
   5_depth_slices         areal arrays: Vs depth slices over grey relief, with the section lines (GMT)
   5_slices_3d            areal arrays: five slices in a perspective view, the relief above them (GMT)
   5_sections             Vs sections: plots.sections (areal) or along the line (line) (GMT)
@@ -15,11 +15,13 @@
   6_recovery             recovery slope and correlation with depth
   6_residuals            travel-time residuals of the starting and final model
 Figures of the processing steps are written by the steps themselves (work/01_clean/coverage.png,
-work/03_stack/station_qc/station_qc.png, work/04_reference/fj.png).
+work/03_stack/station_qc/station_qc.png, work/04_reference/fj.png) and moved by delivery to results/figures
+as 0_data_coverage, 2_station_qc and 3_fj_phase_velocity when the corresponding step completes.
 """
 
 import json
 import os
+import time
 
 from .. import paths
 from . import ccf, dispersion, inversion, maps, sections
@@ -110,6 +112,7 @@ class _Figures:
         self.ev = json.load(open(ev_path)) if os.path.exists(ev_path) else None
         self.line = cfg["project"]["array_type"] == "line"
         self.done, self.skipped, self.failed = {}, {}, set()
+        self.seconds = {}
         self.excluded = {}
         try:
             allst = D.read_canonical(D.canonical_table(cfg["project"]["output_dir"]))
@@ -133,6 +136,7 @@ class _Figures:
         import tempfile
 
         destination = self.out
+        started = time.perf_counter()
         try:
             with tempfile.TemporaryDirectory(prefix=".draw-", dir=destination) as staging:
                 self.out = staging
@@ -161,6 +165,9 @@ class _Figures:
             print("  figure %s not drawn: %s" % (n, exc), flush=True)
         finally:
             self.out = destination
+            # Some low-level callers construct _Figures without __init__.
+            if hasattr(self, "seconds"):
+                self.seconds[n] = time.perf_counter() - started
 
     def remove_old(self):
         """Remove obsolete variants after the group was drawn again.  A group with a failed figure keeps its previous
@@ -184,7 +191,14 @@ class _Figures:
 
 def _station_map(F):
     if F.want("stations"):
-        F.attempt("stations", lambda: maps.station_map(F.cfg, F.stations, F.path("1_stations"), excluded=F.excluded))
+        metadata = os.path.join(F.main, "project.json")
+        count = json.load(open(metadata)).get("stations_with_data") if os.path.isfile(metadata) else None
+        F.attempt(
+            "stations",
+            lambda: maps.station_map(
+                F.cfg, F.stations, F.path("1_stations"), excluded=F.excluded, inversion_count=count
+            ),
+        )
 
 
 def _moveout(F):
@@ -284,8 +298,11 @@ def _checkerboards(F):
     if "checkerboards" not in F.todo:
         return
     cfg = F.cfg
+    from ..pipeline import check_dirs
+
     root = paths.P(cfg, paths.INV, "checkerboards")
-    names = sorted(os.listdir(root)) if os.path.isdir(root) else []
+    # the checkerboards of the present configuration (as evaluated), not every directory that happens to be there
+    names = sorted(os.path.basename(d) for d in check_dirs(cfg) if os.path.dirname(d) == root)
     vert = {c["name"] for c in cfg["checks"]["vertical"]} if isinstance(cfg["checks"]["vertical"], list) else set()
     vert |= {n for n in names if n.startswith("cb_vertical")}
     for name in names:
@@ -324,13 +341,25 @@ def make_all(cfg, which=None):
     F = _Figures(cfg, which)
     notes = resolve(cfg, F.model, F.stations)
     G.RELIEF_NOTES.clear()
-    for group in GROUPS:
-        group(F)
+    from .figure_batch import render
+
+    results = render(cfg, F.todo) if len(F.todo) > 1 else None
+    if results is None:
+        for group in GROUPS:
+            group(F)
+    else:
+        for result in results:
+            F.done.update(result["drawn"])
+            F.skipped.update(result["not_drawn"])
+            F.failed.update(result["failed"])
+            F.seconds.update(result["figure_seconds"])
+            G.RELIEF_NOTES.extend(result["relief_notes"])
     F.remove_old()
     if G.RELIEF_NOTES:
-        F.skipped["relief"] = "; ".join(G.RELIEF_NOTES)
+        F.skipped["relief"] = "; ".join(dict.fromkeys(G.RELIEF_NOTES))
     return dict(
         drawn=F.done,
         not_drawn=F.skipped,
+        figure_seconds=F.seconds,
         plot_parameters={k: dict(value=cfg["plots"][k], rule=v) for k, v in notes.items()},
     )

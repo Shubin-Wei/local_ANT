@@ -11,7 +11,8 @@ depth nodes: inversion.depth_sequence_km, or "auto": from 0 in steps of max(a qu
     wavelength" is the empirical investigation depth of Foti et al. (2018, sect. 4.2.3).  Then a node every
     fine_step_km is added down to fine_zmax_km (linear interpolation of the 1-D model there);
 1-D model: damped and smoothed Gauss-Newton on ln Vs with a numerical Jacobian, forward = DSurfTomo's own chain
-    (Brocher 2005 Vp and density, refineGrid2LayerMdl, surfdisp96) through the small program fwd1d; start
+    (Brocher 2005 Vp and density, refineGrid2LayerMdl, the surfdisp96 root search: lant.inversion.dsurf_disp96,
+    the numbers of DSurfTomo's caldespersion for the same column); start
     1.087 x the phase velocity at the shortest period, smoothing of the curvature of the model itself
     ("jumping", Shaw & Orcutt 1985; Constable et al. 1987: not of the update, so the result does not drift with
     the number of iterations) on the actual node spacing (curvature_operator; weight `smooth`, independent of the
@@ -20,13 +21,10 @@ depth nodes: inversion.depth_sequence_km, or "auto": from 0 in steps of max(a qu
 """
 
 import os
-import subprocess
-import tempfile
 
 import numpy as np
 
 from .. import export
-from ..tools import external_path
 
 
 def average_curve(curve_dir, tmin, tmax, min_pairs):
@@ -109,51 +107,35 @@ def check_layers(nz, sublayers):
 
 
 def forward(depths, vs, periods, igr=0, minthk=3, iwave=0):
-    """Phase (igr 0) or group (1) velocity of the 1-D model at the given periods, by DSurfTomo's own chain.
-    surfdisp96 follows the root from one period to the next and needs increasing periods (with decreasing periods
-    it can jump to another root in strongly layered models), so the periods are sorted here and the result is
-    returned in the order given."""
-    periods = np.asarray(periods, float)
-    order = np.argsort(periods)
-    out = np.empty(len(periods))
-    out[order] = _forward_sorted(depths, vs, periods[order], igr, minthk, iwave)
+    """Rayleigh phase velocity (km/s) of the 1-D node model at the given periods, returned in the order given:
+    DSurfTomo's own calculation (dsurf_disp96: REAL node model, Brocher materials, refineGrid2LayerMdl, surfdisp96),
+    the periods solved in increasing order as DSurfTomo's are.  0 where surfdisp96 finds no root.  Only phase
+    velocities (igr 0) of Rayleigh waves (iwave 0 or 2) are ported."""
+    from . import dsurf_disp96 as D
+
+    if igr != 0 or iwave not in (0, 2):
+        raise NotImplementedError("only Rayleigh phase velocities (igr 0, iwave 0 or 2) are ported")
+    z = np.asarray(depths, np.float32)
+    v = np.asarray(vs, np.float32)
+    t = np.asarray(periods, np.float64)
+    if z.ndim != 1 or z.shape != v.shape or z.size < 2 or z[0] != 0 or np.any(np.diff(z) <= 0):
+        raise ValueError("depths must start at 0 and increase, one Vs per depth, at least two nodes")
+    if not (np.all(np.isfinite(v)) and np.all(v > 0) and t.ndim == 1 and t.size and np.all(t > 0)):
+        raise ValueError("Vs and periods must be finite and positive")
+    if t.size > MAX_PERIODS:
+        raise ValueError("at most %d periods (NP of surfdisp96)" % MAX_PERIODS)
+    check_layers(z.size, int(minthk))
+    order = np.argsort(t, kind="stable")
+    out = np.empty(t.size)
+    out[order] = D.column_phase(z, v, np.float32(minthk), np.ascontiguousarray(t[order]))
     return out
 
 
-MAX_PERIODS = 80  # surfdisp96
-
-
-def _forward_sorted(depths, vs, periods, igr=0, minthk=3, iwave=0):
-    check_layers(len(depths), minthk)
-    if len(periods) > MAX_PERIODS:
-        raise RuntimeError(
-            "%d periods: surfdisp96 (DSurfTomo, fwd1d) accepts at most %d; use fewer frequencies per "
-            "octave (dispersion.per_octave) or a narrower band" % (len(periods), MAX_PERIODS)
-        )
-    exe = external_path("bin", "fwd1d")
-    if not os.path.exists(exe):
-        raise RuntimeError("%s not found: run `lant install-external dsurftomo`" % exe)
-    with tempfile.TemporaryDirectory() as d:
-        mf, pf = os.path.join(d, "m.txt"), os.path.join(d, "p.txt")
-        with open(mf, "w") as fh:
-            fh.write("%d\n" % len(depths))
-            for z, v in zip(depths, vs):
-                fh.write("%.6f %.6f\n" % (z, v))
-        with open(pf, "w") as fh:
-            fh.write("%d\n" % len(periods))
-            for t in periods:
-                fh.write("%.6f\n" % t)
-        r = subprocess.run(
-            [exe, mf, pf, str(igr), str(minthk)] + ([str(iwave)] if iwave else []), capture_output=True, text=True
-        )
-        if r.returncode != 0:
-            raise RuntimeError("fwd1d failed: %s" % r.stderr[-500:])
-        a = np.array([[float(x) for x in ln.split()] for ln in r.stdout.split("\n") if ln.strip()])
-    if a.ndim != 2 or a.shape[0] != len(periods) or not np.all(np.isfinite(a[:, 1])) or np.any(a[:, 1] <= 0):
-        raise RuntimeError(
-            "fwd1d returned %s values for %d periods (stderr: %s)" % (a.shape, len(periods), r.stderr[-300:])
-        )
-    return a[:, 1]
+# Periods of the 1-D forward calculation: the NP of surfdisp96 in DSurfTomo.
+MAX_PERIODS = 80
+# Periods a 3-D project may carry: the NP of CalSurfG.f90 in DSurfTomo a651faf (cg1(NP), cgRc(NP), ...), which the
+# Python port follows; DSurfTomo itself fails beyond it.
+PROJECT_MAX_PERIODS = 60
 
 
 def curvature_operator(z):
@@ -210,12 +192,10 @@ def add_fine_nodes(z, vs, step, zmax):
 def _check_period_count(cfg, curve_dir, tmax_used):
     """Stop before the 1-D inversion if the 3-D project would carry more periods than the solver accepts."""
     from .. import export as EXPORT
-    from ..tools import max_periods
     from .project import records_from_curves
 
-    solver = cfg["inversion"]["solver"]
     curves = EXPORT.read_curves(curve_dir, "C", cfg["export"]["tmin_s"], tmax_used)
-    records_from_curves(curves, max_periods(solver), solver)
+    records_from_curves(curves, PROJECT_MAX_PERIODS)
 
 
 def build(cfg, curve_dir, out_dir, log=print):
@@ -234,6 +214,7 @@ def build(cfg, curve_dir, out_dir, log=print):
         avg, inv["depth_sequence_km"] if inv["depth_sequence_km"] == "auto" else list(inv["depth_sequence_km"])
     )
     sm = inv["start_model"]
+    info["forward"] = forward_identity()
     if sm["source"] == "file":
         m = np.loadtxt(sm["file"], ndmin=2)
         if np.max(z) > m[-1, 0] + 1e-6:
@@ -245,7 +226,14 @@ def build(cfg, curve_dir, out_dir, log=print):
         fit = None
     else:
         vs, g, hist = invert1d(
-            avg[:, 0], avg[:, 1], z, sm["smooth"], sm["damp"], sm["iterations"], sm["minthk"], log=log
+            avg[:, 0],
+            avg[:, 1],
+            z,
+            sm["smooth"],
+            sm["damp"],
+            sm["iterations"],
+            sm["minthk"],
+            log=log,
         )
         fit = np.c_[avg[:, 0], avg[:, 1], g]
         np.savetxt(
@@ -273,3 +261,23 @@ def build(cfg, curve_dir, out_dir, log=print):
         tmin_used=float(avg[:, 0].min()),
     )
     return z2, vs2, avg, info
+
+
+def forward_identity():
+    """Numerical dependencies of the 1-D forward calculation, for the provenance of the starting model."""
+    import hashlib
+    from importlib.metadata import PackageNotFoundError, version
+
+    from . import dsurf_disp96
+
+    packages = {}
+    for p in ("numba", "numpy"):
+        try:
+            packages[p] = version(p)
+        except PackageNotFoundError:
+            packages[p] = "missing"
+    with open(dsurf_disp96.__file__, "rb") as fh:
+        source_hash = hashlib.sha256(fh.read()).hexdigest()
+    return dict(backend="surfdisp96 (DSurfTomo a651faf, lant.inversion.dsurf_disp96)", packages=packages,
+                source_sha256=source_hash, sphere_radius_km=6370.0, precision="REAL model, double root search",
+                mode=0)  # fmt: skip

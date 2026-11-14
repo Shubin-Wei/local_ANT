@@ -4,38 +4,34 @@
 
 本文逐步说明每一步的目的、方法、依据和检查要点。初次运行见 [quickstart.zh.md](quickstart.zh.md)。原理和公式见 [methods.zh.md](methods.zh.md)；参数的默认值和依据见 [parameters.zh.md](parameters.zh.md)；每个输出文件见 [outputs.zh.md](outputs.zh.md)；遇到问题见 [troubleshooting.zh.md](troubleshooting.zh.md)；与 AI 助手一起运行见 [ai_workflow.zh.md](ai_workflow.zh.md)；合成检验的数字见 [validation.zh.md](validation.zh.md)。
 
+全部用 Python 运行；反演是 DSurfTomo 的移植版，它与原版的对比见 [python_backends.zh.md](python_backends.zh.md)。
+
+给 AI 助手的规则文件按 `project.ai_assistant` 写：`codex` 写 AGENTS.md，`claude`（Claude Code）写 CLAUDE.md，`gemini`（Gemini CLI）写 GEMINI.md，只写一份完整规则；默认写 AGENTS.md。加载方式与已有文件处理见 [AI 工作流程](ai_workflow.zh.md)。
+
+每步完成后看 `OUT/REPORT.md`：可找到已有主图及 `results/parameters.yaml`。覆盖、台站诊断和阵列 F-J 谱在反演前就可查看；完整模型成果在评估后保留。缓存仍在 `work/`；文件职责见[输出说明](outputs.zh.md)，选择清理前先查看 `lant clean-work --help` 与清理预览。
+
 ## 1. 安装
 
-### 1.1 Python 环境
+### 1.1 环境
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6、gfortran 和 lant 本身
+conda env create -f environment.yml && conda activate lant     # Python、ObsPy、GMT 6 和 lant 本身
 ```
 
-`conda env create` 长时间停在 “Solving environment” 时，改用 `--solver libmamba`，或用 mamba / micromamba。不用 conda 也可以：Python ≥ 3.8 上 `pip install -e .`，另装 GMT 6（≥ 6.1）、gfortran、gcc、make、git。只支持 Linux。
+`conda env create` 长时间停在 “Solving environment” 时，改用 `--solver libmamba`，或用 mamba / micromamba。不用 conda 也可以：Python ≥ 3.11 上 `pip install -e .`，另装 GMT 6（≥ 6.1）。只支持 Linux。不需要编译器：lant 的每一部分（包括反演）都是 Python（NumPy、SciPy、Numba）。
 
-### 1.2 第三方程序
-
-仓库不含第三方源码，`lant install-external` 从官方仓库下载固定版本并编译（需要 git、make、gfortran）。源码目录里装到 `external/`，安装的软件包装到 `~/.cache/lant/external`（`$XDG_CACHE_HOME/lant/external`）；`LANT_EXTERNAL=目录` 可指定别的位置，编译和运行都用它：
+### 1.2 检查
 
 ```bash
-lant install-external            # DSurfTomo + fwd1d、pDSurfTomo
-lant install-external dsurftomo  # 只装 DSurfTomo
+lant check          # 逐项列出 Python 包和 GMT 的状态及缺失项的安装命令
 ```
 
-| 程序 | 用途 | 必需 |
-|---|---|---|
-| DSurfTomo（Fang et al. 2015，MIT） | 三维反演；`fwd1d` 是它的一维正演，用于起始模型 | 是 |
-| pDSurfTomo（Zhu et al. 2026，GPL-3） | 并行版，数据量大时用；最多 80 个周期 | 否 |
+### 1.3 计算资源
 
-两个程序都不修改，只给 pDSurfTomo 打一个降低内存预留的补丁。频率—贝塞尔谱由 `lant` 自己计算，不需要另装程序。
+核数不用人定：`resources.cores: auto` 取别人没在用的空闲核的 80 %，max(1, 0.8 × (可用 CPU 数 − 1 分钟负载))，本次运行自己造成的负载不算；每一步、每个反演工程开始时重算。并行任务的估计峰值还不超过可用内存的一半（其余排队）。单台对诊断 PNG 也按此计划在独立进程中绘制并显示完成数；测量进程池结束后才启动绘图。每一步的报告在 COMPUTING RESOURCES 下写明用了多少核和峰值内存。`resources.cores` 写整数则照用。
 
-### 1.3 检查
-
-```bash
-lant check          # 逐项列出 Python 包、GMT、DSurfTomo、fwd1d 的状态和缺失项的安装命令
-```
+最终主图组也按此资源计划在独立进程中运行，每进程一个数值线程。只请求一组或预算仅够一个进程时串行执行。记录单图耗时，失败组保留上次完整图。经验内存估计包含 600 MB 解释器／绘图预算及工作数组，仍保留相同的可用内存余量。
 
 ### 1.4 先跑合成算例
 
@@ -43,12 +39,12 @@ lant check          # 逐项列出 Python 包、GMT、DSurfTomo、fwd1d 的状�
 
 ```bash
 python examples/synthetic/make_synthetic.py              # 16 台、3 天，5–20 分钟，约 300 MB
-                                                         # （--quick：10 台、6 小时，约 1 分钟；见 quickstart.zh.md）
+                                                         # （--quick：16 台、6 小时，约 1 分钟；见 quickstart.zh.md）
 lant run all -c examples/synthetic/synthetic.yaml        # 停在需要你判断的地方，并打印下一条命令
 python examples/synthetic/compare_truth.py               # 与已知答案比较
 ```
 
-数据由一个已知一维模型的 Rayleigh 平面波从随机方位入射叠加而成，故意把 miniSEED 和 SAC 混放在多层目录里，台站表没有表头。`--layout line` 生成线状台阵，`--model sediment` 生成低速沉积模型。这套数据横向均匀、噪声各向同性、只有基阶；横向变化的介质、高阶模式和加噪声的情形用 `make_stack.py` 直接生成互相关（见 validation.zh.md）。
+数据由 Rayleigh 平面波从随机方位入射叠加而成，介质是一维背景加 ±6 % 正弦棋盘格（正方形边长内三个格子）。`true_model.txt`、`true_dispersion.txt` 是背景，`true_checkerboard.json` 记录图样、坐标、格子大小及合成限制。局部慢度在背景及 ±6 % 缩放的剖面（DSurfTomo 的 surfdisp96）之间插值，再沿入射直线路径在台阵正方形内积分（128 点 Gauss–Legendre 求积）。这是运动学近似，不含折射、散射或振幅聚焦；反演使用弯曲射线，不应期待完美恢复。miniSEED 与 SAC 混放在多层目录里，台站表没有表头。`--layout line` 生成线状台阵，`--model sediment` 生成低速沉积模型，`--uniform` 生成横向均匀介质。这些设置是演示用的工程选择，不是文献规定的检验标准。高阶模式和直接互相关加噪声试验用 `make_stack.py`（validation.zh.md）。
 
 ## 2. 准备数据
 
@@ -90,9 +86,9 @@ CSV、空格或制表符分隔的文本（有无表头均可）、Excel、Statio
 ### 2.4 磁盘和计算量
 
 - 清洗后的日文件与原始数据大小相当（`clean.write_archive: false` 可不写，但去响应需要写）。
-- `02_ccf` 每天约为 台对数 × 24 × (2 × 时延窗 × 采样率 + 1) × 4 字节；clean 报告给出这一估计和每个 cc 进程的内存。这里的内存是当前可用的内存，包括作业或容器的限制（Linux cgroup），可回收的文件缓存计为可用。它的 70 % 放不下 `correlation.nproc` 个进程时，cc 自动少开进程；一个进程也放不下时，clean 给出警告，cc 停下。可以释放内存或换更大的机器；写窄 `data.velocity_range_kms` 或用 `correlation.max_distance_km`（只算这个距离内的台对）也能减少用量，但只能依据对本区的独立了解来改，不能为了让程序跑得下而改。
+- `02_ccf` 每天约为 台对数 × 24 × (2 × 时延窗 × 采样率 + 1) × 4 字节；clean 报告给出这一估计和每个 cc 进程的内存。这里的内存是当前可用的内存，包括作业或容器的限制（Linux cgroup），可回收的文件缓存计为可用。它的一半放不下每个核一个进程时，cc 同时少跑几个；一个进程也放不下时，clean 给出警告，cc 停下。可以释放内存或换更大的机器；写窄 `data.velocity_range_kms` 或用 `correlation.max_distance_km`（只算这个距离内的台对）也能减少用量，但只能依据对本区的独立了解来改，不能为了让程序跑得下而改。
 - 运行完成并评估后，`lant clean-work -c CONFIG` 列出可重建的缓存（清洗后的日文件、逐小时互相关）及其大小，`--execute --yes` 才删除。成果和报告仍可读；之后要重建 cc、stack 或重画叠加时间图，需要重新生成这些缓存。
-- 反演时间取决于网格节点数和“台站 × 周期”数；棋盘和对照各是一个工程，可以并行（`inversion.njobs`）。
+- 反演时间取决于网格节点数和“台站 × 周期”数；棋盘和对照各是一个工程；核数和内存允许多少就同时跑多少。
 
 ## 3. 配置
 
@@ -129,9 +125,11 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 
 ### 4.1 clean：清洗（`01_clean`）
 
+头段扫描按纳秒文件元数据复用未改动文件，旧签名会重扫一次。全部命中时不启动扫描进程池，也不重写缓存。 清洗台站日使用同一文件身份；给了响应时也包含响应来源。修改响应文件会将 clean 标为过时；升级复用键需要重建一次。
+
 **做什么**：读全部文件头；台站表与记录对应；选垂直通道；切成处理日；把样点放到 UTC 采样网格上（偏移小于 0.05 个样点的直接移，其余 Lanczos 插值）；去掉重复和相同的重叠；给了响应文件就去响应；用按 1 s 折叠的 F 检验查每个台站日有没有每秒一次的相干脉冲（Takagi et al. 2015）；由台站分布判断台阵类型。除去响应外不滤波、不归一化。再次运行时，输入文件和设置都没变的台站日直接复用。
 
-**看什么**：`report.txt`（没对上的名字、没有数据的台站、cc 的资源估计）、`coverage.png`（每台每天的数据量）、`stations.csv`、`pulse_1s.csv`（检出脉冲的台站）。
+**看什么**：`report.txt`（没对上的名字、没有数据的台站、cc 的资源估计）、`0_data_coverage.png`（每台每天的数据量）、`stations.csv`、`pulse_1s.csv`（检出脉冲的台站）。
 
 **留给你判断的**：名字歧义、坐标不一致、分量方向不明、台阵类型不明确（长宽比 3–10）、没有去响应且不知道型号。
 
@@ -145,15 +143,15 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 
 **做什么**：全部小时按段数加权叠加；同时存下若干小时一组的子叠加，供刀切误差用（`stack.block_hours`）。诊断：每个台对的每个子叠加与该台对其余子叠加的叠加比较（留一法），取相关系数和亚采样时移（Stehly et al. 2007；Sens-Schönfelder 2008）；每个台站取它与最近若干台站的台对的中位数。候选是这两个分布的离群值：相关系数先做 Fisher z 变换，尺度用中位数和 1.4826 × MAD（Leys et al. 2013），门限按 Chauvenet 准则由样本数给出，不是固定数值。时移只在同一台站各台对的时移一致时列出，即中位时移以其在各台对间的标准误差为单位也超过同一门限：钟差使一个台站的全部台对一起移动，而相关系数低的子叠加里时移是分散的。
 
-**诊断只列出，不剔除**。`candidates.txt` 和 `station_qc/station_qc.png` 给你看；候选数超过准则允许的偶然个数（1 个）时流程停下，由你决定：`lant confirm stack`（保留）或 `lant confirm stack --exclude-candidates`（剔除），也可以在 `stack.exclude_station_days` 里自己写。
+**诊断只列出，不剔除**。`candidates.txt` 和 `results/figures/2_station_qc.png` 给你看；候选数超过准则允许的偶然个数（1 个）时流程停下，由你决定：`lant confirm stack`（保留）或 `lant confirm stack --exclude-candidates`（剔除），也可以在 `stack.exclude_station_days` 里自己写。
 
 ### 4.4 reference：参考曲线（`04_reference`）
 
 **做什么**：计算台阵的频率—贝塞尔谱（Wang et al. 2019；双精度，逐频率只用若干波长以内的台对），拾取能量脊，在 log f 上拟合一条光滑曲线作为参考相速度曲线；再由这条曲线定测量频带下限和速度轴。参考曲线只用来确定相位的整周数和限制群速度拾取，不进入最后的数值。
 
-**看什么**：`fj.png`。**这是全流程最重要的一个判断：拾取的脊是不是基阶。** 高阶模式能量更强时，`max_peak` 会拾到高阶；这时改用 `track_fundamental`（每隔 1/3 倍频程试一个起点，取能沿脊线跟踪最多频点的，拾取限于 `data.velocity_range_kms` 之内；测线上只取波长不短于平均台间距两倍的频率，`fj.png` 中以虚线标出），或缩小 `data.velocity_range_kms`，或用 `reference.source: file` 给一条曲线。报告同时给出实测速度范围与 `data.velocity_range_kms` 的比较。
+**看什么**：`3_fj_phase_velocity.png`。**这是全流程最重要的一个判断：拾取的脊是不是基阶。** 高阶模式能量更强时，`max_peak` 会拾到高阶；这时改用 `track_fundamental`（每隔 1/3 倍频程试一个起点，取能沿脊线跟踪最多频点的，拾取限于 `data.velocity_range_kms` 之内；测线上只取波长不短于平均台间距两倍的频率，`3_fj_phase_velocity.png` 中以虚线标出），或缩小 `data.velocity_range_kms`，或用 `reference.source: file` 给一条曲线。报告同时给出实测速度范围与 `data.velocity_range_kms` 的比较。
 
-**结构横向变化强的大台阵**：`reference.zone_km` 把台阵按路径中点分成方形分区，每区各做一条曲线（`zones.png`），拾取不清楚的分区用全台阵曲线。
+**结构横向变化强的大台阵**：`reference.zone_km` 把台阵按路径中点分成方形分区，每区各做一条曲线（`3_reference_zones.png`），拾取不清楚的分区用全台阵曲线。
 
 ### 4.5 disp：频散测量、质控、导出（`05_dispersion`）
 
@@ -171,21 +169,23 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 
 ### 4.6 inversion：建反演工程（`06_inversion`）
 
-**做什么**：台阵平均曲线做一维反演得到起始模型（阻尼最小二乘，平滑约束模型本身，Constable et al. 1987）；深度节点步长取 max(最短波长 / 4, 深度 / 4)，到最长波长的一半（经验法则，Foti et al. 2018）；网格间距约为台站最近邻距离中位数的一半；建主工程、棋盘工程（Lévêque et al. 1993）和默认一个换起始模型的对照工程（`start_grad0.05`；正则化对照可在 `checks.controls` 中加；Rawlinson & Spakman 2016）。DSurfTomo 的稀疏矩阵预留按路径估计（`inversion.sparsity: auto`）。DSurfTomo 最多 60 个周期（pDSurfTomo 80），超出时这一步停下，并给出合适的 `dispersion.per_octave`。
+**做什么**：台阵平均曲线做一维反演得到起始模型（阻尼最小二乘，平滑约束模型本身，Constable et al. 1987）；深度节点步长取 max(最短波长 / 4, 深度 / 4)，到最长波长的一半（经验法则，Foti et al. 2018）；网格间距取测量波长中位数 / 3；建主工程、四个棋盘工程（Lévêque et al. 1993；三个水平，格子为测量波长中位数的 1、2、3 倍，一个随深度变化，见 methods.zh.md 第 9 节）和默认一个对照工程：换起始模型（`start_grad0.05`；Rawlinson & Spakman 2016）；平滑权重减半和加倍（`reg_x0.5`、`reg_x2`）可在 `checks.controls` 里加。稀疏矩阵预留按路径估计（`inversion.sparsity: auto`）。平滑权重和阻尼固定（`inversion.weight` 1、`inversion.damp` 0.1，在合成算例上标定，见 methods.zh.md 第 8.4 节）；检验工程用同样的值。最多 60 个周期（DSurfTomo 的 CalSurfG），超出时这一步停下，并给出合适的 `dispersion.per_octave`。
 
 **看什么**：`results/figures/4_start_model.png`、`4_kernels.png`（各周期的敏感深度）。**留给你判断的**：起始模型、最深节点、速度上下限是否合理。
 
 ### 4.7 run、evaluate、figures
 
-- **run**：运行 DSurfTomo（Fang et al. 2015：直接由走时反演三维 Vs，射线随模型更新）。运行前检查主工程第一轮被剔除规则保留的数据比例（`checks.precheck`）；主工程无效时停下。主工程和对照工程同时运行；棋盘在主工程结束后再运行，因为它们的噪声取主模型的相对拟合残差（`inversion.noise: auto`；数值写在 run 报告和 `work/06_inversion/checkerboard_noise.json` 里）。`inversion.noise` 写成数字时，所有工程同时运行。
-- **evaluate**：只给数字和图，不下结论。走时残差（起始模型、最终模型、保留比例）、棋盘恢复（各深度的相关系数和回归斜率）、对照模型与主模型的差及各对照工程的残差历程（残差未降到主工程水平的对照尚未收敛）。写在 `work/06_inversion/evaluation/`。
+- **run**：运行 Python 版 DSurfTomo（Fang et al. 2015：直接由走时反演三维 Vs，射线随模型更新；每个工程一个 `python -m lant.inversion.solver`）。运行前检查主工程第一轮被剔除规则保留的数据比例（`checks.precheck`）；主工程无效时停下。主工程和对照工程同时运行；棋盘在主工程结束后再运行，因为它们的噪声取主模型的相对拟合残差（`inversion.noise: auto`；数值写在 run 报告和 `work/06_inversion/checkerboard_noise.json` 里）。`inversion.noise` 写成数字时，所有工程同时运行。
+- **evaluate**：只给数字和图，不下结论。走时残差（起始模型、最终模型、保留比例）、棋盘恢复（各深度的相关系数和回归斜率，只用剔除后数据雅可比列非零的节点：DWS > 0）、对照模型与主模型的差及各对照工程的残差历程（残差未降到主工程水平的对照尚未收敛）。写在 `work/06_inversion/evaluation/`。
 - **figures**：`results/figures/` 下（清单见 outputs.zh.md）：带地形的台站图、分频带的互相关走时图、三个台对的叠加时长图和频散图、频散曲线、起始模型和核函数、深度切片和三维图（面阵）、剖面、棋盘、残差。比例、距离、时延窗和速度范围都随本项目的数据而定；地形用 SRTM，自动从 GMT 数据服务器取（`plots.topography`）。线阵的模型是沿测线的窄条，不画深度切片和三维图，棋盘画成沿测线的输入剖面和恢复剖面。自定义剖面超出模型范围时按模型范围截断并说明截掉多少。
+
+初模以连接的参数节点表示，最后一个值在三维反演中固定，不表示实测界面。核曲线明确标为独立延伸模型的示意。残差图 (a) 以毫秒显示全部观测，表格分别给出均值、标准差和 RMS；(b) 比较不同周期，不是迭代次数。模型解释还须单独查看棋盘试验。
 
 ## 5. 线状台阵
 
 一条测线一个项目。与面阵不同的默认值列在 parameters.zh.md 末尾。
 
-1. 测线的 F-J 谱只有一个方向的台对，常被高阶模式或斜入射噪声影响，默认用 `track_fundamental`；务必看 `fj.png`。同一地区有面阵结果时可借用其参考曲线和起始模型（`reference.source: file`、`inversion.start_model.source: file`）；借用后，测线结果与面阵一致不算独立验证。
+1. 测线的 F-J 谱只有一个方向的台对，常被高阶模式或斜入射噪声影响，默认用 `track_fundamental`；务必看 `3_fj_phase_velocity.png`。同一地区有面阵结果时可借用其参考曲线和起始模型（`reference.source: file`、`inversion.start_model.source: file`）；借用后，测线结果与面阵一致不算独立验证。
 2. 测线务必写本区的大致速度范围（`data.velocity_range_kms`）：默认的宽范围下测线 F-J 拾取的频带可能很窄，参考曲线以外的高频点会混入偏快的一支（[troubleshooting.zh.md](troubleshooting.zh.md) disp 一节）。
 3. 只沿测线方向有分辨；测线两端射线少。噪声斜入射时沿线视速度偏高，本流程不检验这一点。
 4. 仪器在不同测线之间搬动时，用台站表的序列号、起止时间和测线列（2.2 节）。
@@ -194,15 +194,19 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 
 - 噪声场近似各向同性。方向性噪声造成的相速度偏差不检验、不改正。
 - 只用垂直分量、只测基阶 Rayleigh 波相速度。
-- Vp 和密度由 Vs 按 Brocher (2005) 的经验关系换算（DSurfTomo 内部固定）；实际 Vp/Vs 偏离时 Vs 有系统偏差。
+- Vp 和密度由 Vs 按 Brocher (2005) 的经验关系换算（DSurfTomo 及其移植版内部固定）；实际 Vp/Vs 偏离时 Vs 有系统偏差。
 - DSurfTomo 的坐标是单精度，相距约 200 m 以内的台对有距离误差。
 - 刀切误差未校准。
 - 模型只在棋盘恢复得出的尺度和深度上可解释；台站覆盖以外的节点没有约束。
 
 ## 7. 记录与复现
 
-`输出目录/.lant/`：`config.yaml`（最近一次运行的完整配置）、`config_history/`、`manifest.json`（每步依据什么成立）、`run_log.jsonl`（每步起止、耗时）、`summary/<步骤>.json`（关键数字）、`steps/<步骤>.md`（报告）、`auto_parameters.json`（规则推出的值及推导）、`provenance/`（代码版本、依赖版本、第三方程序指纹）、`../notes.md`（你的决定和理由）。配置文件末尾的 `confirmed:` 段记录每次确认及其依据的结果指纹。复现：用同一份配置在新的输出目录重跑。棋盘检验的合成噪声不固定随机种子，重跑的棋盘结果在噪声水平内不同。
+`输出目录/.lant/`：`config.yaml`（最近一次运行的完整配置）、`config_history/`、`manifest.json`（每步依据什么成立）、`run_log.jsonl`（每步起止、耗时）、`summary/<步骤>.json`（关键数字）、`steps/<步骤>.md`（报告）、`auto_parameters.json`（规则推出的值及推导）、`provenance/`（代码版本、依赖版本）、`../notes.md`（你的决定和理由）。配置文件末尾的 `confirmed:` 段记录每次确认及其依据的结果指纹。复现：用同一份配置在新的输出目录重跑。棋盘检验的合成噪声使用固定随机种子。
 
 ## 8. 遇到问题
 
 按步骤排列的现象、原因和处理见 [troubleshooting.zh.md](troubleshooting.zh.md)；每个输出文件的内容见 [outputs.zh.md](outputs.zh.md)。
+
+父进程在主求解任务完成时立即发布 `results/main_preview/`，无需等待其他工程。保留模型、求解输入、实际参数；绘图环境可用时给出剖面。`status.json` 明确检查可能未完成，记录绘图失败且保留模型。这是预览，不表示科学验收或完整评估已完成。
+
+`lant clean-work --cache forward` 预览已登记的精确正演 `.npz` 缓存；明确执行时仅在评估完成后删除未改动的已登记文件，不将处理步骤标为缓存已清。默认预览包括 archive、cc、forward。未知或改动过的文件、模型、参数与最终图均受保护。占空间的 clean/cc 缓存同样仅按明确清理请求删除。

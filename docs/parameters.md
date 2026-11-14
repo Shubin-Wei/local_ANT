@@ -29,6 +29,7 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `name` | `my_array` | choice | project name (figures and records only) |
 | `array_type` | `auto` | rule | auto: from the station geometry (how many times the station cloud is longer than wide; below 3 areal, above 10 line, in between shown for confirmation); or surface / line |
 | `output_dir` | — | required | every result, figure and record is written here |
+| `ai_assistant` | `null` | choice | the one file of rules for AI assistants written into the project, with the full text: codex AGENTS.md, claude CLAUDE.md, gemini GEMINI.md; null: AGENTS.md (the open convention read by many coding agents). An existing file is never overwritten |
 
 ## 3. data: raw data
 
@@ -58,7 +59,6 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | key | default | basis | meaning |
 |---|---|---|---|
 | `write_archive` | `true` | technical | write the cleaned day files (about the size of the raw data); false: later steps read the raw files, and the 1-s periodic signal is not tested (response removal and moved nodes need the archive) |
-| `nproc` | `4` | technical | processes |
 | `encoding` | `FLOAT32` | technical | miniSEED encoding of the archive |
 | `min_free_disk_factor` | `1.2` | technical | refuse to write the archive when the free disk is below this factor x its estimated size |
 
@@ -77,8 +77,6 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `smooth_bins` | `1` | literature | smoothing of the coherence denominator in frequency bins; 1 = none (cross-coherence as in Xu et al. 2021) |
 | `max_over_std` | `10.0` | literature | a segment is dropped when its peak exceeds this many standard deviations of the station-day (NoisePy max_over_std, Jiang & Denolle 2020) |
 | `remove_1s_comb` | `auto` | literature | subtract the waveform folded modulo 1 s, hour by hour (coherent logger noise at 1-s intervals, Takagi et al. 2015); auto: for the stations where the clean step detects it (F test of the folded records); true: all stations; false: none |
-| `nproc` | `4` | technical | days processed at the same time (memory: one day of every station per process) |
-| `threads_per_process` | `2` | technical | FFT threads per process |
 
 ## 6. stack: stack and station diagnosis (`03_stack`)
 
@@ -121,13 +119,12 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `vmax` | `auto` | rule | top of the velocity axis; auto: 1.3 x the fastest |
 | `dv` | `auto` | rule | step of the velocity axis; auto: the 1-2-2.5-5 step not above vmin / 100 |
 | `alpha` | `5.0` | literature | relative width of the Gaussian filter exp(-alpha ((f - fc) / fc)^2), as in FTAN (Bensen et al. 2007); larger = narrower |
-| `phase_constant` | `pi/4` | theory | phase of the far-field 2-D Green's function, pi/4 (Lin et al. 2008 eq. 7) |
+| `phase_constant` | `pi/4` | theory | pi/4 for the causal J0 correlation convention; the negative-time-derivative EGF convention needs its phase accounted for |
 | `min_dist_km` | `0.0` | choice | pairs shorter than this are not measured (0: lam_min alone rules) |
 | `lam_min` | `1.0` | literature | paths shorter than this many reference wavelengths are not measured (Luo et al. 2015: one wavelength can be enough) |
 | `anchor_max_lambda` | `3.5` | empirical | the cycle count is fixed where the path is lam_min to this many wavelengths long (few cycles: the reference cannot be a cycle off) |
 | `njack` | `5` | empirical | delete-a-group jackknife groups of the sub-stacks; auto: the sub-stacks holding >= 25 % of the fullest one |
 | `min_jackknife_groups` | `3` | empirical | fewer groups with data: no error estimate, the sample is rejected |
-| `nproc` | `8` | technical | processes |
 | `chunk` | `20` | technical | pairs per task |
 | `side_off_bands` | `''` | choice | bands 'lo-hi,...' where the side-lobe rule is not applied |
 | `qc.snr_c` | `6.0` | literature | SNR at the picked arrival (peak / rms of the trailing noise); the literature uses 4-10 (Bensen et al. 2007: 10 for global data) |
@@ -158,7 +155,7 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `depth_sequence_km` | `auto` | rule | depth nodes; auto: steps of max(shortest wavelength / 4, depth / 4) down to half the longest wavelength (rule of thumb, Foti et al. 2018) |
 | `fine_step_km` | `0.0` | choice | extra depth nodes every this many km down to fine_zmax_km (0 = none) |
 | `fine_zmax_km` | `0.0` | choice | see fine_step_km |
-| `grid_spacing_deg` | `auto` | rule | grid spacing [lat, lon]; auto: about half the median nearest-station distance after refinement |
+| `grid_spacing_deg` | `auto` | rule | grid spacing [lat, lon] of the coarse grid; auto (set by the inversion step): the final cell is the median measured wavelength c T / 3 km in both directions (user's rule; the lateral resolution is about a wavelength), times grid_refine |
 | `grid_refine` | `2` | empirical | every grid interval is divided by this once the extent is fixed |
 | `line_strip_cells` | `null` | empirical | lines: cells kept on each side of the stations across the line |
 | `start_model.source` | `invert` | choice | invert: 1-D model from this array's average curve; file: depth Vs |
@@ -167,27 +164,24 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `start_model.damp` | `0.05` | empirical | 1-D inversion: damping |
 | `start_model.iterations` | `14` | empirical | 1-D inversion: iterations |
 | `start_model.minthk` | `3` | technical | 1-D forward: sublayers per node interval |
-| `weight` | `1.0` | empirical | DSurfTomo smoothing weight (Fang et al. 2015); set by hand in the usual range (below 10, mostly below 5), not optimised; lines 1.5 |
-| `damp` | `1.0` | empirical | DSurfTomo damping (Fang et al. 2015); set by hand in the usual range 0.5-1.5, not optimised; lines 1.5 |
+| `weight` | `1.0` | empirical | DSurfTomo smoothing weight (Fang et al. 2015), fixed; default 1, calibrated with damp 0.1 on lant's areal and line synthetic examples (smallest rms error against the true model, methods.md 8.4); checks inherit it |
+| `damp` | `0.1` | empirical | DSurfTomo damping, fixed: it limits the size of the model update of each iteration (LSMR damping); default 0.1 (the DSurfTomo manual's example), calibrated on lant's synthetic examples: 1 held the updates to a few hundredths of a km/s, below 0.1 little changes (methods.md 8.4) |
 | `sublayers` | `3` | literature | DSurfTomo: sublayers between depth nodes for the kernels (its manual: 2-5) |
 | `vmin` | `auto` | rule | lower Vs bound; auto: 0.6 x the slowest Vs of the starting model |
 | `vmax` | `auto` | rule | upper Vs bound; auto: 1.4 x the fastest |
 | `iterations` | `10` | empirical | DSurfTomo iterations |
 | `sparsity` | `auto` | rule | DSurfTomo: fraction of its matrix reserved for nonzero entries; auto: twice the filling estimated from the paths and the grid, at least 0.05 (too little makes DSurfTomo stop with a segmentation fault; more only costs memory) |
-| `threshold` | `3.0` | empirical | DSurfTomo: residuals beyond this many quartiles get zero weight |
+| `threshold` | `3.0` | empirical | DSurfTomo: keep signed residuals within threshold x [q25, q75]; not IQR fences |
 | `noise` | `auto` | rule | Gaussian noise added to the synthetic travel times of the checkerboards, a fraction of each time; auto: the relative rms of the residuals of the final main model that DSurfTomo's rejection rule keeps, so that the synthetic data are as noisy as the real data fit (Rawlinson & Spakman 2016); the checkerboards then run after the main project |
-| `solver` | `dsurftomo` | choice | dsurftomo (<= 60 periods) or pdsurftomo (parallel, <= 80 periods) |
-| `threads` | `4` | technical | threads per project |
-| `njobs` | `1` | technical | projects run at the same time |
 
 ## 11. checks: checkerboards, controls, precheck
 
 | key | default | basis | meaning |
 |---|---|---|---|
-| `checkerboards` | `auto` | rule | horizontal checkerboards [{name, cell_km}]; auto: cells of 0.12, 0.18 and 0.25 x the aperture (lines: 0.165, 0.24, 0.34 x the line length, along the line) |
-| `vertical` | `auto` | rule | depth-varying checkerboards; auto: cell 0.18 x aperture, sign reversals at 0.21, 0.46, 0.71 x the deepest updated node |
+| `checkerboards` | `auto` | rule | horizontal checkerboards [{name, cell_km}], each a full inversion; cell_km is half the period of the pattern; auto (set by the inversion step): three tests, cells of 1, 2 and 3 median measured wavelengths c T (the lateral resolution is limited by the predominant wavelength, Yao et al. 2006; tests at several scales, Rawlinson & Spakman 2016; the factors 1, 2, 3 are the user's choice); lines: along the line |
+| `vertical` | `auto` | rule | depth-varying checkerboards [{name, cell_km, reversal_depths_km}]; auto (set by the inversion step): one test, cell 2 median wavelengths, one sign reversal at the median wavelength / 3 (depth of the largest sensitivity of the Rayleigh phase velocity, rule of thumb of Fang et al. 2015); none when no updated depth node lies on both sides of it |
 | `amplitude` | `0.1` | empirical | checkerboard perturbation, a fraction of the 1-D Vs of each depth |
-| `controls` | `[start_grad0.05]` | empirical | control inversions: reg_w<w>_d<d> other regularisation, start_grad<f> other starting model |
+| `controls` | `[start_grad0.05]` | empirical | control inversions: reg_x<f> the smoothing weight times f (stability of the model under the choice of the weight), reg_w<w>_d<d> given weight and damping, start_grad<f> other starting model |
 | `precheck.min_kept` | `0.5` | empirical | a project is invalid when DSurfTomo's rejection rule would keep less than this fraction of the data in the first iteration |
 | `precheck.max_median_iqr` | `1.0` | empirical | ... or when the median residual is beyond this many interquartile ranges |
 | `iteration_residuals` | `false` | choice | also evaluate the model of every iteration (one forward run each) |
@@ -196,7 +190,8 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 
 | key | default | basis | meaning |
 |---|---|---|---|
-| `formats` | `[png]` | choice | figure formats |
+| `backend` | `gmt` | choice | gmt: reference command interface; pygmt: isolated Python GMT C-API renderer; both require GMT |
+| `formats` | `[png]` | choice | figure format; [png] only |
 | `dpi` | `300` | choice | resolution of the png figures |
 | `topography` | `auto` | choice | relief under the maps; auto: SRTM 1-arc-second tiles (Farr et al. 2007) from the GMT data server, kept in ~/.cache/lant/srtm1 (only the tile names are requested; maps up to 3 degrees wide); or a grid file / GMT remote grid; null: no relief |
 | `vs_range` | `auto` | rule | colour range; auto: 2nd-98th percentile of the model under the stations, to 0.1 km/s |
@@ -208,8 +203,14 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `font_scale` | `1.0` | choice | font size factor |
 | `pair_example` | `null` | choice | pair(s) of the single-pair figures (stack time, dispersion): a name or a list; default: three pairs at the 20 / 50 / 80 % quantiles of the distances of the pairs with long curves |
 
+## 13. resources: computing resources
 
-## 13. Defaults that differ for line arrays
+| key | default | basis | meaning |
+|---|---|---|---|
+| `cores` | `auto` | technical | cores of a step; auto: max(1, 0.8 x (usable CPUs - 1-minute load average)), without the load this run caused itself (idle = not used by others), taken again at every step and solver project; parallel work is also limited to half of the available memory (lant/resources.py); an integer is used as given |
+
+
+## 14. Defaults that differ for line arrays
 
 A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
 
@@ -219,11 +220,10 @@ A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
 - `inversion.median_min_pairs`: `20`
 - `inversion.grid_refine`: `1`
 - `inversion.line_strip_cells`: `1.0`
-- `inversion.weight`: `1.5`
-- `inversion.damp`: `1.5`
 
 ## References
 
+- Aster, R. C., Borchers, B., & Thurber, C. H. (2018). *Parameter Estimation and Inverse Problems* (3rd ed.), chapter 4. Elsevier.
 - Bensen, G. D., et al. (2007). Processing seismic ambient noise data to obtain reliable broad-band surface wave dispersion measurements. *GJI*, 169, 1239–1260. doi:10.1111/j.1365-246X.2007.03374.x
 - Brocher, T. M. (2005). Empirical relations between elastic wavespeeds and density in the Earth's crust. *BSSA*, 95, 2081–2092. doi:10.1785/0120050077
 - Constable, S. C., Parker, R. L., & Constable, C. G. (1987). Occam's inversion. *Geophysics*, 52, 289–300. doi:10.1190/1.1442303
@@ -238,6 +238,7 @@ A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
 - Leys, C., Ley, C., Klein, O., Bernard, P., & Licata, L. (2013). Detecting outliers: do not use standard deviation around the mean, use absolute deviation around the median. *J. Exp. Soc. Psychol.*, 49, 764–766. doi:10.1016/j.jesp.2013.03.013
 - Lin, F.-C., Moschetti, M. P., & Ritzwoller, M. H. (2008). Surface wave tomography of the western United States from ambient seismic noise: Rayleigh and Love wave phase velocity maps. *GJI*, 173, 281–298. doi:10.1111/j.1365-246X.2008.03720.x
 - Luo, Y., Yang, Y., Xu, Y., Xu, H., Zhao, K., & Wang, K. (2015). On the limitations of interstation distances in ambient noise tomography. *GJI*, 201, 652–661. doi:10.1093/gji/ggv043
+- Morozov, V. A. (1966). On the solution of functional equations by the method of regularization. *Soviet Math. Dokl.*, 7, 414–417.
 - Rawlinson, N., & Spakman, W. (2016). On the use of sensitivity tests in seismic tomography. *GJI*, 205, 1221–1243. doi:10.1093/gji/ggw084
 - Seats, K. J., Lawrence, J. F., & Prieto, G. A. (2012). Improved ambient noise correlation functions using Welch's method. *GJI*, 188, 513–523. doi:10.1111/j.1365-246X.2011.05263.x
 - Sens-Schönfelder, C. (2008). Synchronizing seismic networks with ambient noise. *GJI*, 174, 966–970. doi:10.1111/j.1365-246X.2008.03842.x
@@ -249,4 +250,3 @@ A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
 - Wang, J., Wu, G., & Chen, X. (2019). Frequency-Bessel transform method for effective imaging of higher-mode Rayleigh dispersion curves from ambient seismic noise data. *JGR Solid Earth*, 124, 3708–3723. doi:10.1029/2018JB016595
 - Xu, Y., Lebedev, S., Meier, T., Bonadio, R., & Bean, C. J. (2021). Optimized workflows for high-frequency seismic interferometry using dense arrays. *GJI*, 227, 875–897. doi:10.1093/gji/ggab260
 - Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis – I. Phase velocity maps. *GJI*, 166, 732–744. doi:10.1111/j.1365-246X.2006.03028.x
-- Zhu, S., Li, J., Chen, G., Fang, H., & Yao, H. (2026). pDSurfTomo: a high-performance parallel computing package for direct surface wave tomography. arXiv:2604.11920.

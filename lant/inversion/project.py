@@ -8,8 +8,9 @@
   MOD.true       checkerboards only: the true model, same layout without the depth line
 
 Grid: the extent follows the stations that carry data, with a margin of max(1 % of the range, 3 cells) on each side
-(no station may fall into the boundary ring), spacing inversion.grid_spacing_deg (lat, lon); then every interval is
-divided by grid_refine (same origin and extent).  Lines: across the line only line_strip_cells cells are kept on
+(no station may fall into the boundary ring), spacing inversion.grid_spacing_deg (lat, lon; auto: grid_spacing, the
+median measured wavelength / 3 in km for the final grid, the same in both directions); then every interval is divided
+by grid_refine (same origin and extent).  Lines: across the line only line_strip_cells cells are kept on
 each side of the stations (DSurfTomo computes travel times from the second node over ny-3 cells; a station on the
 edge of that strip gets wrong travel times without an error).
 """
@@ -22,10 +23,12 @@ from collections import defaultdict
 
 import numpy as np
 
+from .. import config as C
+
 KM_PER_DEG = 2 * np.pi * 6371.0 / 360.0  # on DSurfTomo's sphere (grid and checkerboard cells)
 
 
-def records_from_curves(curves, max_periods, solver="dsurftomo"):
+def records_from_curves(curves, max_periods):
     recs = []
     for c in curves:
         recs.append(
@@ -39,10 +42,10 @@ def records_from_curves(curves, max_periods, solver="dsurftomo"):
     periods = sorted({t for r in recs for t in r["values"]})
     if len(periods) > max_periods:
         raise RuntimeError(
-            "%d periods carry data (%.4g-%.4g s); %s accepts at most %d (NP in its CalSurfG): set "
+            "%d periods carry data (%.4g-%.4g s); the solver accepts at most %d (NP of DSurfTomo's CalSurfG): set "
             "dispersion.per_octave to %d or fewer, or narrow export.tmin_s / export.tmax_s, then run the "
             "chain again from disp"
-            % (len(periods), periods[0], periods[-1], solver, max_periods, _per_octave_for(periods, max_periods))
+            % (len(periods), periods[0], periods[-1], max_periods, _per_octave_for(periods, max_periods))
         )
     idx = {t: k + 1 for k, t in enumerate(periods)}
     for r in recs:
@@ -78,6 +81,26 @@ def write_surfdata(recs, path, wave_type=2, vel_type=0):
                 fh.write("%.6f %.6f %.6f\n" % (lat2, lon2, v))
     nsrc = max(max_rcv, max(len(v) for v in src_per_period.values()), len(stations))
     return dict(blocks=n_blocks, nsrc=nsrc, travel_times=sum(len(r["index"]) for r in recs), stations=sorted(stations))
+
+
+def median_wavelength(recs):
+    """Median of c T over every travel time of the project (km): the wavelength the data carry most."""
+    return float(np.median([v * t for r in recs for t, v in r["values"].items()]))
+
+
+def grid_spacing(recs, points, refine):
+    """inversion.grid_spacing_deg auto -> ([coarse lat, coarse lon] degrees, reason).  The final cell is the median
+    measured wavelength / 3 in km in both directions (user's rule 2026-11-13; lateral resolution of surface-wave
+    tomography is about a wavelength, three nodes sample it), on two significant digits; the coarse grid
+    (margin, checkerboard index) is grid_refine times it."""
+    lam = median_wavelength(recs)
+    km = lam / 3.0
+    lat0 = float(np.mean([p[0] for p in points]))
+    dlat = float("%.2g" % (km / KM_PER_DEG))
+    dlon = float("%.2g" % (km / (KM_PER_DEG * math.cos(math.radians(lat0)))))
+    why = "median measured wavelength %.4g km / 3 = %.4g km -> %g deg (lat), %g deg (lon) x grid_refine %d" % (
+        lam, km, dlat, dlon, refine)  # fmt: skip
+    return [round(dlat * refine, 8), round(dlon * refine, 8)], why
 
 
 def grid(points, spacing, refine=1, strip_cells=None):
@@ -124,7 +147,7 @@ def write_in(path, g, nz, nsrc, inv, periods, synthetic=0):
         fh.write(line("%.6f %.6f" % (g["goxd"], g["gozd"]), "goxd gozd (upper left point,[lat,lon])"))
         fh.write(line("%.6f %.6f" % (g["dvxd"], g["dvzd"]), "dvxd dvzd (grid interval in lat and lon direction)"))
         fh.write(line("%d" % nsrc, "max(sources, receivers)"))
-        fh.write(line("%.3f %.3f" % (inv["weight"], inv["damp"]), "weight damp"))
+        fh.write(line("%.6g %.6g" % (inv["weight"], inv["damp"]), "weight damp"))
         fh.write(line("%d" % inv["sublayers"], "sublayers (for computing depth kernel, 2~5)"))
         fh.write(
             line("%.3f %.3f" % (inv["vmin"], inv["vmax"]), "minimum velocity, maximum velocity (a priori information)")
@@ -285,12 +308,16 @@ def build_main(cfg, curves, z, vs, out_dir):
 
     inv = cfg["inversion"]
     check_layers(len(z), inv["sublayers"])
-    from ..tools import max_periods
+    from .start import PROJECT_MAX_PERIODS
 
-    recs, periods = records_from_curves(curves, max_periods(inv["solver"]), inv["solver"])
+    recs, periods = records_from_curves(curves, PROJECT_MAX_PERIODS)
     os.makedirs(out_dir, exist_ok=True)
     info = write_surfdata(recs, os.path.join(out_dir, "surfdata.dat"))
     pts = info.pop("stations")
+    spacing_reason = "inversion.grid_spacing_deg"
+    if C.is_auto(inv["grid_spacing_deg"]):
+        spacing, spacing_reason = grid_spacing(recs, pts, inv["grid_refine"])
+        inv = dict(inv, grid_spacing_deg=spacing)
     g = grid(
         pts,
         inv["grid_spacing_deg"],
@@ -318,7 +345,7 @@ def build_main(cfg, curves, z, vs, out_dir):
     write_mod(os.path.join(out_dir, "MOD"), z, vs, g)
     np.savetxt(os.path.join(out_dir, "vs1d.txt"), np.c_[z, vs], fmt="%10.4f %10.4f")
     meta = dict(
-        grid=g,
+        grid=dict(g, spacing_reason=spacing_reason),
         periods=periods,
         curves=len(recs),
         travel_times=info["travel_times"],
@@ -350,7 +377,7 @@ def settle(new, dst):
     import filecmp
 
     if os.path.exists(os.path.join(dst, "DSurfTomo.in.log")):
-        names = sorted(set(os.listdir(new)))
+        names = sorted(os.listdir(new))
         same = all(
             os.path.exists(os.path.join(dst, f))
             and filecmp.cmp(os.path.join(new, f), os.path.join(dst, f), shallow=False)
@@ -375,6 +402,26 @@ def set_line(path, key, value):
     open(path, "w").write("\n".join(L))
 
 
+def _number(name, text):
+    try:
+        x = float(text)
+    except ValueError:
+        x = float("nan")
+    if not x > 0:
+        raise RuntimeError("checks.controls: %s needs a positive number, not %r" % (name, text))
+    return x
+
+
+def set_regularization(d, weight, damp, control):
+    """Smoothing weight and damping of a control project, in DSurfTomo.in and in its project.json (which was copied
+    from the main project, so the weight there and the main project's choice of it are replaced)."""
+    set_line(os.path.join(d, "DSurfTomo.in"), "weight damp", "%.6g %.6g" % (weight, damp))
+    path = os.path.join(d, "project.json")
+    meta = json.load(open(path))
+    meta.update(weight=weight, damp=damp, control=control)
+    json.dump(meta, open(path, "w"), indent=1)
+
+
 def build_checks(cfg, main_dir, out_root, noise=None, part="all"):
     """Checkerboards, depth-varying checkerboards and the control inversions, built from the main project.
     noise: relative noise of the synthetic travel times; None leaves the checkerboards to be built later (listed under
@@ -387,12 +434,14 @@ def build_checks(cfg, main_dir, out_root, noise=None, part="all"):
     at = cfg["project"]["array_type"]
     built = []
     info = {}
-    vertical = ck["vertical"]
-    if vertical == "auto":
-        from ..auto import vertical_tests
+    horizontal, vertical, design = ck["checkerboards"], ck["vertical"], None
+    if horizontal == "auto" or vertical == "auto":
+        from .checker_design import design as rule
 
-        vertical = vertical_tests(cfg, z)
-    specs = [(c["name"], c["cell_km"], None) for c in ck["checkerboards"]] + [
+        h_auto, v_auto, design = rule(main_dir, z, at)
+        horizontal = h_auto if horizontal == "auto" else horizontal
+        vertical = v_auto if vertical == "auto" else vertical
+    specs = [(c["name"], c["cell_km"], None) for c in horizontal] + [
         (c["name"], c["cell_km"], c["reversal_depths_km"]) for c in vertical
     ]
     if len({n for n, _, _ in specs}) != len(specs):
@@ -416,9 +465,12 @@ def build_checks(cfg, main_dir, out_root, noise=None, part="all"):
         new = d + ".new"
         copy_project(main_dir, new)
         dd, d = d, new
-        if name.startswith("reg_w"):
-            w, dp = name[5:].split("_d")
-            set_line(os.path.join(d, "DSurfTomo.in"), "weight damp", "%.3f %.3f" % (float(w), float(dp)))
+        if name.startswith("reg_x"):  # the main project's smoothing weight times the factor, its damping
+            factor = _number(name, name[5:])
+            set_regularization(d, float("%.6g" % (factor * meta["weight"])), meta["damp"], name)
+        elif name.startswith("reg_w"):
+            w, _, dp = name[5:].partition("_d")
+            set_regularization(d, round(_number(name, w), 3), round(_number(name, dp), 3), name)
         elif name.startswith(("start_x", "start_grad")):  # the updatable nodes only: fixed nodes as in main
             sc = control_scale(name, z)
             if name.startswith("start_grad"):
@@ -431,8 +483,16 @@ def build_checks(cfg, main_dir, out_root, noise=None, part="all"):
             write_mod(os.path.join(d, "MOD"), z, vs, g, scale=sc)
         else:
             raise RuntimeError(
-                "checks.controls: unknown control %s (use reg_w<weight>_d<damp>, start_grad<f> or "
+                "checks.controls: unknown control %s (use reg_x<factor>, reg_w<weight>_d<damp>, start_grad<f> or "
                 "start_x<factor>)" % name
             )
         built.append((name, settle(new, dd)))
-    return dict(built=built, deferred=deferred, vertical=vertical, controls=info, noise=noise)
+    return dict(
+        built=built,
+        deferred=deferred,
+        horizontal=horizontal,
+        vertical=vertical,
+        design=design,
+        controls=info,
+        noise=noise,
+    )

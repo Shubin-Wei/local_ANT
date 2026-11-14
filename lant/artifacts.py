@@ -15,6 +15,7 @@ INTERNAL = (".lant/artifacts.json", ".lant/lock", ".lant/pending.json", ".lant/n
 CACHES = {
     "archive": (("work", "01_clean", "archive"), ("*.mseed", "*.done.json")),
     "cc": (("work", "02_ccf"), ("day_*.h5",)),
+    "forward": ((".lant", "forward_cache"), ("*.npz",)),
 }
 
 
@@ -216,7 +217,8 @@ def protect_step_outputs(cfg, step):
         "figures": paths.FIG,
     }
     prefix = os.path.relpath(paths.P(cfg, directories[step]), cfg["project"]["output_dir"]) + "/"
-    conflicts = [p for p in audit(cfg)["unregistered"] if p.startswith(prefix)]
+    prefixes = (prefix, ".lant/forward_cache/") if step in ("run", "evaluate") else (prefix,)
+    conflicts = [p for p in audit(cfg)["unregistered"] if p.startswith(prefixes)]
     if conflicts:
         raise RuntimeError(
             "unregistered files in this step's output directory are protected; relocate them before "
@@ -256,7 +258,8 @@ def cleanup_plan(cfg, selection):
         bytes=sum(p["bytes"] for p in files),
         protected=changed,
         impact="Retained results stay readable. Rebuilding cc requires clean archives; rebuilding stack, and redrawing "
-        "the stack-time figures (2_ccf_stack_time_*), requires cc files.",
+        "the stack-time figures (2_ccf_stack_time_*), requires cc files. Forward cache removal only requires "
+        "recomputing exact predictions when requested again.",
     )
 
 
@@ -282,7 +285,7 @@ def clean(cfg: dict, selection, execute: bool = False) -> dict:
         root = Path(cfg["project"]["output_dir"])
         # Record intent before deletion, so interruption cannot leave status claiming all caches exist.
         m = manifest.load(cfg)
-        for step in ("clean" if s == "archive" else "cc" for s in selection):
+        for step in ({"archive": "clean", "cc": "cc"}[s] for s in selection if s != "forward"):
             m["steps"][step]["cache_cleaned"] = True
         manifest._save(cfg, m)
         for item in plan["files"]:
@@ -290,6 +293,42 @@ def clean(cfg: dict, selection, execute: bool = False) -> dict:
         records.log(cfg, event="cache_cleaned", selection=selection, files=len(plan["files"]), bytes=plan["bytes"])
         write_report(cfg)
         return plan
+
+
+# Files DSurfTomo writes into a checkerboard or control project that lant never reads (the model of every iteration,
+# residuals of the first and last iteration, the 2-D phase-velocity maps); the main project keeps them
+# (checks.iteration_residuals evaluates its iterations).
+SOLVER_LEFTOVERS = (
+    "DSurfTomo.inMeasure.dat.iter[0-9][0-9][0-9]",
+    "residualFirst.dat",
+    "residualLast.dat",
+    "velmap2dRc.dat",
+)
+
+
+def prune_check_projects(cfg, projects):
+    """After the evaluation: delete SOLVER_LEFTOVERS of the given check projects, only files lant registered and that
+    are unchanged since (anything else stays) -> dict(files, bytes, kept)."""
+    root = Path(cfg["project"]["output_dir"])
+    main = Path(paths.P(cfg, paths.INV, "main")).resolve()
+    owned = load(cfg)
+    removed, kept, size = [], [], 0
+    for d in projects:
+        d = Path(d)
+        if d.resolve() == main or d.is_symlink() or not d.is_dir():
+            continue
+        for p in sorted(d.iterdir()):
+            if not any(fnmatch.fnmatch(p.name, pattern) for pattern in SOLVER_LEFTOVERS):
+                continue
+            rel = p.relative_to(root).as_posix()
+            st = p.lstat()
+            if p.is_symlink() or not p.is_file() or owned.get(rel) != signature(st):
+                kept.append(rel)
+                continue
+            p.unlink()
+            removed.append(rel)
+            size += st.st_size
+    return dict(files=len(removed), bytes=size, kept=kept)
 
 
 def required(cfg, step):

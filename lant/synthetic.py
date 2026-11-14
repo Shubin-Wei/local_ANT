@@ -1,9 +1,11 @@
-"""Synthetic test data with a known answer: ambient noise of a laterally uniform medium (used by `lant demo`).
+"""Synthetic test data with a known answer: ambient noise of a known 3-D medium (used by `lant demo`).
 
-The noise field is a sum of plane Rayleigh waves arriving from random azimuths (an isotropic diffuse field), each
-with a random spectrum, propagating with the phase velocity c(f) of a known 1-D Vs model.  For such a field the
-cross-correlation of two stations is the 2-D Green's function, so the measured phase velocities should follow c(f)
-and the inversion should return the 1-D model (within its resolution).
+The medium is a 1-D Vs background with a +/-6 % sinusoidal checkerboard, three cells across the square array.
+The field is a sum of plane Rayleigh waves from random azimuths, each with a random spectrum. Local phase
+slowness is interpolated between the background and +/-6 % scaled profiles (DSurfTomo's surfdisp96,
+lant.inversion.start.forward); incoming straight paths integrate it through the square. This is a kinematic example: no refraction, scattering or amplitude focusing.
+The inversion uses bent rays and a different forward model, so perfect recovery is not expected. --uniform
+leaves out the checkerboard. The generator does not replace the measured correlations or relax quality control.
 
     python -m lant.synthetic --out DIR [--stations 16] [--days 3]     (in a checkout also
                                                                        examples/synthetic/make_synthetic.py)
@@ -16,15 +18,17 @@ writes
     data/                       the "raw" records, deliberately mixed: miniSEED and SAC (SAC without network code),
                                 in nested folders with arbitrary names
     stations.txt                the station table (no header, longitude before latitude: recognised automatically)
-    true_model.txt, true_dispersion.txt   the answer (depth Vs; frequency c)
+    true_model.txt, true_dispersion.txt   the background (depth Vs; frequency c)
+    true_checkerboard.json     checker pattern, coordinates, amplitude, cell size and synthesis limitations
     synthetic.yaml              a ready configuration (output in DIR/output)
     responses.xml               with --responses: the StationXML responses of the two sensor types (alternate
                                 stations: geophones of 2 Hz and 10 Hz natural frequency, damping 0.7), named in
                                 synthetic.yaml as data.response; synthetic_noresp.yaml is the same without it
-Needs fwd1d (`lant install-external dsurftomo`) to compute c(f) of the model.  About 5-20 minutes, 300 MB.
+About 5-20 minutes and 300 MB (--quick: about a minute).
 """
 
 import argparse
+import json
 import os
 
 import numpy as np
@@ -56,8 +60,8 @@ YAML = """# Configuration of the synthetic example (lant.synthetic).
 # and (b) make the inversion part fast enough for a first test (6 iterations, one checkerboard and one control).
 project: {name: %(name)s, output_dir: output}
 data: {raw_dir: data, station_file: stations.txt, velocity_range_kms: [%(vlo)s, %(vhi)s]}
-dispersion: {njack: 3, nproc: 4}
-%(export)sinversion: {median_min_pairs: 20, iterations: 6, threads: 4, njobs: 3}
+dispersion: {njack: 3}
+%(export)sinversion: {median_min_pairs: 20, iterations: 6}
 checks: {checkerboards: [{name: cb, cell_km: [%(cell)s, %(cell)s]}], vertical: [], controls: [start_grad0.05]}
 """
 
@@ -67,20 +71,19 @@ YAML_LINE = """# Configuration of the synthetic line (lant.synthetic --layout li
 # example fast.
 project: {name: synthetic_line, output_dir: output}
 data: {raw_dir: data, station_file: stations.txt, velocity_range_kms: [%(vlo)s, %(vhi)s]}
-dispersion: {nproc: 4}
-inversion: {iterations: 6, threads: 4, njobs: 3}
+inversion: {iterations: 6}
 """
 
-YAML_QUICK = """# Configuration of the quick first test (lant.synthetic --quick): 10 stations, 6 hours.
+YAML_QUICK = """# Configuration of the quick first test (lant.synthetic --quick): 16 stations, 6 hours.
 # Only the three paths are required.  The other lines keep the test short: a velocity range that fits the model,
-# a coarse grid, few iterations and no check inversions (DSurfTomo takes most of the time, and its time grows
+# a coarse grid, few iterations and no check inversions (the inversion takes most of the time, and its time grows
 # with the number of grid nodes and periods).  Do not copy them to a real project.
 project: {name: quick, output_dir: output}
 data: {raw_dir: data, station_file: stations.txt, velocity_range_kms: [%(vlo)s, %(vhi)s]}
 correlation: {fs_max: 25}
-dispersion: {njack: 3, nproc: 4}
+dispersion: {njack: 3}
 export: {tmin_s: 0.2}
-inversion: {median_min_pairs: 10, grid_refine: 1, iterations: 3, threads: 4}
+inversion: {median_min_pairs: 10, grid_refine: 1, iterations: 3}
 checks: {checkerboards: [], vertical: [], controls: []}
 """
 
@@ -118,15 +121,16 @@ def main(argv=None, default_out=None):
         help="fraction of the plane waves arriving from one direction (azimuth 45 degrees, standard "
         "deviation 15 degrees); the rest from random azimuths (0: an isotropic field)",
     )
+    p.add_argument("--uniform", action="store_true", help="a laterally uniform medium (no checkerboard)")
     p.add_argument(
         "--quick",
         action="store_true",
-        help="a small first test: 10 stations, one day with 6 hours of record at 25 Hz (about a minute to "
+        help="a small first test: 16 stations, one day with 6 hours of record at 25 Hz (about a minute to "
         "make, a few minutes to process; the numbers are rougher than those of the full example)",
     )
     a = p.parse_args(argv)
     if a.quick:
-        a.stations, a.days, a.hours, a.fs, a.waves = 10, 1, 6, 25.0, 100
+        a.stations, a.days, a.hours, a.fs, a.waves = 16, 1, 6, 25.0, 100
     M = MODELS[a.model]
     TRUE_Z, TRUE_VS = np.array(M["z"]), np.array(M["vs"])
     f_lo, f_hi = M["band"]
@@ -184,6 +188,30 @@ def main(argv=None, default_out=None):
     band = (f >= f_lo) & (f <= f_hi)
     cf = np.ones_like(f)
     cf[band] = np.interp(np.log(f[band]), fl, cl)
+    from . import synthetic_checkerboard as checker
+
+    amplitude = 0.0 if a.uniform else checker.AMPLITUDE
+    cell = M["size"] / checker.CELLS
+    slow_changes = []
+    for change in (amplitude, -amplitude):
+        curve = forward(TRUE_Z, TRUE_VS * (1 + change), 1 / freq)
+        cb = np.interp(np.log(f[band]), fl, curve)
+        ds = np.zeros_like(f)
+        ds[band] = 1 / cb - 1 / cf[band]
+        slow_changes.append(ds)
+    description = dict(
+        amplitude=amplitude,
+        cell_km=cell,
+        size_km=M["size"],
+        origin_lon=LON0,
+        origin_lat=LAT0,
+        km_per_degree=[kx, ky],
+        pattern="Vs0(z) * (1 + amplitude sin(pi x/cell) sin(pi y/cell)) inside the square; background outside",
+        synthesis="Straight incoming rays; local slowness interpolated between three surfdisp96 profiles; "
+        "no refraction, scattering or amplitude focusing. Approximate model, not the inversion forward.",
+    )
+    with open(os.path.join(a.out, "true_checkerboard.json"), "w") as fh:
+        json.dump(description, fh, indent=1)
     taper = np.zeros_like(f)
     taper[band] = 1.0
     t0 = obspy.UTCDateTime(2024, 6, 1)
@@ -224,7 +252,11 @@ def main(argv=None, default_out=None):
             spec = (rng.standard_normal((a.waves, f.size)) + 1j * rng.standard_normal((a.waves, f.size))) * taper
             for s in range(a.stations):
                 proj = x[s] * np.sin(az) + y[s] * np.cos(az)  # km along each propagation direction
-                ph = np.exp(-2j * np.pi * f[None, :] * proj[:, None] / cf[None, :])
+                delay = proj[:, None] / cf[None, :]
+                if amplitude:
+                    positive, negative = checker.path_weights(x[s], y[s], az, M["size"], cell)
+                    delay += positive[:, None] * slow_changes[0] + negative[:, None] * slow_changes[1]
+                ph = np.exp(-2j * np.pi * f[None, :] * delay)
                 day[s, h * nh : (h + 1) * nh] = np.fft.irfft((spec * ph).sum(0), n=nh).astype(np.float32)
         day += 0.05 * day.std() * rng.standard_normal(day.shape).astype(np.float32)  # local incoherent noise
         if d == 1 and a.hours >= 2:
@@ -277,7 +309,7 @@ def main(argv=None, default_out=None):
             y.replace("station_file: stations.txt,", "station_file: stations.txt, response: responses.xml,")
         )
     print(
-        "wrote %s (stations.txt, data/, true_model.txt, true_dispersion.txt, synthetic.yaml%s)"
+        "wrote %s (stations.txt, data/, true_model.txt, true_dispersion.txt, true_checkerboard.json, synthetic.yaml%s)"
         % (a.out, ", responses.xml, synthetic_noresp.yaml" if a.responses else "")
     )
 

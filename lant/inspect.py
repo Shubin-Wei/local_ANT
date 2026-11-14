@@ -17,17 +17,17 @@ from .signal import geodesic_km, nearest_neighbour_km
 FIGURES = {
     "clean": [
         "work/01_clean/report.txt",
-        "work/01_clean/coverage.png",
+        "results/figures/0_data_coverage.png",
         "work/01_clean/station_days.csv",
         "work/01_clean/processing_days.txt",
     ],
     "stack": [
         "work/03_stack/candidates.txt",
-        "work/03_stack/station_qc/station_qc.png",
+        "results/figures/2_station_qc.png",
         "work/03_stack/station_qc/station_qc.txt",
         "work/03_stack/removed.txt",
     ],
-    "reference": ["work/04_reference/fj.png", "work/04_reference/fj.txt"],
+    "reference": ["results/figures/3_fj_phase_velocity.png", "work/04_reference/fj.txt"],
     "disp": [
         "work/05_dispersion/median_vs_reference.txt",
         "work/05_dispersion/pair_figures/",

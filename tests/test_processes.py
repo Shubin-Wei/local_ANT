@@ -107,3 +107,64 @@ def test_pool_results_keep_order_and_fail_when_a_worker_is_killed():
         with Pool(2) as pool:
             list(processes.pool_results(pool, _square_or_die, range(6), poll=0.2))
     assert time.monotonic() - begin < 20  # it used to wait forever
+
+
+def _wait_registered(batch_count):
+    for _ in range(500):
+        with processes._guard:
+            if len(processes._active) >= batch_count:
+                return
+        time.sleep(0.01)
+    pytest.fail("processes did not start")
+
+
+def test_failure_of_a_nested_batch_leaves_sibling_processes_running():
+    """Codex review F4: one batch failing must not kill the processes of another or clear its cancellation."""
+    sibling = []
+    go = threading.Event()
+
+    def long_task():
+        sibling.append(processes.run([sys.executable, "-c", "import time; time.sleep(3)"]))
+
+    def failing_task():
+        go.wait(5)
+        with processes.workers(1) as inner:
+            inner.submit(processes.run, [sys.executable, "-c", "import time; time.sleep(60)"])
+            _wait_registered(2)
+            raise RuntimeError("inner failure")
+
+    with processes.workers(2) as outer:
+        a = outer.submit(long_task)
+        _wait_registered(1)
+        b = outer.submit(failing_task)
+        go.set()
+        with pytest.raises(RuntimeError, match="inner failure"):
+            b.result()
+        a.result()
+    assert sibling[0].returncode == 0  # finished normally, not terminated by the inner batch
+    assert not processes._active
+
+
+def test_cancellation_of_an_outer_batch_reaches_nested_batches():
+    started = threading.Event()
+    nested = []
+
+    def task():
+        with processes.workers(1) as inner:
+            f = inner.submit(processes.run, [sys.executable, "-c", "import time; time.sleep(60)"])
+            started.set()
+            nested.append(f)
+            try:
+                f.result()
+            except RuntimeError:
+                pass
+
+    begin = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        with processes.workers(1) as outer:
+            outer.submit(task)
+            assert started.wait(5)
+            _wait_registered(1)
+            raise KeyboardInterrupt
+    assert time.monotonic() - begin < 10 and not processes._active
+    assert nested[0].done() and (nested[0].exception() or nested[0].result().returncode != 0)

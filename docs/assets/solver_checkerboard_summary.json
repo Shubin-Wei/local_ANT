@@ -1,0 +1,52 @@
+{
+  "depth_km": 0.6,
+  "final_max_abs_kms": 0.0004899999999996574,
+  "final_rms_kms": 4.56319801768266e-05,
+  "iterations": 6,
+  "threads": 8,
+  "native_trimmed_seconds": [
+    76.22883529396495,
+    21.814427214034367,
+    0.7067907634773292
+  ],
+  "python_trimmed_seconds": [
+    25.83602379349759,
+    2.172663235629443,
+    0.1615239874809049
+  ],
+  "python_identity": {
+    "implementation": "Python port of DSurfTomo a651faf (lant.inversion.dsurf_main)",
+    "packages": {
+      "disba": "0.7.0",
+      "numba": "0.61.2",
+      "numpy": "1.26.4",
+      "scipy": "1.15.3"
+    },
+    "sources": {
+      "lant.inversion.dsurf_bspline": "183e017546379ae6a6573edda6632b8f9d7b936ef9a12059146201e9b76144cc",
+      "lant.inversion.dsurf_fmm": "14d7f5ce3135d0e9a9d2fccaf0306abc698fa98b042c516b56aeb4d6506b8735",
+      "lant.inversion.dsurf_format": "f11b3536b9f002019b0212f14a42b43bbaef179bfeda499975ffe3e861671a33",
+      "lant.inversion.dsurf_forward": "372558d8f4cc6226feeda19d784041b670f106afca25828a58a84a4d752b8e23",
+      "lant.inversion.dsurf_input": "e239546f87987b17b017383a37be837ef6ad95ab7d1ce21528e7ab17337ecf73",
+      "lant.inversion.dsurf_kernels": "817416b0d372b853d9988e2b0001b9f0631b08933019448d840ee17a9dc49167",
+      "lant.inversion.dsurf_lsmr": "53d28a8417fd506813d3f254feada16c644c5e4bb3375cc2655d0a3be61cf3aa",
+      "lant.inversion.dsurf_main": "834f3ff3eaf2e45ab16e0993678b336979dc636e3d7795199fa5cc253ded09b3",
+      "lant.inversion.dsurf_rays": "675362536539bb3d672a01167fe227e3b6302b04ae045196d085248c6e5f27ae",
+      "lant.inversion.dsurf_rows": "4e4c16fff3de2d202a626c2e9185aead9300f0e98cfa6d29c4900d325bed9297",
+      "lant.inversion.dsurf_source": "4def9ab77b661524c784b90e7366b217d948eec23cdfa732161777d7025e0bd2",
+      "lant.inversion.dsurf_system": "0a3b950d69d67f42ea7e030bb43bc845217f8f3f8c739258e4451c80b230e1cd",
+      "lant.inversion.forward_disba": "2cf91367dea288f68140e45b4bcdf88c6072eb9dbdf986ebe58b6fecdf738417",
+      "lant.inversion.sensitivity": "a67a922c2ded91f6e9222d0fa70bcca6123ff8ac7f103e1f44c685d851587046",
+      "lant.inversion.solver": "c46632c83765cd3e5fba1f449b29ccc153d1b07d7eb6b8e9f6b4350e58073960"
+    }
+  },
+  "sha256": {
+    "native/Vs_model.real": "ba34268de24567a02d0880f1f86bcd1f3edd4cc25938406541e3e76ffe12bf85",
+    "native/DSurfTomo.inSyn.dat": "ed41568cb84722b4f72e16424225ac36b6035af6bc151651ff35d7fcaa30c153",
+    "python/DSurfTomo.inSyn.dat": "630889eb147f1cfdd94c44c2a2f0a85a25771d5ffbde5f2ade92ba90c6d02846",
+    "inputs/DSurfTomo.in": "5d0a4e2f520a3a7ba1328491e0c14612414c4462d1c2d6f6a0801756c57531d6",
+    "inputs/MOD": "77d03624cb43ed1754b204987afc54f64ed9b16c45e6208d78c37dca9da473a9",
+    "inputs/MOD.true": "af09101d2cf3b1df566a648b9dcf3188ac371a87a124622ac08832d0a9b68188",
+    "inputs/surfdata.dat": "193d35427b85e13975bf5926c4d1ab338d0c672bdce1bc11278342d4e918f7b4"
+  }
+}

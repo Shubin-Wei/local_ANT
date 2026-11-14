@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 """Synthetic correlations with a known answer, written directly as a stack file (03_stack/stack.h5).
 
-make_synthetic.py makes raw noise records of a laterally UNIFORM medium (plane waves).  This script makes the
-correlations themselves, for cases plane waves cannot give:
+make_synthetic.py makes raw noise records with an approximate checkerboard (--uniform disables it). This script
+makes controlled correlations directly, for separate measurement and inversion tests:
 
   * a laterally varying medium: Vs(x, y, z) = Vs0(z) (1 + d(x, y)), d a chequer pattern of amplitude --hetero and
-    cell size --cell; the phase velocity c(f, d) comes from the 1-D forward calculation (fwd1d) for the scaled
+    cell size --cell; the phase velocity c(f, d) comes from the 1-D forward calculation (disba) for the scaled
     profile, and the travel time of a pair is the integral of 1 / c along the straight line between the stations;
   * a second, faster arrival (--higher-mode AMPLITUDE: 1.25 x the phase velocity, above --mode-fmin Hz), to see
     what the measurement and its quality control do with a higher mode;

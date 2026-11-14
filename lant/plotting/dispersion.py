@@ -1,8 +1,8 @@
 """Dispersion figures.
 
-pair_example  one pair: its symmetric cross-correlation with the velocity window marked, the phase-velocity image
-              (real part of the analytic signal at t = d / c, phase constant removed, 0-1 shown) and the group-velocity
-              image (squared envelope) with the accepted picks
+pair_example  one pair: symmetric cross-correlation with the velocity window, phase picks and their integer-cycle
+              alternatives (no phase-energy background), and the group-velocity squared-envelope image. The array
+              F-J phase-velocity spectrum is a separate reference product, not single-pair energy.
 all_curves    every exported phase-velocity curve in grey, mean and standard deviation (>= 20 curves), period axis on
               top
 pair_figures  the pair example for pairs spread evenly over distance and for the conspicuous ones - the most
@@ -102,16 +102,19 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
     f_lo = fr[okf].min() if okf.any() else a["freqs"][0]
     if a["okc"].any():
         f_lo = min(f_lo, a["freqs"][a["okc"]].min())
+    f_lo = fr[max(0, np.searchsorted(fr, f_lo) - 2)]  # show the approach to the wavelength gate
     keepf = a["freqs"] >= f_lo * (1 - 1e-9)
     fig = plt.figure(figsize=(11.0, 6.6))
     gs = fig.add_gridspec(2, 2, height_ratios=[1, 2.7], hspace=0.42, wspace=0.26)
     ax = fig.add_subplot(gs[0, :])
     t1, t2 = a["dist"] / vwin[0], a["dist"] / vwin[1]
     inw = (a["tt"] >= t1) & (a["tt"] <= t2)
-    ax.plot(a["tt"], a["sym"], color="0.55", lw=0.9)
-    ax.plot(a["tt"][inw], a["sym"][inw], color="#e8201a", lw=1.5)
-    for tv, v, col in ((t1, vwin[0], "#d0189a"), (t2, vwin[1], "#00a0c8")):
-        ax.axvline(tv, color=col, ls=":", lw=1.8, label="%.3g km/s" % v)
+    ax.axvspan(min(t1, t2), max(t1, t2), color="0.94", zorder=0)
+    ax.plot(a["tt"], a["sym"], color="0.65", lw=0.8)
+    ax.plot(a["tt"][inw], a["sym"][inw], color="k", lw=1.2)
+    for tv, v in ((t1, vwin[0]), (t2, vwin[1])):
+        ax.axvline(tv, color="0.4", ls=":", lw=1.0, label="%.3g km/s" % v)
+    ax.set_title("(a) Symmetric correlation", loc="left")
     ax.set_xlim(0, a["tt"][-1])
     ax.set_ylim(-1.1, 1.1)
     ax.set_xlabel("Time (s)")
@@ -137,11 +140,33 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
     for n, cn in a["branches"].items():
         ax.plot(a["freqs"], cn, "-", color="0.7", lw=0.8, zorder=1)
     ax.plot([], [], "-", color="0.7", lw=0.8, label="Other numbers of cycles")
-    ax.plot(fk, a["cref"][keepf], "--", color="#e8201a", lw=1.2, zorder=2, label="Reference (F-J)")
-    ax.plot(a["freqs"][a["okc"]], a["vc"][a["okc"]], "o", ms=4, mfc="k", mec="k", zorder=3, label="Phase velocity")
+    ax.plot(fk, a["cref"][keepf], "--", color=style.BLUE, lw=1.4, zorder=2, label="Reference (F-J)")
+    rejected = ~a["okc"] & np.isfinite(a["vc"]) & keepf
+    ax.plot(a["freqs"][rejected], a["vc"][rejected], "x", color="0.5", ms=4, label="Rejected candidate")
+    ax.plot(a["freqs"][a["okc"]], a["vc"][a["okc"]], "o", ms=4, color=style.RED, zorder=3, label="Accepted")
+    path_ok = np.isfinite(cref) & (a["dist"] * fr >= cfg["dispersion"]["lam_min"] * cref)
+    ax.fill_between(
+        fk,
+        0,
+        1,
+        where=~path_ok[keepf],
+        transform=ax.get_xaxis_transform(),
+        color="0.9",
+        zorder=0,
+        label=r"Below $d/\lambda_{ref} = %g$" % cfg["dispersion"]["lam_min"],
+    )
+    ax.plot(
+        fk,
+        a["dist"] * fk / cfg["dispersion"]["qc"]["lam_c"],
+        ":",
+        color="k",
+        lw=1,
+        label=r"Final limit: $d/\lambda = %g$" % cfg["dispersion"]["qc"]["lam_c"],
+    )
     _freq_axis(ax, fk)
     ax.set_ylim(vlo, vhi)
     ax.set_ylabel("Phase velocity (km/s)")
+    ax.set_title("(b) Phase picks", loc="left")
     ax.legend(loc="best", frameon=False, fontsize="small")
     ax = fig.add_subplot(gs[1, 1])  # group: envelope image and the measured arrival
     pm = ax.pcolormesh(
@@ -151,9 +176,18 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
     _freq_axis(ax, fk)
     ax.set_ylim(vlo, vhi)
     ax.set_ylabel("Group velocity (km/s)")
+    ax.set_title("(c) Group arrival", loc="left")
     cb = fig.colorbar(pm, cax=ax.inset_axes([1.04, 0, 0.04, 1]))
     cb.set_label("Normalised energy")
     cb.set_ticks([0, 0.5, 1])
+    fig.subplots_adjust(bottom=0.14)
+    fig.text(
+        0.06,
+        0.02,
+        "Phase: picks and cycle alternatives. Grey: initial reference gate; dotted: final wavelength limit. Other QC gates apply.\n"
+        "Group: normalized envelope energy. Array F-J energy is in 3_fj_phase_velocity.",
+        fontsize=8.5,
+    )
     return style.save(fig, out, cfg)
 
 
@@ -224,8 +258,9 @@ def all_curves(cfg, curve_dir, out):
     f, mean, std, full = f[o], mean[o], std[o], full[o]
     b = (np.arange(len(f)) % 4 == 2) & full
     ax.plot([], [], "-", c="0.6", lw=1.5, label="Station pairs (%d curves)" % len(curves))
-    ax.errorbar(f[b], mean[b], yerr=std[b], fmt="none", ecolor="k", elinewidth=1.4, capsize=4, capthick=1.4, zorder=5)
-    ax.plot(f[full], mean[full], "-", c="k", lw=2.6, zorder=6, label="Mean and standard deviation")
+    ax.fill_between(f, mean - std, mean + std, where=full, color=style.RED, alpha=0.12, lw=0)
+    ax.errorbar(f[b], mean[b], yerr=std[b], fmt="none", ecolor=style.RED, elinewidth=1.2, capsize=3, zorder=5)
+    ax.plot(f[full], mean[full], "-", c=style.RED, lw=2, zorder=6, label="Mean ± std. (at least 20 pairs)")
     _freq_axis(ax, np.array([f.min(), f.max()]))
     ax.set_ylabel("Phase velocity (km/s)")
     sec = ax.secondary_xaxis(
@@ -240,13 +275,21 @@ def all_curves(cfg, curve_dir, out):
     return style.save(fig, out, cfg)
 
 
+def _pair_figure(task):
+    cfg, disp_path, stack, pair, out, kind = task
+    pair_example(cfg, disp_path, stack, pair, out)
+    return kind
+
+
 def pair_figures(cfg, disp_path, out_dir, n):
     """Single-pair figures: n pairs with data spread evenly over distance (the same every run), plus max(3, n // 10)
     with the most rejected candidate points and as many with the largest median deviation of their accepted phase
     velocities from the per-frequency median."""
     import glob
 
-    from .. import paths
+    from .. import paths, resources
+    from ..processes import pool_results
+    from ..progress import track
 
     os.makedirs(out_dir, exist_ok=True)
     for old in glob.glob(os.path.join(out_dir, "*")):
@@ -281,8 +324,27 @@ def pair_figures(cfg, disp_path, out_dir, n):
             pick.setdefault(int(i), "deviating")
     stack = paths.stack_product(cfg)
     sub = dict(cfg, plots=dict(cfg["plots"], formats=["png"], dpi=120))
+    tasks = [
+        (sub, disp_path, stack, pairs[i], os.path.join(out_dir, "%s_%s" % (kind, pairs[i])), kind)
+        for i, kind in pick.items()
+    ]
     done = {}
-    for i, kind in pick.items():
-        pair_example(sub, disp_path, stack, pairs[i], os.path.join(out_dir, "%s_%s" % (kind, pairs[i])))
-        done[kind] = done.get(kind, 0) + 1
+    if not tasks:
+        return dict(figures=done, directory=out_dir)
+    with h5py.File(disp_path, "r") as h:
+        nf, nv = len(h["freqs"]), len(h["vel_axis"])
+    estimate = D.memory_estimate(stack, 1, nf, nv, 0)
+    plan = resources.plan(cfg, len(tasks), estimate, "pair diagnostic figures")
+    plan["threads_each"] = 1  # rendering uses one numerical thread per process
+    if plan["parallel"] == 1:
+        for kind in track(map(_pair_figure, tasks), len(tasks), "pair figures"):
+            done[kind] = done.get(kind, 0) + 1
+    else:
+        from multiprocessing import get_context
+
+        # Matplotlib state is private; spawning is safe after threaded numerical libraries have been used.
+        with get_context("spawn").Pool(plan["parallel"], initializer=resources.limit_threads, initargs=(1,)) as pool:
+            for kind in track(pool_results(pool, _pair_figure, tasks), len(tasks), "pair figures"):
+                done[kind] = done.get(kind, 0) + 1
+            resources.note_workers(w.pid for w in pool._pool)
     return dict(figures=done, directory=out_dir)

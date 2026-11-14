@@ -17,4 +17,17 @@
 
 ## 本地检查
 
-先安装 `pip install -e ".[dev]"`，再运行 `ruff check lant tests tools examples`、`ruff format --check lant tests tools examples` 和 `python -m pytest tests --cov=lant`；lint 规则及忽略项的理由写在 `pyproject.toml`。格式化单独提交。用 `python -m build` 构建两种发行物，再在源码树外验证 wheel。CI 运行 lint 和格式检查、Python 3.8/3.10/3.12 上的测试、快速合成算例（到反演工程）以及从安装的 wheel 用包内资源编译 DSurfTomo。
+先安装 `pip install -e ".[dev]"`，再运行 `ruff check lant tests tools examples`、`ruff format --check lant tests tools examples` 和 `python -m pytest tests --cov=lant`；lint 规则及忽略项的理由写在 `pyproject.toml`。格式化单独提交。用 `python -m build` 构建两种发行物，再在源码树外验证 wheel。CI 运行 lint 和格式检查、Python 3.11/3.12/3.13 上的测试、快速合成算例（到反演工程）以及安装的 wheel。
+
+## 职责审查，2026-11-13
+
+500 行规则触发以下职责拆分，与数值／性能改动分别提交：
+
+| 原模块 | 当前职责与行数 |
+|---|---|
+| `data.py`，514 | `data.py`，400：波形／处理日访问；`record_index.py`：原始文件发现及头段复用 |
+| `report.py`，823 | `report.py`，388：参数来源及组装；`step_descriptions.py`，454：已记录步骤的叙述 |
+| `clean.py`，651 | `clean.py`，471：整步调度；`clean_archive.py`，195：单台站日归档及复用键 |
+| `inversion/run.py`，558 | `run.py`，286：求解调度；`model_evaluation.py`，292：模型读取、精确预测及恢复统计 |
+
+审查后仍有四个模块超过 500 行：`config.py`（716）包含统一默认表及配置生命周期，`params.py`（543）为参数登记表，适用表格豁免；`cli.py`（628）保留命令适配／分派入口，`stations.py` 负责读取和规范化台站表，记录名与台站表的对应已移到 `station_match.py`（记录对应台站）；`disp.py`（575）保留一个测量步骤及共享工作进程上下文。叠加步骤的台站诊断已拆成独立模块 `station_qc.py`，`stack.py` 只保留叠加和剔除。保留这些既有边界是审查后的选择，行数是审查提醒，不是所有文件必须满足的硬上限。新增独立职责时再检查边界，不为跨过 500 机械移动几行。

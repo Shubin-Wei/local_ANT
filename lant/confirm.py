@@ -107,18 +107,18 @@ def judgements(cfg, step, summary):
         n = c.get("station_blocks", 0)
         if n > c.get("expected_by_chance", 0):  # as many as chance alone gives: listed in the report, no stop
             out.append(
-                "%d station sub-stacks differ from the rest (work/03_stack/candidates.txt, station_qc/station_qc.png)"
+                "%d station sub-stacks differ from the rest (work/03_stack/candidates.txt, results/figures/2_station_qc.png)"
                 ": remove them (`lant confirm stack --exclude-candidates`) or keep them (`lant confirm stack`)?" % n
             )
     elif step == "reference":
         if s.get("source") == "fj":
             out.append(
-                "do the F-J picks follow the fundamental-mode ridge (work/04_reference/fj.png)?  Only the fundamental "
+                "do the F-J picks follow the fundamental-mode ridge (results/figures/3_fj_phase_velocity.png)?  Only the fundamental "
                 "Rayleigh mode is measured; the strongest ridge can be a higher mode"
             )
             if s.get("zones"):
                 out.append(
-                    "zone references: %d of %d zones have their own curve (work/04_reference/zones.png, zones.txt): "
+                    "zone references: %d of %d zones have their own curve (results/figures/3_reference_zones.png, work/04_reference/zones.txt): "
                     "do the zone curves differ as the geology suggests, and none jumps to another ridge?"
                     % (s["zones"]["with_own_curve"], s["zones"]["zones"])
                 )

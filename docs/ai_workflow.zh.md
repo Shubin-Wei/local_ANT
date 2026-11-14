@@ -25,7 +25,7 @@
 7. **汇报只给数字和图**，不写“稳定”“可靠”“通过”；说明哪些没有检验、哪些受数据限制。
 8. **只在两个地方写文件**：笔记用 `lant note "内容" -c CONFIG`；临时脚本、提取的数据和临时图放在 `OUT/scratch/`（不用了就删）。输出目录的其他位置、原始数据目录和仓库里都不写；不改 `work/`、`results/`、`.lant/`、REPORT.md、README.md。`lant status --json` 会列出输出目录里所有不是 lant 写的文件（`artifacts.unregistered`，包括目录顶层）和 `scratch/` 的大小；除了使用者自己放的文件，这个列表应当为空。
 
-每个新建的输出目录里都有写着这些规则的 `AGENTS.md`（Codex 等使用 AGENTS.md 的助手会读），以及引入它的 `CLAUDE.md`（目录或上级目录里有 CLAUDE.md 时，Claude Code 先读 CLAUDE.md）。助手是否加载它们取决于助手本身；`lant status` 的文件检查不依赖这一点。
+每个新建的输出目录里有一份给 AI 助手的规则文件，按 `project.ai_assistant` 选的助手由同一模板写出：`codex` 写 `AGENTS.md`，`claude`（Claude Code）写 `CLAUDE.md`，`gemini`（Gemini CLI）写 `GEMINI.md`，都是完整规则。默认 `null` 写 `AGENTS.md`，这是许多编程助手都读的公开约定。已有文件不覆盖；换助手后加写新助手的文件，旧文件原样保留。请在实际助手里核对上下文是否加载：其他应用中的 Gemini 模型未必遵循 Gemini CLI 的文件约定。依据为 [Gemini CLI 官方上下文文档](https://google-gemini.github.io/gemini-cli/docs/cli/gemini-md.html)和 [Claude Code 官方记忆文档](https://code.claude.com/docs/en/memory)。`lant status` 的文件登记检查独立于规则加载。
 
 ## 3. 谁决定什么
 
@@ -34,7 +34,7 @@
 | 使用者给出 | 三个路径；知道时：速度范围、响应文件、时区、要排除的台站 |
 | 程序推出，报告里写明推导 | 采样率、频带、时延窗、段长、子叠加长度、F-J 扫描范围、测量频带和速度轴、深度节点、网格、速度上下限、棋盘、剖面、色标 |
 | 程序列出，使用者判断 | clean：名字歧义、坐标不一致、分量方向不明、台阵类型不明确、没有去响应且型号不明；stack：诊断候选剔不剔；reference：拾取的脊是不是基阶；inversion：起始模型、最深节点、速度上下限 |
-| AI 可以自己定（用 `lant note` 记录） | 进程数和线程数（按核数和内存估计）；磁盘不够时不写清洗档案 |
+| AI 可以自己定（用 `lant note` 记录） | 磁盘不够时不写清洗档案（核数由程序定：用户要求时才设 `resources.cores`） |
 | AI 必须先问 | 以上全部判断；`data.rename`；整台排除；借用参考曲线或起始模型；改任何质控门限或正则化；删除已有结果 |
 
 ## 4. 流程
@@ -55,10 +55,10 @@ lant status -c OUT/config.yaml --json                        # 2. 每次停下�
 
 | 步骤 | 看什么 | 常见情况 |
 |---|---|---|
-| clean | 对上的台站数、无数据的台站、`coverage.png`、响应是否去除、`pulse_1s.csv` | 名字对不上：问使用者命名规则，用 `data.rename`；通道认不出：`data.channel` |
-| cc | 台对数、被丢弃的段的比例、内存估计 | 内存不够：`correlation.max_distance_km` 或减小 `nproc` |
-| stack | `candidates.txt`、`station_qc/station_qc.png` | 候选多于偶然期望数（1 个）时流程停下：给使用者看，由使用者决定剔不剔；只有 1 个时只在报告里列出 |
-| reference | `fj.png`：脊是否连续、是不是最慢的那一支；实测速度与 `velocity_range_kms` 的比较 | 可能是高阶：说明理由，建议 `track_fundamental`、缩小速度范围或借用曲线，由使用者定 |
+| clean | 对上的台站数、无数据的台站、`0_data_coverage.png`、响应是否去除、`pulse_1s.csv` | 名字对不上：问使用者命名规则，用 `data.rename`；通道认不出：`data.channel` |
+| cc | 台对数、被丢弃的段的比例、内存估计 | 内存不够：`correlation.max_distance_km` |
+| stack | `candidates.txt`、`results/figures/2_station_qc.png` | 候选多于偶然期望数（1 个）时流程停下：给使用者看，由使用者决定剔不剔；只有 1 个时只在报告里列出 |
+| reference | `3_fj_phase_velocity.png`：脊是否连续、是不是最慢的那一支；实测速度与 `velocity_range_kms` 的比较 | 可能是高阶：说明理由，建议 `track_fundamental`、缩小速度范围或借用曲线，由使用者定 |
 | disp | 接受的点数、按原因统计的拒绝数、`3_dispersion_curves.png`、`median_vs_reference.txt` | 点很少：报告是哪条判据拒的，不擅自放宽 |
 | inversion | `4_start_model.png`、`4_kernels.png`、周期数、深度节点 | 周期超过求解器上限：按提示改 `per_octave` |
 | run、evaluate | 预检保留比例、残差、棋盘恢复、对照差 | 主工程预检无效：停下汇报 |

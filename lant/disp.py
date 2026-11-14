@@ -190,27 +190,31 @@ def pick_group(img, u_ref, valid, segments=None, support=None):
 
 def matched_phase(sig, fs, ffine, tg_fine, alpha, phi0, taper_s=1.0):
     """Phase travel times (any cycle) at the frequencies ffine from the one-sided signal sig (t = 0 first), by the
-    phase-matched filter built from the group delays tg_fine.  -> t_p [nf]"""
-    nt = len(sig)
+    phase-matched filter built from the group delays tg_fine. A batch [n, nt] shares the filter weights; a single
+    signal [nt] returns [nf], a batch returns [n, nf]."""
+    sig = np.asarray(sig)
+    single = sig.ndim == 1
+    sig = np.atleast_2d(sig)
+    nt = sig.shape[-1]
     w = np.ones(nt)
     ntap = max(1, min(nt // 2, int(taper_s * fs)))
     w[-ntap:] = 0.5 + 0.5 * np.cos(np.pi * np.arange(ntap) / ntap)
     nfft = int(2 ** np.ceil(np.log2(max(4 * nt, 4096))))
-    X = np.fft.rfft(sig * w, n=nfft)
+    X = np.fft.rfft(sig * w, n=nfft, axis=-1)
     f = np.fft.rfftfreq(nfft, 1 / fs)
     tg = np.interp(f, ffine, tg_fine)
     psi = 2 * np.pi * np.concatenate([[0.0], np.cumsum(0.5 * (tg[1:] + tg[:-1]) * np.diff(f))])
     psi_c = np.interp(ffine, f, psi)
-    tp = np.full(len(ffine), np.nan)
+    tp = np.full((len(sig), len(ffine)), np.nan)
     half = np.sqrt(20.0 / alpha)  # the Gaussian is below 2e-9 beyond
     df = f[1]
     for k, fc in enumerate(ffine):
         i0, i1 = max(1, int(fc * (1 - half) / df)), min(len(f), int(fc * (1 + half) / df) + 2)
         g = np.exp(-alpha * ((f[i0:i1] - fc) / fc) ** 2)
-        z = np.sum(X[i0:i1] * g * np.exp(1j * (psi[i0:i1] - psi_c[k])))
-        if z != 0:
-            tp[k] = -(np.angle(z) - phi0) / (2 * np.pi * fc)
-    return tp
+        z = np.sum(X[:, i0:i1] * g * np.exp(1j * (psi[i0:i1] - psi_c[k])), axis=-1)
+        valid = z != 0
+        tp[valid, k] = -(np.angle(z[valid]) - phi0) / (2 * np.pi * fc)
+    return tp[0] if single else tp
 
 
 def excess_spectrum(sym, dist, fs, maxlag, vmin, fmin):
@@ -299,11 +303,9 @@ def process_chunk(task):
     nf = len(freqs)
     with h5py.File(G["stack"], "r") as h:
         x2 = h["stack"][idx].astype(np.float64)
-        daily = h["daily"][:, idx].astype(np.float64)
         dcount = h["daily_count"][:, idx].astype(np.float64)
     dist = G["dist"][idx]
     npair = len(idx)
-    _, img_sym, snr_sym = symmetric_images(x2, dist, fs, maxlag, freqs, alpha)
     band_amp = G["band_amp"]
     res = {k: np.full((npair, nf), np.nan, np.float32) for k in DATA_KEYS}
     res["reason"] = np.zeros((npair, nf), np.int32)
@@ -312,7 +314,6 @@ def process_chunk(task):
     res["cycle"] = np.full((npair, nf), -32768, np.int16)
     res["anchor_f"] = np.full((npair, nf), np.nan, np.float32)
     tot_w = dcount.sum(axis=0)
-    tot_sum = (daily * dcount[:, :, None]).sum(axis=0)
     po = int(round(1.0 / np.log2(freqs[1] / freqs[0])))  # points per octave of the measurement grid
     ffine = S.log_freqs(freqs[0], freqs[-1], 4 * po)  # phase tracked on a 4x finer grid
     lff = np.log(ffine)
@@ -329,8 +330,11 @@ def process_chunk(task):
             res["reason"][q] = RS["path_short_measure"]
             continue
         lam_c = c_ref / freqs
-        img = img_sym[q]
-        snr = snr_sym[q]
+        # Only one pair's analytic bank and sub-stacks are live at a time. The pair batch controls scheduling,
+        # not the size of a [pairs, frequencies, lag] or [blocks, pairs, lag] work array.
+        analytic, images, maxima = symmetric_images(x2[q : q + 1], dist[q : q + 1], fs, maxlag, freqs, alpha)
+        img, snr = images[0], maxima[0]
+        del analytic
         reason = np.zeros(nf, np.int32)
         reason[~ref_valid] |= RS["no_reference"]
         reason[dist[q] < QC["lam_c"] * lam_c] |= RS["path_short_measure"]
@@ -342,6 +346,9 @@ def process_chunk(task):
         vg, side = pick_group(img, u_ref, valid, segs, support)
         snr = at_pick(img, vg)  # the SNR of the picked arrival, not of the strongest one
         # jackknife groups from this pair's own sub-stacks with data, dealt out in turn
+        with h5py.File(G["stack"], "r") as h:
+            daily = h["daily"][:, idx[q]].astype(np.float64)
+        total = (daily * dcount[:, q, None]).sum(axis=0)
         have = np.where(dcount[:, q] > 0)[0]
         groups = [have[g :: G["njack"]] for g in range(G["njack"])]
         subsets = []
@@ -349,7 +356,8 @@ def process_chunk(task):
             w = tot_w[q] - dcount[g, q].sum()
             if g.size == 0 or w <= 0 or dcount[g, q].sum() <= 0:
                 continue
-            subsets.append((tot_sum[q] - (daily[g, q] * dcount[g, q][:, None]).sum(axis=0)) / w)
+            subsets.append((total - (daily[g] * dcount[g, q][:, None]).sum(axis=0)) / w)
+        del daily
         dev_g = np.where(support, np.abs(vg - u_ref) / u_ref, 0.0)  # no deviation screen off the measured reference
         res["vg"][q], res["snr"][q], res["side"][q] = vg, snr, side
         reason[~np.isfinite(vg)] |= RS["no_group_pick"]
@@ -374,11 +382,10 @@ def process_chunk(task):
         vg_fill = np.where(np.isfinite(vg), vg, u_ref)
         tg_f = dist[q] / np.interp(lff, lf, vg_fill)
         lam_ratio_f = dist[q] * ffine / c_ref_f
-        sigsets = [x2[q : q + 1]] + [sub[None, :] for sub in subsets]
-        tp_sets = []
-        for sig2 in sigsets:
-            p, n = S.branches(sig2, fs, maxlag)
-            tp_sets.append(matched_phase(0.5 * (p[0] + n[0]), fs, ffine, tg_f, alpha, phi0))
+        sigsets = np.vstack([x2[q]] + subsets)
+        p, n = S.branches(sigsets, fs, maxlag)
+        # All delete-group stacks share the measured group delay: construct its phase/filter weights once.
+        tp_sets = matched_phase(0.5 * (p + n), fs, ffine, tg_f, alpha, phi0)
         c_fine_all = np.full((len(sigsets), len(ffine)), np.nan)
         m_fine = np.full(len(ffine), np.nan)
         anchor_run = np.full(nf, np.nan)
@@ -446,6 +453,22 @@ def auto_njack(stack_path):
     return int((c >= 0.25 * c.max()).sum())
 
 
+def memory_estimate(stack, chunk, nf, nv, njack):
+    """Conservative work-array estimate of one pair batch, bytes (plus an empirical 400 MB Python/library budget).
+    Only one pair's sub-stacks and analytic bank are materialised. Include FFT work, jackknife copies and the
+    quadratic velocity-transition arrays of the ridge picker; this is a scheduling estimate, not an RSS bound.
+    """
+    with h5py.File(stack, "r") as h:
+        blocks, _, samples = h["daily"].shape
+    nt = samples // 2 + 1
+    nfft = 1 << int(np.ceil(np.log2(max(4 * nt, 4096))))
+    batch = 8 * chunk * (samples + blocks)
+    substacks = 8 * samples * (4 * blocks + njack + 1)
+    filters = 16 * nf * nt + 8 * nf * nv * 3 + 16 * nfft * 5
+    ridge = 8 * nv * nv * 3
+    return 400e6 + batch + substacks + filters + ridge
+
+
 def measure(cfg, stack, reference, out):
     """Run the measurement on every pair with data -> out (HDF5)."""
     from .config import phase_constant
@@ -508,8 +531,12 @@ def measure(cfg, stack, reference, out):
     out_d["pre_c"] = np.zeros((npair_all, nf), bool)
     out_d["cycle"] = np.full((npair_all, nf), -32768, np.int16)
     out_d["anchor_f"] = np.full((npair_all, nf), np.nan, np.float32)
-    os.environ["OMP_NUM_THREADS"] = "1"
-    with Pool(int(d["nproc"]), initializer=init_worker, initargs=(opt,)) as pool:
+    from . import resources
+
+    estimate = memory_estimate(stack, d["chunk"], nf, len(VEL), njack)
+    plan = resources.plan(cfg, len(chunks), estimate, "pair batches")
+    os.environ["OMP_NUM_THREADS"] = "1"  # one thread per process: the processes take the cores
+    with Pool(plan["parallel"], initializer=init_worker, initargs=(opt,)) as pool:
         done = 0
         for idx, res in track(pool_results(pool, process_chunk, chunks), len(chunks), "pair batches"):
             for k in out_d:
@@ -517,6 +544,7 @@ def measure(cfg, stack, reference, out):
             done += len(idx)
             if done % (20 * d["chunk"]) < d["chunk"] or done == len(all_idx):
                 print("  pairs done %d / %d" % (done, len(all_idx)), flush=True)
+        resources.note_workers(w.pid for w in pool._pool)
     with h5py.File(out + ".tmp", "w") as h:
         for k, v in out_d.items():
             h.create_dataset(k, data=v)

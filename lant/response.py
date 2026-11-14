@@ -9,7 +9,10 @@ of a water level.
 """
 
 import glob
+import hashlib
 import os
+
+from .record_index import file_signature
 
 _CACHE = {}
 
@@ -18,13 +21,12 @@ class ResponseError(RuntimeError):
     pass
 
 
-def load(path):
-    """Inventory of a response file, or of every readable file of a directory (StationXML, dataless SEED, RESP,
-    SACPZ ...: what obspy.read_inventory reads)."""
-    if path in _CACHE:
-        return _CACHE[path]
-    import obspy
+def identity(path):
+    """Response metadata and content hashes for cache invalidation (engineering rule).
 
+    These small auxiliary files are hashed: restored mtimes and coarse ctimes
+    cannot reliably distinguish an edited response. Raw waveforms are not read.
+    """
     files = (
         [path]
         if os.path.isfile(path)
@@ -32,6 +34,26 @@ def load(path):
     )
     if not files:
         raise ResponseError("data.response: no file at %s" % path)
+    sources = []
+    for f in files:
+        digest = hashlib.sha256()
+        with open(f, "rb") as stream:
+            for block in iter(lambda: stream.read(1 << 20), b""):
+                digest.update(block)
+        sources.append([f, file_signature(f), digest.hexdigest()])
+    return sources
+
+
+def load(path):
+    """Inventory of a response file, or of every readable file of a directory (StationXML, dataless SEED, RESP,
+    SACPZ ...: what obspy.read_inventory reads). Reuse only while source metadata stays the same."""
+    import obspy
+
+    sources = identity(path)
+    cached = _CACHE.get(path)
+    if cached is not None and cached[0] == sources:
+        return cached[1]
+    files = [item[0] for item in sources]
     inv, bad = None, []
     for f in files:
         try:
@@ -45,7 +67,9 @@ def load(path):
             "data.response: none of the %d files under %s is a response file ObsPy reads: %s"
             % (len(files), path, "; ".join(bad[:3]))
         )
-    _CACHE[path] = inv
+    if identity(path) != sources:
+        raise ResponseError("data.response changed while it was being read: %s; retry after the edit finishes" % path)
+    _CACHE[path] = (sources, inv)
     return inv
 
 

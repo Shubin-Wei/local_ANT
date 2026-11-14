@@ -8,11 +8,10 @@ a value written in the configuration, then a confirmed value, then the rule.  do
 Clean step, from the station geometry and the records (infer):
   data.day_start_utc_hour        the UTC hour at which most records longer than 12 h start (0 when they are spread)
   stack.block_hours              the longest of 24, 12, 8, 6, 4, 3, 2, 1 h giving the median station >= 8 sub-stacks
-  inversion.grid_spacing_deg     half the median nearest-station distance (at least the longest extent / 150), on
-                                 the 1-2-2.5-5 sequence of degrees, times grid_refine for the coarse grid
-  checks.checkerboards           cells of 0.12, 0.18, 0.25 x the aperture (lines: 0.165, 0.24, 0.34 x the line length,
-                                 along the line), to 0.1 km
-  checks.vertical                set by the inversion step from the depth nodes
+  inversion.grid_spacing_deg     set by the inversion step (lant.inversion.project.grid_spacing): the median
+                                 measured wavelength / 3, times grid_refine for the coarse grid
+  checks.checkerboards           set by the inversion step (lant.inversion.checker_design): cells of 1, 2 and 3
+  checks.vertical                median measured wavelengths; one depth-varying test
   plots.sections                 areal: two sections through the centre of the stations along the principal axes
 Clean step, from the velocity range the user gives (data.velocity_range_kms) and the sampling rates (from_velocity):
   correlation.fs / fmin_hz / fmax_hz / maxlag_s / seg_len_s / seg_step_s, dispersion.fmax_hz, export.tmin_s,
@@ -63,7 +62,11 @@ REFERENCE_KEYS = [
     ("export", "tmax_s"),
 ]
 KEYS = CLEAN_KEYS + REFERENCE_KEYS
-LATER = [("checks", "vertical")]  # resolved by the inversion step
+LATER = [
+    ("inversion", "grid_spacing_deg"),
+    ("checks", "checkerboards"),
+    ("checks", "vertical"),
+]  # resolved by the inversion step
 FILTER_EDGE = math.log(2.0)  # the Gaussian filter of the band-edge frequency has fallen to half here
 
 
@@ -196,25 +199,18 @@ def infer(cfg, stations, traces):
         bh,
         "median record %.1f h per station: %d h gives %.0f sub-stacks (>= 8 wanted)" % (rh, bh, rh / bh),
     )
-    nn_med = float(np.nanmedian(g["nn"]))
-    want_km = max(nn_med / 2, g["extent"] / 150)
-    fine = nice_number(want_km / 111.195)
-    r = cfg["inversion"]["grid_refine"]
     put(
         ("inversion", "grid_spacing_deg"),
-        [round(fine * r, 6)] * 2,
-        "max(half the median nearest-station distance %.3f km, extent %.1f km / 150) = %.3f km -> %g deg (x grid_refine %d)"
-        % (nn_med, g["extent"], want_km, fine, r),
+        "auto",
+        "set by the inversion step: the median measured wavelength / 3 (x grid_refine %d for the coarse grid)"
+        % cfg["inversion"]["grid_refine"],
     )
-    ap = g["aperture"]
-    frac = (0.165, 0.24, 0.34) if at == "line" else (0.12, 0.18, 0.25)
-    cells = [float("%.2g" % (f * ap)) for f in frac]  # two significant digits: any aperture
     put(
         ("checks", "checkerboards"),
-        [{"name": "cb_%d_%gkm" % (i + 1, c), "cell_km": [c, 0.0 if at == "line" else c]} for i, c in enumerate(cells)],
-        "%s x the aperture %.1f km" % (" / ".join("%g" % f for f in frac), ap),
+        "auto",
+        "set by the inversion step: cells of 1, 2 and 3 median measured wavelengths",
     )
-    put(("checks", "vertical"), "auto", "set by the inversion step from the depth nodes")
+    put(("checks", "vertical"), "auto", "set by the inversion step from the measured wavelengths")
     if at == "surface":
         lat0, lon0 = float(np.mean(g["lat"])), float(np.mean(g["lon"]))
         kx, ky = km_per_degree(lat0)
@@ -474,20 +470,3 @@ def unresolved(cfg, keys=KEYS):
         if C.is_auto(cur) and ks not in LATER:
             left.append(".".join(ks))
     return left
-
-
-def vertical_tests(cfg, depths):
-    """checks.vertical "auto": from the depth nodes of the built project."""
-    zmax = float(depths[-2])
-    ap = load(cfg).get("geometry", {}).get("aperture_km")
-    if ap is None:
-        raise RuntimeError(".lant/auto_parameters.json has no geometry: run `lant run clean` first")
-    cell = float("%.2g" % ((0.34 if cfg["project"]["array_type"] == "line" else 0.18) * ap))
-    rev = [round(f * zmax, 3) for f in (0.21, 0.46, 0.71)]
-    across = 0.0 if cfg["project"]["array_type"] == "line" else cell
-    tests = [{"name": "cb_vertical", "cell_km": [cell, across], "reversal_depths_km": rev}]
-    if cfg["project"]["array_type"] == "line":
-        tests.insert(
-            0, {"name": "cb_vertical_thick", "cell_km": [cell, 0.0], "reversal_depths_km": [round(0.46 * zmax, 3)]}
-        )
-    return tests

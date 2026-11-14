@@ -1,7 +1,7 @@
 """`lant demo`: generate a small synthetic array with a known answer and run the whole chain on it.
 
-The demo confirms its own judgement points, which is right only because it made the data itself (a laterally
-uniform medium whose model is written next to the data).  It refuses to work in a directory it did not create, so
+The demo confirms its own judgement points, which is right only because it made the data itself (a known medium,
+a 1-D background with a checkerboard, written next to the data).  It refuses to work in a directory it did not create, so
 that it can never confirm anything for real data.
 """
 
@@ -56,8 +56,8 @@ def run(out):
         (out / MARKER).write_text(json.dumps(dict(created_by="lant demo", pid=os.getpid())) + "\n")
     config = run_known_truth(out)
     print(
-        "\nThe demo is complete. Open %s, and compare the model with the true one in %s."
-        % (out / "output" / "REPORT.md", out / "true_model.txt")
+        "\nThe demo is complete. Open %s, and compare the model with the true one: the background %s and the "
+        "checker pattern %s." % (out / "output" / "REPORT.md", out / "true_model.txt", out / "true_checkerboard.json")
     )
     print("For your own data: lant run all --raw RAW_DIR --stations STATION_TABLE --out OUTPUT_DIR")
     return config

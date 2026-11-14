@@ -40,194 +40,9 @@ from . import data as D
 from . import paths
 from . import pulse as PU
 from . import station_match as SM
+from .clean_archive import _clean_station_day
 from .processes import pool_results
 from .progress import track
-
-ARCHIVE_VERSION = 2  # raise when _clean_station_day changes what it writes: older station-days are redone
-
-
-def _task_key(name, rows, t0, opt):
-    """Fingerprint of everything a cleaned station-day depends on: its raw files (path, size, modification time,
-    the time span used), the day and the settings.  The same key = the archived file can be used again."""
-    import hashlib
-
-    files = []
-    for r in sorted(rows, key=lambda r: (r["file"], r["start"])):
-        st = os.stat(r["file"])
-        files.append([r["file"], st.st_size, int(st.st_mtime), r["start"], r["end"], r.get("clip"), r.get("cmpinc")])
-    resp = opt.get("response")
-    what = [
-        ARCHIVE_VERSION,
-        name,
-        t0,
-        files,
-        opt["format"],
-        opt["min_len"],
-        opt["encoding"],
-        opt["codes"][name],
-        opt.get("label_offset", 0.0),
-        [resp["path"], resp["ids"][name], resp["pre_filt"]] if resp else None,
-    ]
-    return hashlib.sha1(json.dumps(what, sort_keys=True, default=str).encode()).hexdigest()
-
-
-def _clean_station_day(task):
-    name, rows, t0, opt = task
-    import obspy
-
-    fs = rows[0]["fs"]
-    want = (rows[0]["net"], rows[0].get("sta_header", rows[0]["sta"]), rows[0]["location"], rows[0]["channel"], fs)
-    day = D.day_label(t0, offset_s=opt.get("label_offset", 0.0))
-    d = os.path.join(opt["archive"], name)
-    fn = os.path.join(d, "%s.%s.%s.%s.mseed" % (name, want[2], want[3], day))
-    key = _task_key(name, rows, t0, opt)
-    try:  # done by an earlier run with the same inputs and settings?
-        old = json.load(open(fn + ".done.json"))
-        if old["key"] == key and (not old["rows"] or os.path.exists(fn)):
-            for row in old["rows"]:
-                row["file"] = fn
-            return name, old["rows"], dict(old["stat"], reused=1)
-    except (OSError, ValueError, KeyError):
-        pass
-
-    def finish(rows_out, stat):
-        os.makedirs(d, exist_ok=True)
-        with open(fn + ".done.json.tmp", "w") as fh:
-            json.dump(dict(key=key, rows=rows_out, stat=stat), fh, default=float)
-        os.replace(fn + ".done.json.tmp", fn + ".done.json")
-        return name, rows_out, stat
-
-    st = obspy.Stream()
-    for path in sorted({r["file"] for r in rows}):
-        try:
-            part, _ = D.read_quiet(
-                path,
-                format=None if opt["format"] == "auto" else opt["format"],
-                starttime=obspy.UTCDateTime(t0),
-                endtime=obspy.UTCDateTime(t0 + 86400 - 0.5 / fs),
-            )
-        except Exception as exc:
-            return name, None, dict(error="%s: %s" % (path, exc))
-        for tr in part:
-            s = tr.stats
-            if (s.network, s.station, s.location, s.channel, s.sampling_rate) == want:
-                st.append(tr)
-    clips = [r["clip"] for r in rows if r.get("clip")]
-    if clips:  # a moved node: only its time at this point
-        st.trim(
-            obspy.UTCDateTime(max(t0, min(c[0] for c in clips))),
-            obspy.UTCDateTime(min(t0 + 86400, max(c[1] for c in clips))),
-            nearest_sample=False,
-        )
-        st = obspy.Stream([tr for tr in st if tr.stats.npts > 0])
-    stat = dict(
-        station=name,
-        day=day,
-        traces_in=len(st),
-        shifted=0,
-        interpolated=0,
-        duplicates_or_identical_overlaps=0,
-        conflicting_overlap_s=0.0,
-        dropped_short=0,
-        hours=0.0,
-        gaps=0,
-        nonfinite_samples=0,
-        polarity_reversed=int(D.is_down(rows[0])),
-        integer=all(np.issubdtype(tr.data.dtype, np.integer) for tr in st),
-    )
-    if not len(st):
-        return finish(None, stat)
-    for tr in st:  # 0. non-finite samples are gaps; a downward sensor is turned over
-        if np.issubdtype(tr.data.dtype, np.floating):
-            bad = ~np.isfinite(tr.data)
-            if bad.any():
-                stat["nonfinite_samples"] += int(bad.sum())
-                tr.data = np.ma.masked_invalid(tr.data)
-        if stat["polarity_reversed"]:
-            tr.data = -tr.data
-    if stat["nonfinite_samples"]:
-        st = st.split()
-    for tr in st:  # 1. onto the UTC sample grid of the day (data.snap_to_grid)
-        kind = D.snap_to_grid(tr, t0, fs)
-        if kind == "shifted":
-            stat["shifted"] += 1
-        elif kind == "interpolated":
-            stat["interpolated"] += 1
-            stat["integer"] = False
-    if not stat["integer"]:
-        for tr in st:
-            tr.data = tr.data.astype(np.float32)
-    n0 = len(st)
-    st.merge(method=-1)  # 2. exact duplicates / identical overlaps
-    stat["duplicates_or_identical_overlaps"] = n0 - len(st)
-    for g in st.get_gaps():
-        if g[6] < 0:
-            stat["conflicting_overlap_s"] += float(-g[6])
-    st.merge(method=0, fill_value=None)  # remaining overlaps with different values -> masked
-    out = obspy.Stream()
-    for tr in st.split():
-        if tr.stats.npts / fs < opt["min_len"]:
-            stat["dropped_short"] += 1
-            continue
-        out.append(tr)
-    if not len(out):
-        return finish(None, stat)
-    stat["hours"] = round(sum(tr.stats.npts for tr in out) / fs / 3600, 4)
-    stat["gaps"] = len(out) - 1
-    fold = PU.fold_1s([(int(round((tr.stats.starttime.timestamp - t0) * fs)), tr.data) for tr in out], fs)
-    if fold:
-        stat.update(pulse_ratio=round(fold["ratio"], 3), pulse_power=fold["power"], pulse_limit=round(fold["limit"], 3))
-    if opt.get("response"):  # 3. instrument response (gap-free pieces)
-        from . import response as R
-
-        try:
-            inv = R.load(opt["response"]["path"])
-            for tr in out:
-                R.remove(tr, inv, opt["response"]["ids"][name], opt["response"]["pre_filt"])
-        except Exception as exc:
-            return name, None, dict(error="%s %s: response removal failed (%s)" % (name, stat["day"], exc))
-        stat["integer"] = False
-    net, sta, loc, cha = opt["codes"][name]  # miniSEED header codes (limited lengths), see storage_codes
-    for tr in out:
-        tr.stats.network, tr.stats.station, tr.stats.location, tr.stats.channel = net, sta, loc, cha
-    os.makedirs(d, exist_ok=True)
-    enc = opt["encoding"]
-    if enc == "auto":
-        enc = "STEIM2" if stat["integer"] else "FLOAT32"
-    for tr in out:
-        if enc in ("STEIM1", "STEIM2", "INT32"):
-            if not np.issubdtype(tr.data.dtype, np.integer):
-                enc = "FLOAT32"
-        if enc == "FLOAT32":
-            tr.data = tr.data.astype(np.float32)
-    out.write(fn + ".tmp", format="MSEED", encoding=enc, reclen=4096)
-    back = obspy.read(fn + ".tmp", headonly=True)  # what was written is what the index says
-    if sorted((t.id, t.stats.npts) for t in back) != sorted((t.id, t.stats.npts) for t in out):
-        return (
-            name,
-            None,
-            dict(
-                error="%s: the written file does not read back as written (%s / %s)"
-                % (fn, sorted(t.id for t in back), sorted(t.id for t in out))
-            ),
-        )
-    os.replace(fn + ".tmp", fn)
-    rows_out = [
-        dict(
-            file=fn,
-            station=name,
-            net=net,
-            sta=sta,
-            channel=cha,
-            location=loc,
-            fs=fs,
-            start=tr.stats.starttime.timestamp,
-            end=tr.stats.endtime.timestamp + 1 / fs,
-            npts=int(tr.stats.npts),
-        )
-        for tr in out
-    ]
-    return finish(rows_out, stat)
 
 
 def storage_codes(names, rows):
@@ -257,6 +72,9 @@ def write_input_list(index, path):
     for t in index["traces"]:
         recs[t["file"]].append("%s.%s.%s.%s" % (t["net"], t["sta"], t["location"], t["channel"]))
     bad = dict(index["unreadable"])
+    for t in index["traces"]:
+        if t.get("header_only"):
+            bad[t["file"]] = "station not in the table: only the first and last records read"
     with open(path, "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["path", "bytes", "modified_utc", "records", "not_read_because"])
@@ -309,7 +127,12 @@ def instruments(cfg, used, rows):
                 % (path, len(miss), len(rows), ", ".join(sorted(miss)[:15]))
             )
         return dict(
-            removed=True, path=path, ids=ids, pre_filt=[round(x, 6) for x in R.pre_filter(cfg)], models=dict(models)
+            removed=True,
+            path=path,
+            identity=R.identity(path),
+            ids=ids,
+            pre_filt=[round(x, 6) for x in R.pre_filter(cfg)],
+            models=dict(models),
         )
     if len(models) > 1:
         raise D.DataError(
@@ -326,9 +149,8 @@ def run(cfg):
     from . import auto
 
     out = paths.mk(paths.P(cfg, "01_clean"))
-    nproc = int(cfg["clean"]["nproc"])
     print("  scanning headers under %s ..." % cfg["data"]["raw_dir"], flush=True)
-    index = D.build_index(cfg, nproc=nproc)
+    index = D.build_index(cfg)
     json.dump(index, open(os.path.join(out, "raw_index.json"), "w"))
     fmts = Counter(t["format"] for t in index["traces"])
     write_input_list(index, os.path.join(out, "input_files.csv"))
@@ -343,6 +165,11 @@ def run(cfg):
             ", ".join("%s %d" % kv for kv in fmts.most_common()),
         ),
     ]
+    if index.get("header_only"):
+        rep.append(
+            "  %d of these files are of stations that cannot be in the station table (station_match.could_match): "
+            "only their first and last records were read" % index["header_only"]
+        )
     for pth, err in index["unreadable"][:10]:
         rep.append("    skipped %s (%s)" % (pth, err[:80]))
     rw = index.get("reader_warnings") or []
@@ -424,7 +251,7 @@ def run(cfg):
 
     coords = {n: (v["lon"], v["lat"]) for n, v in D.used_stations(cfg).items()}
     npair = CC.pair_indices(sorted(rows), coords, cfg["correlation"]["max_distance_km"])[0].size
-    res = CC.resources(cfg, len(rows), npair, len(days))
+    res = CC.resources(cfg, len(rows), npair, len(days), max(r[0]["fs"] for r in rows.values()))
     from .resources import shortages
 
     # Advance notice only: clean itself needs neither, memory may be freed before cc, and the clean report is the
@@ -521,13 +348,22 @@ def run(cfg):
         for s, rr in bys.items():
             tasks.append((s, rr, t0, opt))
     stats, new_rows = [], []
-    with Pool(nproc) as pool:
+    from . import resources
+
+    # One station-day at the highest raw rate, about 6 copies of 8 bytes per sample (the record, its float64 copy,
+    # the filtered copy and the complex spectrum of the response removal): an engineering estimate.
+    plan = resources.plan(cfg, len(tasks), 6 * 8 * 86400 * max(r[0]["fs"] for r in rows.values()), "station-days")
+    with Pool(plan["parallel"], initializer=resources.limit_threads, initargs=(plan["threads_each"],)) as pool:
         for k, (name, rr, stat) in enumerate(
             track(pool_results(pool, _clean_station_day, tasks, chunksize=4), len(tasks), "station-days")
         ):
             stats.append(stat)
             if rr:
                 new_rows.extend(rr)
+        resources.note_workers(w.pid for w in pool._pool)
+    # the workers finish in any order: a fixed order makes two runs of the same data write the same files
+    new_rows.sort(key=lambda r: (r["station"], r["start"], r["file"]))
+    stats.sort(key=lambda s: (str(s.get("station")), str(s.get("day"))))
     reused = sum(1 for s in stats if s.pop("reused", 0))
     if reused:
         rep.append(

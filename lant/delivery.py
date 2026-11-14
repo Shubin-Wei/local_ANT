@@ -8,7 +8,8 @@ from pathlib import Path
 
 from . import paths, records
 
-LAYOUT_VERSION = 1
+# 2: lant 2.0 (Python inversion, automatic resources); earlier projects are not continued (old_project_message).
+LAYOUT_VERSION = 2
 RULES = [
     "Raw data are read-only. Use lant commands to produce managed outputs.",
     "Read REPORT.md, the step report and its evidence before continuing.",
@@ -42,53 +43,33 @@ def atomic_text(path, text):
             os.unlink(tmp)
 
 
+def old_project_message(root, version):
+    """What to do with an output directory written by an earlier lant (no compatibility)."""
+    return (
+        "%s was written by an earlier version of lant (project layout %s; this version writes layout %d) and is not "
+        "continued: run the chain again with this version into a new output directory (set project.output_dir in the "
+        "configuration to a new directory, then lant run all -c CONFIG); the old directory can stay for comparison"
+        % (root, version if version is not None else "1.4 or older", LAYOUT_VERSION)
+    )
+
+
 def initialize(cfg: dict) -> None:
     root = Path(cfg["project"]["output_dir"])
     marker = root / ".lant" / "layout.json"
     if marker.exists():
-        if json.loads(marker.read_text())["version"] != LAYOUT_VERSION:
-            raise RuntimeError("unsupported project layout version")
+        version = json.loads(marker.read_text())["version"]
+        if version != LAYOUT_VERSION:
+            raise RuntimeError(old_project_message(root, version))
+    elif (root / ".lant" / "manifest.json").exists():  # a project of lant 1.4 or older (no layout record)
+        raise RuntimeError(old_project_message(root, None))
     else:
         atomic_text(marker, json.dumps({"version": LAYOUT_VERSION}) + "\n")
     readme = root / "README.md"
     if not readme.exists():
         atomic_text(readme, PROJECT_README + "\n".join("- " + r for r in RULES) + "\n")
-    config = cfg.get("_config_file") or "CONFIG"
-    if config != "CONFIG":
-        rel = os.path.relpath(os.path.abspath(config), os.path.abspath(str(root)))
-        config = rel if not rel.startswith("..") else os.path.abspath(config)
-    if not (root / "AGENTS.md").exists():  # read by Codex and other coding agents in this directory
-        atomic_text(root / "AGENTS.md", PROJECT_AGENTS.replace("CONFIG", config))
-    if not (root / "CLAUDE.md").exists():  # Claude Code reads CLAUDE.md first; the import brings in AGENTS.md
-        atomic_text(root / "CLAUDE.md", "@AGENTS.md\n")
+    from .assistant_rules import write
 
-
-PROJECT_AGENTS = """# Rules for AI assistants in this lant project
-
-This directory is written by lant.  Start with REPORT.md and `lant status -c CONFIG --json`.
-
-## Files
-
-- Create files only in two ways: notes with `lant note "text" -c CONFIG`, and temporary scripts, extracts or
-  figures under `scratch/` (create it when needed; delete what you no longer need).  Nowhere else in this
-  directory, and not in the raw-data directory or the lant repository.
-- Do not edit or delete anything under `work/`, `results/` or `.lant/`, nor REPORT.md, README.md or this file;
-  lant writes them.  Change the configuration only when the user asks, and record the reason with `lant note`.
-- `lant status -c CONFIG --json` lists under `artifacts.unregistered` every file lant did not write; it should hold
-  only what the user put here.
-
-## Decisions
-
-- When `next.requires_user` is true, show the user the items and figures of `.lant/steps/<step>.md` and wait.  Record
-  the user's decision with `lant confirm STEP -c CONFIG --reason "the user's decision and evidence"`.
-- Do not loosen quality control or change scientific priors to get more points or nicer figures.
-- Report numbers and figures, and say what was not checked.
-
-## Running
-
-- `lant run all -c CONFIG` continues from the first step that does not stand; after an interruption run it again.
-- While `writer` is set in the status, a step is running: wait, do not start another lant command that writes.
-"""
+    write(cfg, root)
 
 
 PROJECT_README = """# lant project
@@ -99,18 +80,19 @@ figures and links to everything below.
 | Directory | Content |
 |---|---|
 | `results/model/` | `vs_model.csv`: the 3-D shear-velocity model |
-| `results/dispersion/` | `curves.csv` (phase velocities with QC and inversion flags), `disp.h5` (all measurements and diagnostics), `median_vs_reference.txt` |
+| `results/dispersion/` | `curves.csv` (phase velocities with QC and inversion flags); all measurements with their diagnostics are in `work/05_dispersion/` |
 | `results/figures/` | maps, sections, dispersion, checks |
+| `results/parameters.yaml` | the configuration with every value resolved, and the record of your confirmations (latest completed step) |
 | `results/validation/` | `evaluation.json` (residuals, checkerboard recovery, control inversions), travel-time residual tables |
-| `results/reproduce/` | effective configuration, station table, starting model and the solver input and output files |
-| `work/` | processing files of every step; caches can be removed with `lant clean-work` |
+| `results/main_preview/` | main model, section and parameters available during the run, before checks finish; removed when the evaluated model is published |
+| `work/` | processing files of every step, kept so that nothing has to be computed again; the solver files to rerun the inversion are in `work/06_inversion/main/` (`DSurfTomo.in`, `surfdata.dat`, `MOD`); caches can be removed with `lant clean-work` |
 | `.lant/` | state, step reports, configuration history, provenance and logs (written by lant only) |
 | `notes.md` | your notes and decisions (`lant note "text" -c CONFIG`) |
 | `scratch/` | temporary files of people and assistants (optional; not checked, safe to delete) |
-| `AGENTS.md`, `CLAUDE.md` | the rules for AI assistants working in this directory |
+| `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` | the rules for AI assistants working in this directory: one file, for the assistant chosen with project.ai_assistant (AGENTS.md when none is chosen) |
 
 `vs_model.csv` columns: `longitude_deg`, `latitude_deg` (WGS84), `depth_km` (below the surface of the model),
-`vs_km_s`.  The values are those DSurfTomo wrote (`reproduce/DSurfTomo.inMeasure.dat`), sorted by depth, latitude
+`vs_km_s`.  The values are those DSurfTomo wrote (`work/06_inversion/main/DSurfTomo.inMeasure.dat`), sorted by depth, latitude
 and longitude.  Nodes far from the ray paths keep the starting model: read the model with the checkerboard figures.
 
 ## Operating rules
@@ -164,26 +146,71 @@ def _mark(cfg, target, step):
     atomic_text(p, json.dumps(marks, indent=1) + "\n")
 
 
+STEP_FIGURES = {
+    "clean": (("01_clean", "coverage.png", "0_data_coverage.png"),),
+    "stack": ((paths.STACK, "station_qc/station_qc.png", "2_station_qc.png"),),
+    "reference": (
+        (paths.REFERENCE, "fj.png", "3_fj_phase_velocity.png"),
+        (paths.REFERENCE, "zones.png", "3_reference_zones.png"),
+    ),
+}
+
+
+def _publish_file(cfg, relative, step, fill):
+    """Atomically replace one owned file; a failed copy leaves the previous result intact."""
+    from .artifacts import load
+
+    target = Path(cfg["project"]["output_dir"]) / relative
+    if target.is_symlink() or (target.exists() and relative not in load(cfg)):
+        raise RuntimeError("unregistered retained files are protected: " + relative)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".deliver-", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            os.fchmod(fh.fileno(), target.stat().st_mode & 0o777 if target.exists() else 0o666 & ~_umask())
+        fill(temporary)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    _mark(cfg, relative, step)
+
+
 def publish(cfg, step):
-    """Replace retained products only by complete ones: the dispersion table after disp; the model, its checks
-    and its reproduction inputs together after evaluate (the main model has run and been evaluated).  Building
-    or rerunning the inversion leaves the previous complete model in results/ until then."""
-    from .inversion import run as RUN
+    """Publish completed step figures and parameters, dispersion after disp, and evaluated model products.
+    Rebuilding an inversion keeps the previous evaluated model until a new evaluation is complete."""
+    from . import config
 
     dest = Path(cfg["project"]["output_dir"]) / "results"
     inv = Path(paths.P(cfg, paths.INV))
     if step == "disp":
-
-        def dispersion(new):  # the per-pair diagnostic figures stay in work/05_dispersion/pair_figures
-            for name in ("curves.csv", "disp.h5", "median_vs_reference.txt"):
-                if os.path.exists(paths.P(cfg, paths.DISP, name)):
-                    shutil.copy2(paths.P(cfg, paths.DISP, name), str(new / name))
+        # the measurements with their diagnostics (disp.h5, median_vs_reference.txt) and the per-pair figures stay in
+        # work/05_dispersion
+        def dispersion(new):
+            shutil.copy2(paths.P(cfg, paths.DISP, "curves.csv"), str(new / "curves.csv"))
 
         _swap(cfg, dest / "dispersion", dispersion)
         _mark(cfg, "results/dispersion", step)
-        return
-    if step != "evaluate":
-        return
+    elif step == "evaluate":
+        _publish_evaluation(cfg, dest, inv)
+    for folder, name, target in STEP_FIGURES.get(step, ()):
+        if step == "stack" and not cfg["stack"]["station_qc"]["enabled"]:
+            continue
+        if step == "reference" and (
+            cfg["reference"]["source"] != "fj" or (name == "zones.png" and cfg["reference"]["zone_km"] is None)
+        ):
+            continue
+        source = Path(paths.P(cfg, folder, name))
+        if source.is_file():  # moved: the figure is kept once, in results/figures
+            _publish_file(cfg, "results/figures/" + target, step, lambda new: os.replace(str(source), new))
+    _publish_file(cfg, "results/parameters.yaml", step, lambda new: config.dump(cfg, new, base=str(dest)))
+    _retire(cfg, dest / "parameters")  # per-step copies of earlier versions; each step's values are in the manifest
+
+
+def _publish_evaluation(cfg, dest, inv):
+    from .inversion import run as RUN
+
+    step = "evaluate"
     if RUN.status(str(inv / "main")) != "done":
         raise RuntimeError("the main model has not finished; the retained model is kept")
 
@@ -194,23 +221,35 @@ def publish(cfg, step):
         for p in sorted((inv / "evaluation").iterdir()):
             shutil.copy2(str(p), str(new / p.name))
 
-    def reproduce(new):
-        for p in inv.iterdir():
-            if p.is_file():
-                shutil.copy2(str(p), str(new / p.name))
-        for name in ("DSurfTomo.in", "surfdata.dat", "MOD", "DSurfTomo.inMeasure.dat"):
-            shutil.copy2(str(inv / "main" / name), str(new / name))
-        stations = Path(paths.P(cfg, "01_clean", "stations.csv"))
-        if stations.exists():
-            shutil.copy2(str(stations), str(new / "stations.csv"))
-        from . import config
-
-        # Small and useful without the raw files; relative paths as seen from its final place.
-        config.dump(cfg, str(new / "effective.yaml"), base=str(dest / "reproduce"))
-
-    for name, fill in (("model", model), ("validation", validation), ("reproduce", reproduce)):
+    for name, fill in (("model", model), ("validation", validation)):
         _swap(cfg, dest / name, fill)
         _mark(cfg, "results/" + name, step)  # each tree is labelled as soon as it is in place
+    _retire(cfg, dest / "main_preview")  # superseded by the evaluated model
+    _retire(cfg, dest / "reproduce")  # copies of work/ written by earlier versions
+
+
+def _retire(cfg, target):
+    """Remove a retained tree that a newer one supersedes, only when every file in it is one lant wrote and has not
+    been changed since; otherwise it stays as it is."""
+    from .artifacts import load, signature
+
+    root = Path(cfg["project"]["output_dir"])
+    target = Path(target)
+    if not target.is_dir() or target.is_symlink():
+        return False
+    owned = load(cfg)
+    files = [p for p in target.rglob("*") if not p.is_dir() or p.is_symlink()]
+    if any(p.is_symlink() or owned.get(p.relative_to(root).as_posix()) != signature(p.lstat()) for p in files):
+        return False
+    shutil.rmtree(str(target))
+    marks = Path(records.rec_dir(cfg)) / "published.json"
+    if marks.exists():
+        m = json.loads(marks.read_text())
+        rel = target.relative_to(root).as_posix()
+        kept = {k: v for k, v in m.items() if k != rel and not k.startswith(rel + "/")}
+        if kept != m:
+            atomic_text(marks, json.dumps(kept, indent=1) + "\n")
+    return True
 
 
 MODEL_COLUMNS = ("longitude_deg", "latitude_deg", "depth_km", "vs_km_s")
@@ -226,10 +265,26 @@ def write_model_table(model, target):
     Path(target).write_text(",".join(MODEL_COLUMNS) + "\n" + "".join(",".join(r) + "\n" for r in rows))
 
 
+def _origin(mark, state):
+    if not mark:
+        return "origin not recorded"
+    if "run" not in mark:
+        return "written by step %s" % mark["step"]
+    made = state.get(mark["step"], {})
+    origin = "from run %d of step %s (%s)" % (mark["run"], mark["step"], mark["time"])
+    if made.get("run") != mark["run"]:
+        origin += "; OLDER than the latest run %s of that step (%s)" % (made.get("run"), made.get("state"))
+    elif made.get("state") != "done":
+        origin += "; that step is now %s; read its report before use" % made.get("state", "not run")
+    return origin
+
+
 def write_report(cfg: dict) -> None:
     from . import manifest, report
 
     root = Path(cfg["project"]["output_dir"])
+    marks_path = Path(records.rec_dir(cfg)) / "published.json"
+    marks = json.loads(marks_path.read_text()) if marks_path.exists() else {}
     resolved = report.resolved(cfg)
     state = manifest.status(resolved, check_inputs=False)
     command, why = manifest.next_action(resolved, state)
@@ -254,13 +309,25 @@ def write_report(cfg: dict) -> None:
             ]
             lines += ["- " + item for item in items] + [""]
         lines.append('Decide, then record it: `lant confirm STEP -c CONFIG --reason "your decision and its evidence"`.')
+    if (root / "results/parameters.yaml").is_file():
+        rel = "results/parameters.yaml"
+        lines += [
+            "",
+            "## Parameters",
+            "",
+            "- [%s](%s): every value resolved, with your confirmations; %s. The values each step used are in its "
+            "report (.lant/steps/)." % (rel, rel, _origin(marks.get(rel), state)),
+        ]
     figures = main_figures(root)
     if figures:
         lines += ["", "## Main figures", ""]
         for f, caption in figures:
             rel = f.relative_to(root).as_posix()
             lines += ["**%s** (`%s`)" % (caption, f.name), "", "![%s](%s)" % (f.stem, rel), ""]
-    lines += ["", "## Steps", "", "| Step | State | Detail |", "|---|---|---|"]
+            if rel in marks:
+                lines += [_origin(marks[rel], state), ""]
+    lines += ["", "## Steps", "", "| Step | State | Time | Detail |", "|---|---|---|---|"]
+    seconds = step_seconds(cfg)
     for step, info in state.items():
         detail = ("Caches cleaned; rebuilding needs upstream work. " if info.get("cache_cleaned") else "") + info.get(
             "reason", ""
@@ -268,29 +335,17 @@ def write_report(cfg: dict) -> None:
         detail = detail.replace("|", "\\|").replace("\n", " ")
         link = ".lant/steps/%s.md" % step
         label = "[%s](%s)" % (step, link) if (root / link).exists() else step
-        lines.append("| %s | %s | %s |" % (label, info["state"], detail))
+        when = _duration(seconds.get(step))  # of its latest completed run, also when it is out of date now
+        lines.append("| %s | %s | %s | %s |" % (label, info["state"], when, detail))
     lines += ["", "## Retained results", ""]
-    marks_path = Path(records.rec_dir(cfg)) / "published.json"
-    marks = json.loads(marks_path.read_text()) if marks_path.exists() else {}
     trees = [p for p in (root / "results").iterdir() if p.is_dir()] if (root / "results").is_dir() else []
     for tree in sorted(p for p in trees if not p.name.startswith(".")):  # not staging left by an interruption
         rel = tree.relative_to(root).as_posix()
-        mark = marks.get(rel) or (dict(step="figures") if tree.name == "figures" else {})
-        made = state.get(mark.get("step"), {})
-        if not mark:
-            origin = "origin not recorded"
-        elif "run" not in mark:
-            origin = "written by step %s" % mark["step"]
-        else:
-            origin = "from run %d of step %s (%s)" % (mark["run"], mark["step"], mark["time"])
-            if made.get("run") != mark["run"]:
-                origin += "; OLDER than the latest run %s of that step (%s)" % (made.get("run"), made.get("state"))
-            elif made.get("state") != "done":
-                origin += "; that step is now %s: earlier steps changed and a new result is not complete yet" % (
-                    made.get("state", "not run")
-                )
+        origin = "the main ones are shown above" if tree.name == "figures" else _origin(marks.get(rel), state)
         files = sorted(p for p in tree.rglob("*") if p.is_file())
         lines.append("- [%s/](%s): %d files, %s" % (rel, rel, len(files), origin))
+        if tree.name == "figures":
+            continue  # the main ones are shown above; the folder holds them all
         shown = files if len(files) <= 25 else [p for p in files if p.parent == tree][:25]
         for p in shown:
             link = p.relative_to(root).as_posix()
@@ -307,7 +362,7 @@ def write_report(cfg: dict) -> None:
     ]
     conf = cfg.get("_confirmed") or {}
     if conf:
-        lines += ["", "## Confirmation record", "", "Invocation metadata is not identity verification.", ""]
+        lines += ["", "## Confirmation record", ""]
         for step, entry in conf.items():
             lines.append(
                 "- %s: %s; reason: %s; invocation: %s"
@@ -322,7 +377,11 @@ def write_report(cfg: dict) -> None:
 
 
 FIGURES = (
+    ("0_data_coverage", "Data coverage after cleaning"),
     ("1_stations", "Stations"),
+    ("2_station_qc", "Station diagnostics (candidates require your decision)"),
+    ("3_fj_phase_velocity", "Array F-J phase-velocity spectrum and reference picks"),
+    ("3_reference_zones", "Local reference curves"),
     ("3_dispersion_curves", "Phase-velocity curves used by the inversion"),
     ("4_start_model", "1-D starting model and its fit"),
     ("5_depth_slices", "Vs at depth"),
@@ -368,13 +427,42 @@ def key_numbers(cfg):
             "residual rms of all %d travel times %s%.1f ms"
             % (final.get("n", 0), "%.1f -> " % start["rms_ms"] if start else "", final["rms_ms"])
         )
+    project = summary("inversion").get("project") or {}
+    if project.get("weight") is not None:
+        out.append("smoothing weight %g, damping %g" % (project["weight"], project["damp"]))
     checks = summary("evaluate").get("checkerboards") or {}
     if checks:
         out.append(count(len(checks), "checkerboard test"))
-    drawn = summary("figures").get("drawn") or {}
-    if drawn:
-        out.append(count(len(drawn), "figure"))
+    folder = Path(cfg["project"]["output_dir"]) / "results" / "figures"
+    shown = sorted(folder.glob("*.png")) if folder.is_dir() else []
+    if shown:
+        out.append("%s in results/figures" % count(len(shown), "figure"))
     return out
+
+
+def step_seconds(cfg):
+    """Wall time (s) of the latest completed run of every step, from .lant/run_log.jsonl."""
+    path = Path(records.rec_dir(cfg)) / "run_log.jsonl"
+    out = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get("event") == "done" and e.get("step") and e.get("seconds") is not None:
+                out[e["step"]] = float(e["seconds"])
+    return out
+
+
+def _duration(seconds):
+    if seconds is None:
+        return ""
+    if seconds < 90:
+        return "%.0f s" % seconds
+    if seconds < 5400:
+        return "%.0f min" % (seconds / 60)
+    return "%.1f h" % (seconds / 3600)
 
 
 def finish_lines(cfg):

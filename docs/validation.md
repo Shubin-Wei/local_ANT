@@ -2,16 +2,18 @@
 
 [中文](validation.zh.md) | English
 
-Numbers only; what they mean for your data is yours to judge. Sections 1–11 use synthetic data with a known answer, each with the version it was run with; section 12 reports trial runs on real data; section 13 lists what has not been tested.
+Numbers only; what they mean for your data is yours to judge. Sections 1–11 use synthetic data with a known answer, each with the version it was run with; section 12 reports trial runs on real data; section 13 lists what has not been tested; section 14 records the current implementation timing.
+
+The generator now defaults to a checkerboard (`true_checkerboard.json`); the older numerical tests below retain their original stated inputs and versions. The current solver comparison and timing figures are in [python_backends.md](python_backends.md). A quick raw-data demo checks the workflow; it is not a guarantee of checkerboard recovery or real-data resolution.
 
 ## 1. How the test data are made
 
 | Generator | What it makes | What it can show |
 |---|---|---|
-| `examples/synthetic/make_synthetic.py` | raw noise records: plane Rayleigh waves of a 1-D model from random azimuths (16 stations, 3 days, aperture 9 km; `--layout line`: 24 stations, 2 days) | the whole chain from raw files; laterally uniform, isotropic, fundamental mode only |
+| `examples/synthetic/make_synthetic.py` | raw noise records: plane Rayleigh waves in a 1-D background with a ±6 % checkerboard (`--uniform`: background only), from random azimuths (16 stations, 3 days, aperture 9 km; `--layout line`: 24 stations, 2 days) | the whole chain from raw files; approximate straight-ray synthesis, isotropic, fundamental mode only |
 | `examples/synthetic/make_stack.py` | the correlations themselves, J0(2πf t(f)), as a stack file: laterally varying medium (chequer pattern), a second faster arrival, incoherent noise | measurement and inversion with lateral variation, a higher mode, noise |
 
-Comparison scripts: `compare_truth.py` (uniform medium), `compare_hetero.py` (laterally varying medium). The tests in `tests/test_numerics.py` repeat the benchmark of section 2 in a small form.
+Comparison scripts: `compare_truth.py` (the saved checkerboard truth; `--uniform` gives zero amplitude), `compare_hetero.py` (laterally varying medium). The tests in `tests/test_numerics.py` repeat the benchmark of section 2 in a small form.
 
 ## 2. Two-station phase velocity on exact J0 correlations
 
@@ -234,3 +236,23 @@ Version 1.4.0, run from the raw records on two unpublished nodal arrays (results
 - Directional noise on real data, and a real higher mode with its own dispersion (the second arrival of section 7 is the fundamental curve scaled by 1.25).
 - Zone references (`reference.zone_km`) on a medium that needs them.
 - The run-through with an AI assistant described in ai_workflow.md.
+
+## 14. First optimization phase timing (2026-11-13)
+
+A frozen-source comparison of `e70fbe0` and `8c85a68` uses the same six-hour, 16-station checkerboard records, eight cores and fresh output directories. Both implementations are warmed first; generation is excluded, while confirmations, startup, all pair diagnostics and final figures are included. One warm pass per version on a shared server took **118.96 → 104.55 s**, 12.1% less time. This is an observation for this small example, not a prediction for a larger array.
+
+The dispersion stage, including pair diagnostics, changed from 23 to 7 s. A separate rendering check produced 35 byte-identical PNGs in 22.365 s with one renderer and 4.558 s with eight. Production retains automatic cores and the memory safety plan.
+
+Both workflow runs exported 101 curves / 2233 points with identical quality masks, rejection reasons and cycle assignments. Floating-point values are not bitwise identical: maximum hourly-correlation difference 3.73e-9; maximum phase-velocity difference 2.38e-6 km/s; final model max/RMS difference 2.10e-4 / 1.798e-5 km/s. These are measured differences on this fixture, not universal tolerances. The native-solver comparison uses a different experiment ([python_backends.md](python_backends.md)).
+
+Unrounded timings, code identifiers and protocol are in [the performance record](assets/workflow_performance_summary.json); the scripts and full logs are kept with the development records outside the repository.
+
+## 15. Main figures and whole-workflow optimization (2026-11-13)
+
+The next frozen-source comparison uses `1b58f41` → `2683cd7`, the same six-hour/16-station raw records and fresh outputs. The resource rule selected 14 cores once; only benchmark copies hold this equal budget fixed. Production still uses `resources.cores: auto`. Both versions are warmed first, followed by one measured pass each. Total elapsed time, including startup, synthetic confirmations, all diagnostics and final figures, is **101.26 → 75.05 s**, 25.9% less time (1.35×). Raw-record generation is excluded. The server is shared; differences in stages whose numerical code did not change are ordinary run-to-run variation. These measurements cannot be combined with the previous eight-core result into one cumulative speed ratio.
+
+The final-figures stage changes from 26 to 6 s. A separate rendering check takes 26.830 → 6.501 s for 17 PNGs, with every PNG byte-identical. In the full workflow, every hourly-correlation, stack and dispersion dataset compared is identical (including quality masks and rejection/cycle fields); the final model is identical, and all 17 main PNGs are byte-identical. Main plotting uses 13 one-thread workers under the 14-core budget; the planner estimates 0.671 GB per worker from 107.76 GB available, so memory does not limit this example. Reported worker RSS is a per-process peak, not a simultaneous total or a bound including its GMT subprocess.
+
+The source changes do not alter the 13 numerical `dsurf_*`/solver files, which are byte-identical to the baseline. A representative real-case column profile spends 2.138 of 2.151 s in dispersion calls across three repetitions; allocation and Python dispatch have little remaining share there, so this phase leaves the scientific kernel unchanged. Resource fractions also stay unchanged because no memory scheduling bottleneck was observed.
+
+Verification: **255 tests pass** under Python 3.12 / NumPy 1.26; 127 Python files pass Ruff lint/format. An installed wheel outside the checkout completes all nine steps with NumPy 2.2.6 and automatic resources in 1:48.78, with 101 curves, 2233 points and 17 main figures. This installation check is separate from the warmed benchmark; the full NumPy/Python matrix was not repeated. The public [performance record](assets/workflow_acceptance_performance_summary.json) keeps exact timings and identities; native/Python final-model comparisons are reported separately in [python_backends.md](python_backends.md).

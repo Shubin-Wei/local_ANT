@@ -80,7 +80,8 @@ def grid(cfg, W, E, S, N, tmp):
         return None, "map wider than %g degrees: give a relief grid in plots.topography" % MAX_AUTO_DEG
     if S < -56 or N > 60:
         return None, "no SRTM relief beyond 60 N / 56 S: give a relief grid in plots.topography"
-    key = "%.4f_%.4f_%.4f_%.4f" % (W, E, S, N)
+    python_api = cfg["plots"]["backend"] == "pygmt"
+    key = ("python_" if python_api else "") + "%.4f_%.4f_%.4f_%.4f" % (W, E, S, N)
     if key in _NOTE and _NOTE[key][0] and os.path.exists(_NOTE[key][0]):
         return _NOTE[key]
     paths = [p for p in (tile(n) for n in tile_names(W, E, S, N)) if p]
@@ -89,6 +90,13 @@ def grid(cfg, W, E, S, N, tmp):
         _NOTE[key] = out
         return out
     dst = os.path.join(CACHE, "cut_%s.nc" % key)
+    if python_api:
+        try:
+            _mosaic_python(paths, W, E, S, N, dst)
+        except (ImportError, ValueError, OSError) as exc:
+            return None, "Python relief mosaic failed: %s (install lant[python-plotting])" % exc
+        _NOTE[key] = (dst, "SRTM 1-arc-second relief via Rasterio/GDAL Python API (%d tiles)" % len(paths))
+        return _NOTE[key]
     if (
         not os.path.exists(dst)
         and not _mosaic_gdal(paths, W, E, S, N, dst, tmp)
@@ -97,6 +105,40 @@ def grid(cfg, W, E, S, N, tmp):
         return None, "the SRTM tiles could not be read or joined (GMT needs GDAL with JPEG 2000): no relief"
     _NOTE[key] = (dst, "SRTM 1-arc-second relief (%d tile%s)" % (len(paths), "s" if len(paths) > 1 else ""))
     return _NOTE[key]
+
+
+def _mosaic_python(paths, W, E, S, N, dst):
+    """Rasterio/GDAL mosaic -> COARDS NetCDF, preserving NoData/pixel registration."""
+    from contextlib import ExitStack
+
+    import numpy as np
+    import rasterio
+    import xarray as xr
+    from rasterio.merge import merge
+
+    with ExitStack() as stack:
+        sources = [stack.enter_context(rasterio.open(path)) for path in paths]
+        if any(src.crs != rasterio.crs.CRS.from_epsg(4326) or src.count != 1 for src in sources):
+            raise ValueError("relief mosaic requires single-band EPSG:4326 elevation tiles")
+        merged, transform = merge(sources, bounds=(W, S, E, N), dtype="float32", nodata=np.nan, masked=True)
+    values = np.ma.filled(merged[0], np.nan)
+    lon = transform.c + (np.arange(values.shape[1]) + 0.5) * transform.a
+    lat = transform.f + (np.arange(values.shape[0]) + 0.5) * transform.e
+    dataset = xr.Dataset(
+        {"z": (("lat", "lon"), values[::-1])},
+        coords={"lon": lon, "lat": lat[::-1]},
+        attrs={"Conventions": "CF-1.8", "node_offset": 1},
+    )
+    dataset.lon.attrs["units"] = "degrees_east"
+    dataset.lat.attrs["units"] = "degrees_north"
+    dataset.z.attrs.update(
+        units="m",
+        long_name="Elevation",
+        source="Rasterio %s / GDAL %s" % (rasterio.__version__, rasterio.__gdal_version__),
+    )
+    dataset.to_netcdf(dst + ".part")
+    os.replace(dst + ".part", dst)
+    return True
 
 
 def _mosaic_gdal(paths, W, E, S, N, dst, tmp):

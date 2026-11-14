@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/Shubin-Wei/local_ANT/actions/workflows/tests.yml/badge.svg)](https://github.com/Shubin-Wei/local_ANT/actions/workflows/tests.yml)
 [![release](https://img.shields.io/github/v/release/Shubin-Wei/local_ANT)](https://github.com/Shubin-Wei/local_ANT/releases)
-[![Python](https://img.shields.io/badge/python-3.8%20%7C%203.10%20%7C%203.12-blue)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [中文](README.zh.md) | English
@@ -19,7 +19,7 @@ lant is a command-line workflow for high-frequency ambient-noise tomography with
 
 - **Three inputs.** A raw-data directory, a station table and an output directory. Every other parameter has a documented default or is derived from the data by a written rule; each step report shows the derivation with the numbers of your data.
 - **Decisions stay with the user.** The chain stops only where a scientific judgement is needed (for example, whether the picked ridge is the fundamental mode), shows what to look at, and records the decision with its reason.
-- **Methods with sources.** Every step follows published methods, listed with their conditions of validity; defaults without a source are marked as empirical.
+- **Published methods and engineering choices.** Core methods are linked with their conditions of validity. Numerical thresholds, automatic rules and display choices also contain empirical engineering decisions; citations do not establish every default.
 - **Traceable and resumable.** Each step records its inputs, parameters, code version and outputs; a changed parameter marks the affected steps as stale; an interrupted run continues where it stopped.
 - **Readable results.** `REPORT.md` gives the state of every step, key numbers, the items to judge and the main figures; `results/` holds the model as a table, the dispersion data, figures and validation.
 
@@ -38,7 +38,7 @@ flowchart LR
 | `stack` | Stack and sub-stacks; station diagnosis by leave-one-out correlation and time shift | Stehly et al. (2007); Sens-Schönfelder (2008) |
 | `reference` | Reference phase-velocity curve of the array from its frequency–Bessel spectrum | Wang et al. (2019) |
 | `disp` | Two-station phase velocities with phase-matched filtering, jackknife errors and quality control | Yao et al. (2006); Levshin & Ritzwoller (2001); Bensen et al. (2007) |
-| `inversion`, `run` | 1-D starting model; direct inversion of travel times for 3-D Vs with DSurfTomo or pDSurfTomo | Fang et al. (2015) |
+| `inversion`, `run` | 1-D starting model; direct inversion of travel times for 3-D Vs (DSurfTomo, ported to Python) | Fang et al. (2015) |
 | `evaluate`, `figures` | Residuals, checkerboard recovery and control inversions; maps, sections and dispersion figures | Lévêque et al. (1993); Rawlinson & Spakman (2016) |
 
 ## Installation
@@ -47,8 +47,7 @@ Requirements: Linux, conda (or mamba) and git. lant is installed from this repos
 
 ```bash
 git clone https://github.com/Shubin-Wei/local_ANT.git && cd local_ANT
-conda env create -f environment.yml && conda activate lant   # Python, ObsPy, GMT 6, compilers and lant
-lant install-external                                        # builds DSurfTomo and pDSurfTomo (fixed versions)
+conda env create -f environment.yml && conda activate lant   # Python, ObsPy, GMT 6 and lant
 lant check                                                   # reports anything missing and how to install it
 ```
 
@@ -70,7 +69,7 @@ This writes `/data/result/config.yaml` and starts the chain. When it stops for a
 
 ```bash
 lant status -c /data/result/config.yaml        # state of every step and the next command
-lant confirm reference -c /data/result/config.yaml --reason "picks follow the fundamental ridge in fj.png"
+lant confirm reference -c /data/result/config.yaml --reason "picks follow the fundamental ridge in 3_fj_phase_velocity.png"
 lant run all -c /data/result/config.yaml       # continues from the first step that does not stand
 ```
 
@@ -81,8 +80,8 @@ lant run all -c /data/result/config.yaml       # continues from the first step t
 ```text
 /data/result/
 ├── REPORT.md     state, key numbers, items to judge, main figures
-├── results/      model/vs_model.csv, dispersion/, figures/, validation/, reproduce/
-├── work/         processing files of every step
+├── results/      model/vs_model.csv, dispersion/curves.csv, figures/, validation/, parameters.yaml
+├── work/         processing files of every step (kept: rerun and redraw without recomputing)
 ├── .lant/        state, step reports, configuration history, provenance, logs
 └── notes.md      your notes and decisions
 ```
@@ -94,9 +93,11 @@ Every file is described in [docs/outputs.md](docs/outputs.md).
 - Vertical components only (ZZ, fundamental-mode Rayleigh waves); areal arrays and lines (one project per line).
 - The noise field is assumed to be close to isotropic; the bias from directional noise is not tested.
 - Linux only. Station coordinates in longitude and latitude; arrays across the date line or beyond 80° latitude are refused.
-- DSurfTomo accepts at most 60 periods (pDSurfTomo 80); pairs closer than about 200 m carry distance errors from its single-precision coordinates.
+- At most 80 periods; pairs closer than about 200 m carry distance errors from DSurfTomo's single-precision coordinates (kept in the port).
 - Without response files all stations must be of one instrument model; tolerances within a model leave random phase errors of 0.1–1 % of the travel time.
 - The numbers of the synthetic tests are in [docs/validation.md](docs/validation.md).
+
+Everything runs in Python: the inversion is a port of DSurfTomo; how it was compared with the original is in [docs/python_backends.md](docs/python_backends.md).
 
 ## Documentation
 
@@ -115,8 +116,8 @@ Every file is described in [docs/outputs.md](docs/outputs.md).
 
 ## Citation
 
-Please cite the methods the workflow rests on (table above; full references in [docs/parameters.md](docs/parameters.md)), DSurfTomo (Fang et al. 2015, *Geophys. J. Int.* 201, 1251–1263) and, when used, pDSurfTomo (Zhu et al. 2026, arXiv:2604.11920), as well as ObsPy and GMT. Citation metadata for this software are in [CITATION.cff](CITATION.cff).
+Please cite the methods the workflow rests on (table above; full references in [docs/parameters.md](docs/parameters.md)), DSurfTomo (Fang et al. 2015, *Geophys. J. Int.* 201, 1251–1263) and the methods its port follows (among them Herrmann's surf96, Herrmann 2013), as well as ObsPy and GMT. Citation metadata for this software are in [CITATION.cff](CITATION.cff).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). DSurfTomo (MIT) and pDSurfTomo (GPL-3) are downloaded and built by `lant install-external` under their own licences and are not part of this repository.
+MIT, see [LICENSE](LICENSE). The inversion modules `lant/inversion/dsurf_*.py` are ported from DSurfTomo (MIT, Fang et al. 2015).

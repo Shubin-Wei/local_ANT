@@ -118,7 +118,7 @@ def draw(output, truth, work, out):
     t = np.load(str(truth))
     lon0, lat0, cell, amp = float(t["lon0"]), float(t["lat0"]), float(t["cell"]), float(t["hetero"])
 
-    stations = _read_csv(output / "results/reproduce/stations.csv")
+    stations = _read_csv(output / "work/01_clean/stations.csv")
     sx, sy = local_xy_km(
         [float(r["longitude"]) for r in stations], [float(r["latitude"]) for r in stations], lat0, lon0
     )
@@ -187,7 +187,7 @@ def draw(output, truth, work, out):
     ax_c.legend(frameon=False, fontsize=9, loc="upper right")
     ax_c.set_title("Rayleigh-wave phase velocities", fontsize=11)
 
-    start = np.loadtxt(str(output / "results/reproduce/vs1d.txt"))
+    start = np.loadtxt(str(output / "work/06_inversion/vs1d.txt"))
     mean = np.array([np.nanmean(model[model[:, 2] == z, 3]) for z in depths])
     spread = np.array([np.nanstd(model[model[:, 2] == z, 3]) for z in depths])
     ax_d.plot(t["vs"], t["z"], color=SEIS(0.08), lw=1.4, ls="--", label="true background")

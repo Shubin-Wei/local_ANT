@@ -1,0 +1,90 @@
+{
+  "depth_km": 0.6,
+  "plot": {},
+  "observation_protocol": "Identical measured-mode files in both solvers; no per-solver synthetic generation.",
+  "shared_observations": true,
+  "final_max_abs_kms": 0.0004399999999997739,
+  "final_rms_kms": 5.0573253394894204e-05,
+  "iterations": 6,
+  "threads": 9,
+  "native_trimmed_seconds": [
+    63.67801453330321,
+    22.56173229822889,
+    0.7245496062096208
+  ],
+  "python_trimmed_seconds": [
+    23.573803880484775,
+    2.092629356542602,
+    0.16705223184544593
+  ],
+  "python_identity": {
+    "implementation": "Python port of DSurfTomo a651faf (lant.inversion.dsurf_main)",
+    "packages": {
+      "disba": "0.7.0",
+      "numba": "0.61.2",
+      "numpy": "1.26.4",
+      "scipy": "1.15.3"
+    },
+    "sources": {
+      "lant.inversion.dsurf_bspline": "183e017546379ae6a6573edda6632b8f9d7b936ef9a12059146201e9b76144cc",
+      "lant.inversion.dsurf_fmm": "14d7f5ce3135d0e9a9d2fccaf0306abc698fa98b042c516b56aeb4d6506b8735",
+      "lant.inversion.dsurf_format": "f11b3536b9f002019b0212f14a42b43bbaef179bfeda499975ffe3e861671a33",
+      "lant.inversion.dsurf_forward": "372558d8f4cc6226feeda19d784041b670f106afca25828a58a84a4d752b8e23",
+      "lant.inversion.dsurf_input": "e239546f87987b17b017383a37be837ef6ad95ab7d1ce21528e7ab17337ecf73",
+      "lant.inversion.dsurf_kernels": "817416b0d372b853d9988e2b0001b9f0631b08933019448d840ee17a9dc49167",
+      "lant.inversion.dsurf_lsmr": "53d28a8417fd506813d3f254feada16c644c5e4bb3375cc2655d0a3be61cf3aa",
+      "lant.inversion.dsurf_main": "834f3ff3eaf2e45ab16e0993678b336979dc636e3d7795199fa5cc253ded09b3",
+      "lant.inversion.dsurf_rays": "675362536539bb3d672a01167fe227e3b6302b04ae045196d085248c6e5f27ae",
+      "lant.inversion.dsurf_rows": "4e4c16fff3de2d202a626c2e9185aead9300f0e98cfa6d29c4900d325bed9297",
+      "lant.inversion.dsurf_source": "4def9ab77b661524c784b90e7366b217d948eec23cdfa732161777d7025e0bd2",
+      "lant.inversion.dsurf_system": "0a3b950d69d67f42ea7e030bb43bc845217f8f3f8c739258e4451c80b230e1cd",
+      "lant.inversion.forward_disba": "2cf91367dea288f68140e45b4bcdf88c6072eb9dbdf986ebe58b6fecdf738417",
+      "lant.inversion.sensitivity": "a67a922c2ded91f6e9222d0fa70bcca6123ff8ac7f103e1f44c685d851587046",
+      "lant.inversion.solver": "c46632c83765cd3e5fba1f449b29ccc153d1b07d7eb6b8e9f6b4350e58073960"
+    }
+  },
+  "sha256": {
+    "Vs_model.real": "ba34268de24567a02d0880f1f86bcd1f3edd4cc25938406541e3e76ffe12bf85",
+    "native/DSurfTomo.inMeasure.dat": "e5ee52f50ddfb24676caf149157b5465ff0a399ed536e3411ff980d3a5bbca93",
+    "python/DSurfTomo.inMeasure.dat": "32ed051deddeb37443d093891c1f4169d28e71b8b58d2c9406d51cb0223d8dd4",
+    "inputs/DSurfTomo.in": "43de4bb484b76c2cd0739320b6702e112095a1e7fe55e943128d994843a85ca6",
+    "inputs/MOD": "77d03624cb43ed1754b204987afc54f64ed9b16c45e6208d78c37dca9da473a9",
+    "inputs/surfdata.dat": "914522f97bbdce965274c58fe44e130cd650938e3dcc36c09dc5b4e8962723ee",
+    "case.json": "4abf3b131c38dd9ea28b02023fc53002eb950e24a38593cd7c5d2ef906bfd487",
+    "MOD.true": "af09101d2cf3b1df566a648b9dcf3188ac371a87a124622ac08832d0a9b68188"
+  },
+  "comparison": {
+    "threads": 9,
+    "timings": {
+      "native": {
+        "wall_s": 524.0667140060104,
+        "exit_status": 0
+      },
+      "python": {
+        "wall_s": 154.56819562986493,
+        "exit_status": 0
+      }
+    },
+    "source_snapshot": "baseline_1b58f41",
+    "max_abs_mps": 0.4399999999997739,
+    "rms_mps": 0.050573253394894206,
+    "output_sha256": {
+      "native/DSurfTomo.inMeasure.dat": "e5ee52f50ddfb24676caf149157b5465ff0a399ed536e3411ff980d3a5bbca93",
+      "python/DSurfTomo.inMeasure.dat": "32ed051deddeb37443d093891c1f4169d28e71b8b58d2c9406d51cb0223d8dd4"
+    },
+    "identical_observations": true,
+    "final_residual_operator": "Common Python forward operator for both final models; not the pre-update residualLast.dat.",
+    "native_final_residuals": {
+      "all_rms_ms": 16.54665164558661,
+      "all_mean_ms": 0.8594523934484686,
+      "kept": 2653,
+      "n": 2884
+    },
+    "python_final_residuals": {
+      "all_rms_ms": 16.55909197733792,
+      "all_mean_ms": 0.8757610426861767,
+      "kept": 2653,
+      "n": 2884
+    }
+  }
+}

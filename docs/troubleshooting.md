@@ -9,7 +9,7 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 | Symptom | Cause and remedy |
 |---|---|
 | `lant: command not found` | the environment with lant is not active (`conda activate lant`), or, without conda, `pip install -e .` was not run in the repository |
-| `lant check` lists DSurfTomo or fwd1d as missing | run `lant install-external dsurftomo` (needs git, make, gfortran) |
+| `lant check` lists numba as missing or of the wrong version | create the environment again: `conda env create -f environment.yml` |
 | `conda env create` hangs at "Solving environment" | add `--solver libmamba`, or use mamba / micromamba |
 
 ## Configuration
@@ -38,23 +38,23 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 
 | Symptom | Cause and remedy |
 |---|---|
-| `N processes instead of correlation.nproc` | memory does not hold the requested number of processes; the number is reduced automatically, the results are the same, only slower |
+| `N days at a time, so that they fit into the memory` | memory does not hold one process per core; fewer run at a time (the rest wait), the results are the same, only slower |
 | `One process alone does not fit` | the hourly correlations of all pairs of one day do not fit in memory. Most effective: write the actual range of the area in `data.velocity_range_kms` (the lag window is inversely proportional to the slowest velocity); on large arrays also use `correlation.max_distance_km` to correlate only pairs within a distance |
-| `a worker process ended unexpectedly` | a worker of clean, cc or disp was killed, most often for lack of memory (`dmesg` shows the out-of-memory killer). The step stops instead of waiting for the lost task; free memory or lower the `nproc` of the step, then run again |
+| `a worker process ended unexpectedly` | a worker of clean, cc or disp was killed, most often for lack of memory (`dmesg` shows the out-of-memory killer). The step stops instead of waiting for the lost task; free memory, or set `resources.cores` lower for this run, then run again |
 | `02_ccf` takes a lot of disk | as above: the lag window sets the file size. The clean report gives an estimate |
 
 ## stack
 
 | Symptom | Cause and remedy |
 |---|---|
-| many candidates, mostly "shift" | look at `station_qc.png` first: time shifts of sub-stacks with low correlation are poorly measured. A shift candidate requires the shifts of the pairs of a station to agree (beyond their standard error); a real clock error shows as a consistent shift of one station over several consecutive sub-stacks. With a very wide default velocity range the diagnosis window is long and the band wide, so the fraction of noise is high; narrow `data.velocity_range_kms` and run again |
+| many candidates, mostly "shift" | look at `2_station_qc.png` first: time shifts of sub-stacks with low correlation are poorly measured. A shift candidate requires the shifts of the pairs of a station to agree (beyond their standard error); a real clock error shows as a consistent shift of one station over several consecutive sub-stacks. With a very wide default velocity range the diagnosis window is long and the band wide, so the fraction of noise is high; narrow `data.velocity_range_kms` and run again |
 | you do not want to remove any data | `lant confirm stack` (keep everything); remove the candidates with `--exclude-candidates`; remove particular station-days with `stack.exclude_station_days` |
 
 ## reference
 
 | Symptom | Cause and remedy |
 |---|---|
-| `the F-J ridge could be followed over only N frequencies` | no continuous fundamental ridge was found in the F-J spectrum of the line. Look at `fj.png`: if you can see the fundamental mode, name the band where it is clear in `reference.track_start_band_hz`; if the ridge lies outside your velocity range, change `data.velocity_range_kms`; if neither works, borrow the curve of a nearby array (`reference.source: file`) |
+| `the F-J ridge could be followed over only N frequencies` | no continuous fundamental ridge was found in the F-J spectrum of the line. Look at `3_fj_phase_velocity.png`: if you can see the fundamental mode, name the band where it is clear in `reference.track_start_band_hz`; if the ridge lies outside your velocity range, change `data.velocity_range_kms`; if neither works, borrow the curve of a nearby array (`reference.source: file`) |
 | `only N clear picks that follow each other` (areal array) | too few pairs, or weak surface-wave energy in the band. Check `results/figures/2_ccf_moveout_*.png` for wave trains that move out with distance |
 | a higher mode was picked | a curve that is fast overall and rises at high frequencies is probably a higher mode. On areal arrays use `reference.fj_mode: track_fundamental`, narrow the velocity range, or borrow a curve |
 | the lower end of the measured band is higher than expected | it follows from the longest pair being `dispersion.qc.lam_c` reference wavelengths; this is the valid range of the two-station method, not an error |
@@ -64,19 +64,19 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 | Symptom | Cause and remedy |
 |---|---|
 | few accepted points | `.lant/steps/disp.md` counts the rejected points by reason. Mostly snr: stacking time too short, or no energy in the band; mostly wavelength / path_short: distances too short relative to the wavelength; mostly off_band: the frequency is outside the band excited by the noise sources |
-| `median_vs_reference.txt` shows a systematic offset | the reference curve may be wrong (higher mode, cycle skip); go back to reference and check `fj.png` |
-| line: the reference covers only a small part of the measured band, and the medians at high frequencies change with the velocity range | beyond the picks of the reference, the cycle count relies on continuation along frequency and the group pick is not guided by the reference, so a fast population can enter. On one real line, with the default range 0.1–5 km/s the reference covered only 1.7–2.8 Hz, and the medians at 3–13 Hz were 4–9 % higher than with the range of the area, 1–4 km/s; the extra points were 8–16 % faster than the points accepted in both runs and did not agree with the F-J ridge. On a line, always give the velocity range of the area, and check in `fj.png` that the picks follow the ridge up to the aliasing line |
+| `median_vs_reference.txt` shows a systematic offset | the reference curve may be wrong (higher mode, cycle skip); go back to reference and check `3_fj_phase_velocity.png` |
+| line: the reference covers only a small part of the measured band, and the medians at high frequencies change with the velocity range | beyond the picks of the reference, the cycle count relies on continuation along frequency and the group pick is not guided by the reference, so a fast population can enter. On one real line, with the default range 0.1–5 km/s the reference covered only 1.7–2.8 Hz, and the medians at 3–13 Hz were 4–9 % higher than with the range of the area, 1–4 km/s; the extra points were 8–16 % faster than the points accepted in both runs and did not agree with the F-J ridge. On a line, always give the velocity range of the area, and check in `3_fj_phase_velocity.png` that the picks follow the ridge up to the aliasing line |
 | you want to loosen quality control for more points | not recommended. If it is really needed, record the reason with `lant note` and state it in your report |
 
 ## inversion and run
 
 | Symptom | Cause and remedy |
 |---|---|
-| `periods ... more than DSurfTomo allows` | DSurfTomo takes at most 60 periods (pDSurfTomo 80). Reduce `dispersion.per_octave` as suggested, or shorten the exported period range |
+| `periods ... the solver accepts at most 60` | at most 60 periods (the limit of DSurfTomo's CalSurfG). Reduce `dispersion.per_octave` as suggested, or shorten the exported period range |
 | `inversion.sparsity = ... reserves too little` | the sparse reserve given by hand is too small and DSurfTomo would end with a segmentation fault. Use `auto` |
 | DSurfTomo `segmentation fault` | look at the end of `work/06_inversion/main/run.log`. Common causes: sparse reserve too small (`inversion.sparsity: auto` estimates it from the grid and the paths), not enough memory (increase `grid_spacing_deg` or reduce `grid_refine`), stack size too small |
 | a project is marked invalid by the precheck | under the starting model the rejection rule of DSurfTomo would remove more than half of the data, or the residuals are systematically offset. The starting model does not match the data; check the reference curve and the 1-D fit (`results/figures/4_start_model.png`) |
-| the main project runs very long | the time grows with grid nodes, periods and stations. Use `inversion.solver: pdsurftomo` (parallel), or a larger grid spacing |
+| the main project runs very long | the time grows with grid nodes, periods and stations. It uses 80 % of the idle cores (see the COMPUTING RESOURCES of the run step); a larger grid spacing or fewer periods make it faster |
 
 ## evaluate
 

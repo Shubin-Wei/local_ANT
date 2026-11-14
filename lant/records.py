@@ -9,7 +9,9 @@
 <output>/.lant/lock                   the process writing to the output directory
 """
 
+import contextlib
 import datetime as _dt
+import functools
 import json
 import os
 import shutil
@@ -56,6 +58,35 @@ def log(cfg, **entry):
     entry.setdefault("time", _now())
     with open(os.path.join(rec_dir(cfg, create=True), "run_log.jsonl"), "a") as fh:
         fh.write(json.dumps(strict(entry), default=str, ensure_ascii=False, allow_nan=False) + "\n")
+
+
+@contextlib.contextmanager
+def phase(cfg, name, **details):
+    """Record wall time, including failed/interrupted phases; overlapping times are not additive."""
+    started = time.perf_counter()
+    entry = dict(phase=name, status="done", **details)
+    log(cfg, event="phase_start", phase=name, **details)
+    try:
+        yield entry
+    except BaseException as exc:
+        entry.update(status="failed", error="%s: %s" % (type(exc).__name__, exc))
+        raise
+    finally:
+        log(cfg, event="phase", seconds=time.perf_counter() - started, **entry)
+
+
+def timed_phase(name):
+    """Name a pipeline function's wall-time boundary without changing its return value."""
+
+    def decorate(function):
+        @functools.wraps(function)
+        def timed(cfg, *args, **kwargs):
+            with phase(cfg, name):
+                return function(cfg, *args, **kwargs)
+
+        return timed
+
+    return decorate
 
 
 def strict(o):
@@ -110,6 +141,9 @@ class Step:
 
         from .progress import Progress
         from .provenance import record
+        from .runtime_identity import assert_unchanged, identity
+
+        assert_unchanged()
 
         self.context = contextlib.ExitStack()
         try:
@@ -128,6 +162,7 @@ class Step:
                 event="start",
                 config=self.cfg.get("_config_file"),
                 provenance=record(rec_dir(self.cfg)),
+                runtime=identity(),
             )
             handler = RotatingFileHandler(
                 os.path.join(rec_dir(self.cfg), "lant.log"), maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
@@ -158,6 +193,15 @@ class Step:
     def __exit__(self, et, ev, tb):
         import sys
 
+        from .runtime_identity import assert_unchanged
+
+        source_error = None
+        if et is None:
+            try:
+                assert_unchanged()
+            except RuntimeError as exc:
+                source_error = exc
+                et, ev, tb = type(exc), exc, exc.__traceback__
         dt = round(time.time() - self.t, 1)
         failed = getattr(self, "failed", None)
         event = "failed" if et else ("partial" if failed else "done")
@@ -174,4 +218,6 @@ class Step:
             file=sys.stderr,
             flush=True,
         )
+        if source_error is not None:
+            raise source_error
         return False

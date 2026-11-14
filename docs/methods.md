@@ -4,13 +4,17 @@
 
 This document explains, step by step, what `lant` computes, why it computes it that way, which publication or theoretical relation it rests on, and under which conditions each choice holds. For how to run the steps see [tutorial.md](tutorial.md); for the default and the source category of every parameter see [parameters.md](parameters.md); for the numbers of the synthetic tests see [validation.md](validation.md).
 
-"Empirical" in this text marks a number for which no publication gives a value and which this project chose on synthetic data; every such number is labelled in `parameters.md`.
+"Empirical" marks an engineering value adopted by this project without a directly verified literature value. Unless a validation record says otherwise, it does not imply independent optimization or calibration of every threshold. Parameter categories are in `parameters.md`; derivations and the latest engineering changes are in the [method-basis update](method_basis_update.md).
+
+`project.ai_assistant` is a file-delivery choice: it selects which single rules file for AI assistants the project gets (AGENTS.md, CLAUDE.md or GEMINI.md). Its default is `null`; it has no role in the numerical method. See [AI workflow](ai_workflow.md).
+
+Step publication copies existing QC and array F-J figures and saves effective parameter snapshots. F-J is an array phase-velocity spectrum, not single-pair phase energy. Publication adds no forward solves or inferred uncertainty; the numerical files and provenance remain linked through the run report.
 
 ---
 
 ## 1. Overview
 
-Ambient-noise imaging rests on the relation between the cross-correlation of two records in a nearly isotropic, diffuse noise field and the Green's function between the two stations; its phase gives the surface-wave travel time between them. On the vertical component the strongest arrival in the correlation is the fundamental-mode Rayleigh wave. The workflow therefore has three parts:
+Ambient-noise imaging rests on the relation between the cross-correlation of two records in a nearly isotropic, diffuse noise field and the Green's function between the two stations; its phase gives the surface-wave travel time between them. The workflow interprets fundamental-mode Rayleigh waves on the vertical component; the user must judge the mode using the array spectrum rather than assume the strongest arrival is always fundamental. The workflow therefore has three parts:
 
 | Part | Steps | Result |
 |---|---|---|
@@ -27,6 +31,10 @@ The workflow measures only fundamental-mode Rayleigh phase velocities and uses o
 ### 2.1 Matching stations and records
 
 The station table is matched to the record headers in this order: same network and station; same station code; network and station written together; equal after removing leading letters or leading zeros. Ambiguous matches are not used and are listed in the report. When nodal instruments were moved in the field, the table gives the serial number (or the station name is the code in the headers) and the deployment start and end; records are assigned to sites by these time windows. When only dates are given, a whole day is taken in the time zone of `data.day_label` (from 0 h of the first day to 24 h of the last day).
+
+Header indexing reuses entries by path, size, nanosecond modification/change times, device and inode (`lant.record_index`). This is an engineering I/O rule, not a raw-file content checksum. Legacy signatures are rescanned once; a complete cache hit starts no worker pool and leaves the cache file untouched.
+
+Cleaned station-day reuse and clean-input provenance use the same metadata signature. Response inventories and station-day keys include response metadata and SHA256 content hashes (response files are small auxiliary inputs); an edited/replaced response at the same path invalidates reuse. This is cache engineering; response removal itself is unchanged.
 
 ### 2.2 Distances
 
@@ -84,6 +92,8 @@ The lag window and the segment length grow inversely with v_slow, and so do the 
 
 ---
 
+Implementation: station days are decoded and decimated by at most four reader threads into one array; compiled pair products retain single-precision products and double-precision segment-order sums. Hourly results are streamed to an atomic day file. NumPy/Numba complex multiplication may differ by roundoff; this is not a change to the estimator.
+
 ## 5. stack: stacking and station diagnosis
 
 ### 5.1 Stacking
@@ -114,7 +124,7 @@ For each frequency f the real part of the correlation spectra of the pairs, C(r,
 
 I(f, c) = ∫ C(r, ω) J₀(ω r / c) r dr
 
-(Wang et al. 2019, eq. 4), integrated with the trapezoidal rule over pairs sorted by distance, in double precision. At each frequency only pairs up to `fj_rmax_lambda` wavelengths are used: a first pass uses all pairs and picks a curve, the second converts the limit into distances with that curve. Ridges of energy in the spectrum mark the phase velocities of the modes.
+(Wang et al. 2019, eq. 6), integrated with the trapezoidal rule over pairs sorted by distance, in double precision. At each frequency only pairs up to `fj_rmax_lambda` wavelengths are used: a first pass uses all pairs and picks a curve, the second converts the limit into distances with that curve. Ridges of energy in the spectrum mark the phase velocities of the modes.
 
 ### 6.2 Picking
 
@@ -123,7 +133,7 @@ I(f, c) = ∫ C(r, ω) J₀(ω r / c) r dr
 | `max_peak` | areal arrays | the strongest peak at each frequency; a pick is "clear" when the second peak is below 0.7 of the strongest and enough pairs contribute; the longest run of clear picks that follow each other is fitted with a cubic polynomial in log f, and end values are used outside the picks |
 | `track_fundamental` | lines | the F-J spectrum of a line has pairs of one direction only, and higher modes or obliquely incident noise are often stronger. The ridge is followed in frequency from a start: at each frequency the strongest peak within the allowed window is taken (the ridge is the energy maximum); the window limits the slope d ln c / d ln f, widening by 5 % for every 1/12-octave step since the last pick, and the velocity may rise with frequency by at most 3 %; picks are restricted to `data.velocity_range_kms` and to wavelengths of at least twice the mean station spacing (a line samples the wavefield at its station spacing, and shorter wavelengths produce aliased ridges in the F-J spectrum; for irregular sampling the average sampling density is what counts, Landau 1967). The start is chosen automatically: a start band every 1/3 octave is tried, and the one that can be followed over the most frequencies is kept; on a tie the slower one (at one frequency the fundamental mode is the slowest). With fewer than 5 frequencies the step stops with an error and gives three ways forward: name the start band, narrow the velocity range, or borrow a curve |
 
-Whether the fundamental mode was picked is the most important manual judgement of the whole workflow: when a higher mode is picked, the number of cycles is off by one everywhere and all phase velocities are biased high. The reference step therefore always stops for you to check `fj.png`.
+Whether the fundamental mode was picked is the most important manual judgement of the whole workflow: when a higher mode is picked, the number of cycles is off by one everywhere and all phase velocities are biased high. The reference step therefore always stops for you to check `3_fj_phase_velocity.png`.
 
 ### 6.3 Borrowed curves
 
@@ -155,7 +165,7 @@ with t_g the measured group delay. Multiplying by exp(iΨ) removes the dispersio
 
 t_p = −(Φ − φ₀) / ω_c + N T,  c = Δ / t_p,
 
-with φ₀ = π/4 the far-field phase of the 2-D Green's function (Lin et al. 2008, eq. 7), N the integer number of cycles, T the period and Δ the ellipsoidal distance. On exact J₀ correlations the median error of this procedure is within 0.1 % ([validation.md](validation.md), section 2).
+with φ₀ = π/4 under this implementation's causal J₀-correlation and Fourier convention. Lin et al. (2008, eq. 7) discuss the EGF convention; taking a negative time derivative changes the phase, so its sign cannot be copied directly onto the correlation. Here N is the integer number of cycles, T the period and Δ the ellipsoidal distance. On exact J₀ correlations the median error of this procedure is within 0.1 % ([validation.md](validation.md), section 2).
 
 ### 7.4 Number of cycles
 
@@ -167,7 +177,9 @@ The sub-stacks are split into `njack` groups and the measurement is repeated wit
 
 σ² = (g − 1)/g · Σᵢ (cᵢ − c̄)², g the number of groups.
 
-It reflects only the repeatability of the measurement in time; it does not include errors of the reference curve, of the number of cycles or from directional noise, it is not calibrated, and DSurfTomo does not use it (all travel times have equal weight).
+It reflects only the repeatability of the measurement in time; it does not include errors of the reference curve, of the number of cycles or from directional noise, it is not calibrated. Kept travel-time rows are not weighted by these uncertainties, and the choice of the smoothing weight does not use them (section 8.4).
+
+Implementation: the full stack and delete-group stacks share a batched FFT and phase-filter weights for the same measured group delay. Analytic banks and sub-stacks are processed per pair. The measurement, uncertainty and quality-control formulas are unchanged.
 
 ### 7.6 Quality control
 
@@ -198,19 +210,45 @@ For each pair only the longest run of consecutive accepted frequencies is kept (
 
 ### 8.1 Average curve and depth nodes
 
-At each period the median of the phase velocities of all pairs is taken, if there are at least `inversion.median_min_pairs` pairs (on small arrays a quarter of the pairs, at least 5). Depth nodes start at 0 with a step of max(shortest wavelength / 4, depth / 4): the shortest wavelength limits the thinnest layer that can be resolved, and the vertical resolution of surface waves degrades with depth. Nodes down to half of the longest wavelength are updated (the empirical depth of investigation in section 4.2.3 of Foti et al. 2018), and one fixed bottom node is added below (DSurfTomo does not update the last node).
+At each period the median of all pair phase velocities is taken if there are at least `inversion.median_min_pairs` pairs (on small arrays a quarter of the pairs, at least 5). Depth nodes start at 0 with step max(shortest wavelength / 4, depth / 4). This spacing is an engineering rule, not a guaranteed vertical resolution or a recommendation of Foti et al. Nodes down to half the longest wavelength are updated (an approximate investigation-depth guide, Foti et al. 2018, section 4.2.3), with one fixed bottom node below. The spacing, depth cutoff and fixed bottom must be judged with the starting-model fit and the sensitivity tests.
 
 ### 8.2 1-D inversion
 
-A damped, smoothed Gauss–Newton iteration in ln Vs. The forward problem uses DSurfTomo's own chain (Vp and density from Vs after Brocher 2005, dispersion from surfdisp96) through the small program `fwd1d`, so that the starting model and the 3-D inversion share the same forward problem. The smoothing constrains the curvature of the model itself ("jumping", Shaw & Orcutt 1985; Constable et al. 1987) and not of each update, so the result does not drift with the number of iterations; it is normalised by the actual node spacing. The initial value is 1.087 times the phase velocity at the shortest period.
+A damped, smoothed Gauss–Newton iteration in ln Vs. The forward problem uses DSurfTomo's own chain (Vp and density from Vs after Brocher 2005, its layering, the surfdisp96 root search), ported statement by statement in its own precision ([forward_validation.md](forward_validation.md)), so that the starting model and the 3-D inversion share the same forward problem. The smoothing constrains the curvature of the model itself ("jumping", Shaw & Orcutt 1985; Constable et al. 1987) and not of each update, so the result does not drift with the number of iterations; it is normalised by the actual node spacing. The initial value is 1.087 times the phase velocity at the shortest period.
 
 ### 8.3 3-D inversion
 
-DSurfTomo (Fang et al. 2015) inverts travel times directly for 3-D Vs, tracing rays again in the current model at each iteration. lant writes `surfdata.dat` (station pairs, periods, phase velocities), `DSurfTomo.in` and the starting model `MOD`, and does not change the source code. Constraints of the interface:
+DSurfTomo (Fang et al. 2015) inverts travel times directly for 3-D Vs, tracing rays again in the current model at each iteration. lant runs a statement-by-statement Python port of its main program and forward part (`lant/inversion/dsurf_*.py`, [python_backends.md](python_backends.md)) on the files DSurfTomo reads: `surfdata.dat` (station pairs, periods, phase velocities), `DSurfTomo.in` and the starting model `MOD`. Constraints of the interface:
 
-- Number of periods: at most 60 for DSurfTomo and 80 for pDSurfTomo; beyond that the inversion step stops and suggests a suitable `dispersion.per_octave`.
-- Reserve of the sparse matrix: DSurfTomo reserves sparsity × number of travel times × number of nodes non-zero elements; when the reserve is too small it writes beyond it before checking and ends with a segmentation fault. lant estimates the fill from the number of grid cells crossed by straight paths; `inversion.sparsity: auto` takes twice the estimate, at least 0.05; a value given by hand below 1.2 times the estimate is refused with an error.
-- Rejection rule: at each iteration DSurfTomo removes data whose residual lies beyond `threshold` interquartile ranges. Before running, one forward pass checks the fraction kept under the starting model (`checks.precheck`); a project that would keep less than half, or whose median residual is off by more than one interquartile range, is marked invalid and not run.
+- Number of periods: at most 60 in the 3-D project (NP of DSurfTomo's CalSurfG; the 1-D forward calculation, surfdisp96, holds 80); beyond that the inversion step stops and suggests a suitable `dispersion.per_octave`.
+- Reserve of the sparse matrix: DSurfTomo reserves sparsity × number of travel times × number of nodes non-zero elements and stops when they do not suffice (the original wrote beyond the reserve and ended with a segmentation fault). lant estimates the fill from the number of grid cells crossed by straight paths; `inversion.sparsity: auto` takes twice the estimate, at least 0.05; a value given by hand below 1.2 times the estimate is refused with an error.
+- Rejection rule: at each iteration DSurfTomo keeps signed residuals inside `threshold × [q25, q75]`, where q25 and q75 are signed residual quartiles, and gives the other rows zero weight. This is not an IQR-fence rule. Before running, one forward pass checks the fraction kept under the starting model (`checks.precheck`); a project that would keep less than half, or whose median residual is off by more than one interquartile range, is marked invalid and not run.
+
+### 8.4 Smoothing weight and damping
+
+Each iteration of DSurfTomo solves for the update δv that minimises ‖W(Gδv − r)‖² + w²‖Lδv‖² + d²‖δv‖² (Fang et al. 2015; `main.f90` of DSurfTomo): r the travel-time residuals in seconds, W the 0/1 weights of the rejection rule, L the smoothing rows (6 at a node and −1 at its six neighbours, counted in grid indices whatever the spacing; at the nodes of the boundary faces, the top layer included, only 2 on the diagonal), w the weight (`inversion.weight`) and d the damping of LSMR (`inversion.damp`). The update of each node is then clipped to ±0.5 km/s and to the velocity bounds. The damping limits the size of each update, the weight its shape; both act on the update of each iteration, not on the final model.
+
+lant uses fixed values: **weight 1, damping 0.1**, for areal arrays and lines. They were calibrated on lant's two synthetic examples, where the true model is known (16-station areal array, 3 days; 24-station line, 3 days; six iterations; grid and checkerboards by the rules of this version): the main project inverts the dispersion the chain measured from the synthetic waveforms, and its error is the rms difference from the true model at the nodes inside the stations (areal: their convex hull; line: between the end stations, within one cell of the line), updated depths only. The checkerboards carry 1 % Gaussian noise.
+
+| Example | weight | damping | main: rms error, m/s (starting model) | main: recovered fraction | 2-wavelength checkerboard: recovered fraction |
+|---|---:|---:|---:|---:|---:|
+| areal | 1 | 1 | 80 (89) | 0.12 | 0.09 |
+| areal | 1 | 0.3 | 69 | 0.29 | 0.18 |
+| areal | **1** | **0.1** | **64** | 0.37 | 0.20 |
+| areal | 1 | 0.03 | 63 | 0.39 | 0.20 |
+| areal | 0.25 | 0.1 | 74 | 0.35 | 0.43 |
+| areal | 0.5 | 0.1 | 67 | 0.39 | 0.33 |
+| areal | 2 | 0.1 | 73 | 0.22 | 0.09 |
+| areal | 4 | 0.1 | 82 | 0.09 | 0.03 |
+| areal | 8 | 0.1 | 87 | 0.03 | 0.01 |
+| line | 1 | 1 | 94 (107) | 0.18 | 0.03 |
+| line | **1** | **0.1** | **85** | 0.40 | 0.13 |
+| line | 4 | 0.1 | 92 | 0.28 | 0.01 |
+| line | 0.25 | 0.1 | 86 | 0.43 | 0.46 |
+
+The recovered fraction is the regression slope of the recovered on the true anomaly (relative to the starting model) over the same nodes. With the damping of earlier versions (1; lines 1.5) every update stayed at a few hundredths of a km/s, and after six iterations the checkerboards kept 3–12 % of their amplitude; below 0.1 the damping changes little. At damping 0.1 the weight 1 gave the smallest error on both examples: smaller weights let the data noise into the model (lower correlation with the truth), larger ones smooth the anomalies away. The checkerboards, whose noise is smaller than the measurement errors of the main project, recover more at smaller weights; the default follows the main project, whose errors are those of the measurement chain. On the line the main-project error is the same at weight 0.25 and 1 (86 and 85 m/s) while the 2-wavelength checkerboard keeps 0.46 instead of 0.13: lant keeps the smoother model of weight 1; a line interpreted at that scale can be run with `inversion.weight: 0.25`. The top layer is held by its boundary rows alone (2w on the diagonal) and recovers least.
+
+The weight is not transferable as a number: the data rows sum over all travel times, the smoothing rows do not, so more travel times, more periods or other travel-time scales make the same weight weaker or stronger. For other arrays, look at the checkerboards and add the controls `reg_x0.5` and `reg_x2` (`checks.controls`; the same inversion with the weight halved and doubled). The run log gives the largest change of each iteration; DSurfTomo's manual (V1.4, section 5) reads 0.2–0.4 km/s in the first iterations as a sign of a suitable weight. Earlier versions chose the weight from that number (0.3 km/s in the first iteration); on both synthetic examples no weight reached even 0.2 km/s at damping 1, so the rule was removed.
 
 ---
 
@@ -221,12 +259,19 @@ Numbers and figures only, without pass criteria.
 | Check | Procedure | How to read it |
 |---|---|---|
 | Travel-time residuals | root mean square, median and fraction kept by the rejection rule, for the starting and final models | how much the 3-D inversion reduced the residuals |
-| Checkerboard (Lévêque et al. 1993) | a ±10 % checkerboard added to the 1-D model (on a line the pattern is odd about the middle of the grid, so that the synthetic residuals do not lean to one side; otherwise DSurfTomo's rejection rule on the signed quartiles drops most of the data), travel times computed for the actual pairs and periods, Gaussian noise added (`inversion.noise`; auto: the relative rms of the residuals of the final main model kept by DSurfTomo's rejection rule, so that the synthetic data are as noisy as the real data remain after the inversion — noise of the size of the data errors, Rawlinson & Spakman 2016; the misfit is an upper estimate of those errors, since it also contains structure the model does not fit; the checkerboards then run after the main project), then inverted; correlation and regression slope between recovered and input pattern at the nodes covered by stations | the slope is the fraction of an anomaly of that size that remains in the model. It depends on the regularisation and on the added noise as well as on the paths |
+| Checkerboard (Lévêque et al. 1993) | a ±10 % checkerboard added to the 1-D model (on a line the pattern is odd about the middle of the grid, so that the synthetic residuals do not lean to one side; otherwise DSurfTomo's rejection rule on the signed quartiles drops most of the data), travel times computed for the actual pairs and periods, Gaussian noise added (`inversion.noise`; auto: the relative rms of the residuals of the final main model kept by DSurfTomo's rejection rule, so that the synthetic data are as noisy as the real data remain after the inversion — noise of the size of the data errors, Rawlinson & Spakman 2016; the misfit is an upper estimate of those errors, since it also contains structure the model does not fit; the checkerboards then run after the main project), then inverted; correlation and regression slope between recovered and input pattern at nodes with nonzero post-rejection data-Jacobian column support (DWS > 0 in the last iteration; B-spline and depth-kernel support, not geometric ray counts) | the slope is the fraction of an anomaly of that size that remains in the model. It depends on the regularisation and on the added noise as well as on the paths |
 | Vertical checkerboard | the sign of the pattern flips with depth | leakage between depths |
+| Size of the tests (`checks.checkerboards`, `checks.vertical`: auto) | three horizontal tests and one depth-varying test, each a full nonlinear inversion. Cells (half the period of the pattern) of 1, 2 and 3 median wavelengths c T of the measurements in the main project, to two digits: the lateral resolution of surface-wave tomography is limited by the predominant wavelengths (Yao et al. 2006 set the correlation length of their maps to about the wavelength), and Rawlinson & Spakman (2016) recommend tests at several scales; the factors 1, 2 and 3 are the user's choice. When the median nearest-station distance exceeds the smallest cell, the report notes that the stations sample that pattern more coarsely than its sign changes. The depth-varying test has the 2-wavelength cell and one sign reversal at the median wavelength / 3, the depth where the fundamental-mode Rayleigh phase velocity is most sensitive (rule of thumb, Fang et al. 2015) | the slope at each size tells how much of an anomaly of that size remains in the model; recovery at one scale does not tell about others: list further tests in the configuration when the model is interpreted at other scales |
 | Starting-model control (Rawlinson & Spakman 2016) | the starting model gets a gradient of ±5 % with depth (centred on the travel-time residuals), everything else unchanged, then inverted | where the difference between the two models is about as large as the change applied, the data do not constrain the model; the residual history of the control project is given as well: as long as its residual has not come down to that of the main project, part of the difference is unconverged |
 | Regularisation controls (optional) | smoothing and damping multiplied by 0.5 or 2 | dependence of the structure on the regularisation |
 
 ---
+
+### Reading diagnostic figures
+
+The starting-model plot connects the actual Vs parameter nodes, consistent with node interpolation (Fang et al. 2015, section 2.1). Its dispersion prediction initializes the inversion; it is not the final 3-D prediction. The held bottom value is a boundary condition, not a detected interface or resolution limit. The kernel illustration uses a separate finer model, extended to 1.5 times the bottom depth, joint Vs +/-5% perturbations with Brocher Vp/rho, divided by node spacing; it is not the inversion Jacobian. Its text file records the actual spacing, bottom and perturbation.
+
+Residual histograms follow the start/final grey-scale comparison of Fang et al. (2015), Fig. 8, in milliseconds with all tails retained. Mean, population standard deviation and RMS are different statistics; rejected rows remain visible and counts are explicit. Period-dependent RMS is not iteration convergence, and residuals are not model uncertainty. Dispersion and corresponding Vs models are separate panels, as in Xia, Miller & Park (1999), Figs. 4 and 6; no borehole or uncertainty curves are inferred here.
 
 ## 10. Conditions of validity and limitations
 
@@ -263,8 +308,8 @@ Numbers and figures only, without pass criteria.
 - Takagi, R., Nishida, K., Aoki, Y., et al. (2015). A single bit matters: coherent noise of seismic data loggers. *Seismological Research Letters*, 86(3), 901–907. doi:10.1785/0220150030
 - Vincenty, T. (1975). Direct and inverse solutions of geodesics on the ellipsoid with application of nested equations. *Survey Review*, 23(176), 88–93. doi:10.1179/sre.1975.23.176.88
 - Wang, J., Wu, G., & Chen, X. (2019). Frequency-Bessel transform method for effective imaging of higher-mode Rayleigh dispersion curves from ambient seismic noise data. *Journal of Geophysical Research: Solid Earth*, 124, 3708–3723. doi:10.1029/2018JB016595
+- Xia, J., Miller, R. D., & Park, C. B. (1999). Estimation of near-surface shear-wave velocity by inversion of Rayleigh waves. *Geophysics*, 64, 691–700. [Original paper](https://www.parkseismic.com/files/XIA-99-04.pdf).
 - Xu, Y., Lebedev, S., Meier, T., Bonadio, R., & Bean, C. J. (2021). Optimized workflows for high-frequency seismic interferometry using dense arrays. *Geophysical Journal International*, 227, 875–897. doi:10.1093/gji/ggab260
 - Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis – I. Phase velocity maps. *Geophysical Journal International*, 166, 732–744. doi:10.1111/j.1365-246X.2006.03028.x
-- Zhu, S., Li, J., Chen, G., Fang, H., & Yao, H. (2026). pDSurfTomo: a high-performance parallel computing package for direct surface wave tomography. arXiv:2604.11920.
 
-Output organization and compact configuration templates do not change the numerical method. PNG is the default figure format; PDF remains available through `plots.formats`.
+Output organization and compact configuration templates do not change the numerical method. Workflow figures are PNG only (`plots.formats: [png]`); input and recovered anomalies use shared limits and the README overview style.

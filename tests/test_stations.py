@@ -1,4 +1,4 @@
-"""Station tables, coordinates and name matching (lant.stations)."""
+"""Station tables and coordinates (lant.stations) and name matching (lant.station_match)."""
 
 import pytest
 
@@ -6,6 +6,7 @@ import pytest
 def test_station_tables_and_names(tmp_path):
     """Station tables in several layouts (CSV, plain text, Chinese headers, degree-minute-second) and name matching
     with and without network codes."""
+    from lant import station_match as SM
     from lant import stations as ST
 
     tables = {
@@ -24,9 +25,9 @@ def test_station_tables_and_names(tmp_path):
             how,
         )
     rows, _ = ST.read_table(str(tmp_path / "b.txt"))
-    mapping, _, rep = ST.match_names(rows, {("YY", "1001"), ("", "1002")})
+    mapping, _, rep = SM.match_names(rows, {("YY", "1001"), ("", "1002")})
     assert mapping == {("YY", "1001"): "YY.1001", ("", "1002"): "YY.1002"}
-    mapping, _, rep = ST.match_names(
+    mapping, _, rep = SM.match_names(
         [dict(network=None, station="A01", lat=1, lon=2, elev=0)], {("X", "A01"), ("Y", "A01")}
     )
     assert not mapping and rep["ambiguous"]
@@ -37,6 +38,7 @@ def test_coordinates_channels_ambiguous_names():
     """Coordinate notations; the vertical channel is chosen (a horizontal one is refused, an unknown orientation is
     left to confirm); one table name for two points is ambiguous."""
     from lant import data as D
+    from lant import station_match as SM
     from lant import stations as ST
 
     assert abs(ST.parse_coord("1.054321e2") - 105.4321) < 1e-9
@@ -50,7 +52,7 @@ def test_coordinates_channels_ambiguous_names():
         dict(network=None, station="A01", lat=1, lon=1, elev=0),
         dict(network=None, station="A01", lat=2, lon=2, elev=0),
     ]
-    m, c, r = ST.match_names(tab, {("ZZ", "A01")})
+    m, c, r = SM.match_names(tab, {("ZZ", "A01")})
     assert not m and not c and r["ambiguous"]
 
 
@@ -71,7 +73,7 @@ def test_moved_nodes_names_geometry(tmp_path):
     assert rows[2]["lon"] == -100.0 and rows[0]["line"] == "L1" and rows[0]["t_end"] == 1704153600.0
     t0 = 1704067200.0
     tr = lambda sta, a, b, f="x": dict(net="", sta=sta, start=t0 + a * 3600, end=t0 + b * 3600, file=f)
-    used, rest, coords, left, rep = ST.assign_by_serial(rows, [tr("N7", 12, 40), tr("N7", 25, 29), tr("N9", 0, 5)])
+    used, rest, coords, left, rep = SM.assign_by_serial(rows, [tr("N7", 12, 40), tr("N7", 25, 29), tr("N9", 0, 5)])
     assert [(u["station"], (u["start"] - t0) / 3600, (u["end"] - t0) / 3600) for u in used] == [
         ("XX.P1", 12.0, 24.0),
         ("XX.P2", 30.0, 40.0),
@@ -83,7 +85,7 @@ def test_moved_nodes_names_geometry(tmp_path):
         dict(network=None, station="A001", lat=1, lon=1, elev=0),
         dict(network=None, station="B12", lat=2, lon=2, elev=0),
     ]
-    m, c, r = ST.match_names(tab, {("", "A1"), ("", "B012")})
+    m, c, r = SM.match_names(tab, {("", "A1"), ("", "B012")})
     assert m == {("", "A1"): "XX.A1", ("", "B012"): "XX.B012"}
     rec = lambda f, a, b: dict(sta="", file=f, start=a, end=b)
     recs = [
@@ -94,7 +96,7 @@ def test_moved_nodes_names_geometry(tmp_path):
         rec("/d/B12/shot.sgy", 0, 10),
         rec("/d/B12/shot.sgy", 0, 10),
     ]
-    n, unsplit = ST.names_from_files(recs, tab)  # consecutive traces of one file: named; overlapping: not
+    n, unsplit = SM.names_from_files(recs, tab)  # consecutive traces of one file: named; overlapping: not
     assert n == 3 and [x["sta"] for x in recs] == ["A001", "A001", "B12", "", "", ""] and unsplit == ["/d/B12/shot.sgy"]
     ok = {"A": dict(lon=100.0, lat=30.0), "B": dict(lon=100.01, lat=30.0)}
     SM.geometry_check(ok)
@@ -105,3 +107,28 @@ def test_moved_nodes_names_geometry(tmp_path):
     ):
         with pytest.raises(D.DataError, match=msg):
             SM.geometry_check(bad)
+
+
+def test_could_match_is_a_superset_of_the_name_rules(tmp_path):
+    from lant import config
+    from lant import station_match as SM
+
+    cfg = config.defaults()
+    t = tmp_path / "t.csv"
+    t.write_text(
+        "network,station,latitude,longitude,elevation\nYY,1001,30,100,0\n,ZZ2002,30.1,100.1,0\n,A007,30.2,100,0\n"
+    )
+    cfg["data"]["station_file"] = str(t)
+    ok = SM.could_match(cfg)
+    assert ok("YY", "1001") and ok("", "1001") and ok("AB", "1001")  # rules 1, 2
+    assert ok("ZZ", "2002") and ok("Z", "Z2002")  # rules 3 and 4 ("ZZ2002" = network + station, or its digits)
+    assert ok("XX", "A7") and ok("XX", "a0007")  # rule 5, case
+    assert ok("XX", "")  # no station code: named from the file later
+    assert not ok("YY", "1002") and not ok("XX", "B007")
+    cfg["data"]["rename"] = {"QQ.9": "YY.1001"}
+    assert SM.could_match(cfg)("QQ", "9")
+    t.write_text("network,station,latitude,longitude,elevation,serial,start,end\nYY,P1,30,100,0,00453,2024-01-01,\n")
+    ok = SM.could_match(cfg)
+    assert ok("ZZ", "453") and not ok("YY", "P1")  # a serial table matches the header code to the serial
+    cfg["data"]["network_default"] = "XX"
+    assert SM.could_match(cfg) is None  # every file is read

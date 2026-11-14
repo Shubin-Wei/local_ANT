@@ -26,8 +26,8 @@ from multiprocessing import Pool
 import h5py
 import numpy as np
 from scipy.ndimage import uniform_filter1d
-from scipy.signal import detrend
 
+from . import cc_kernel as K
 from . import data as D
 from . import paths
 from . import pulse as PU
@@ -48,6 +48,7 @@ SETTINGS = (
     "detrend",
     "band_taper",
 )
+READ_THREADS = 4  # station-days read and decimated at the same time in one day process (memory: resources())
 
 
 def settings_of(opt):
@@ -79,35 +80,32 @@ def band_taper(freqs, b0, b1):
     return t
 
 
-def day_ccf(by_station, t0, opt, nbin=24, failures=None):
+def day_ccf(by_station, t0, opt, nbin=24, failures=None, out=None):
     """Cross-coherence of every pair of one processing day, averaged in nbin equal time bins (24 = hours).
+    out(names, shape): where the bins are written as they are done (e.g. an HDF5 dataset; default an array in memory)
     -> (names, ccf [nbin, npair, 2L+1], count [nbin, npair], segments gap-free, segments used) or a message."""
     fs = opt["fs"]
     sel = opt.get("stations")
-    names, data, oks = [], [], []
-    for name in sorted(by_station):
-        if sel is not None and name not in sel:
-            continue
-        try:
-            y, ok = D.read_day(by_station[name], t0, fs)
-        except Exception as exc:
-            print("[%s] read failed %s: %s" % (D.utc_window(t0), name, exc), flush=True)
+    todo = [name for name in sorted(by_station) if sel is None or name in sel]
+    nout = int(round(86400 * fs))
+    # filled in station order as the readers finish (no list of days to stack: one copy of the day in memory)
+    X = np.empty((len(todo), nout), np.float32)
+    OK = np.empty((len(todo), nout), bool)
+    names = []
+    for name, got in zip(todo, read_days(by_station, todo, t0, opt)):
+        if isinstance(got, Exception):
+            print("[%s] read failed %s: %s" % (D.utc_window(t0), name, got), flush=True)
             if failures is not None:
-                failures.append("%s: %s" % (name, exc))
+                failures.append("%s: %s" % (name, got))
             continue
-        if y is None or not ok.any():
+        if got is None:
             continue
-        if opt["decomb"] is True or (opt["decomb"] and name in opt["decomb"]):
-            y = PU.remove_comb(y, ok, fs)
+        X[len(names)], OK[len(names)] = got
         names.append(name)
-        data.append(y)
-        oks.append(ok)
     ns = len(names)
     if ns < 2:
         return "too few stations (%d)" % ns
-    X = np.stack(data)
-    OK = np.stack(oks)
-    del data, oks
+    X, OK = X[:ns], OK[:ns]
 
     n = int(round(opt["seg_len"] * fs))
     step = int(round(opt["seg_step"] * fs))
@@ -128,7 +126,8 @@ def day_ccf(by_station, t0, opt, nbin=24, failures=None):
     npair = iu.size
     if not npair:
         return "too few stations (no pair within correlation.max_distance_km)"
-    hourly = np.zeros((nbin, npair, 2 * L + 1), np.float32)
+    nlag = 2 * L + 1
+    hourly = out(names, (nbin, npair, nlag)) if out is not None else np.zeros((nbin, npair, nlag), np.float32)
     count = np.zeros((nbin, npair), np.int32)
     bin_len = 86400.0 / nbin
 
@@ -144,48 +143,111 @@ def day_ccf(by_station, t0, opt, nbin=24, failures=None):
     n_gapfree = np.zeros(ns, np.int64)
     n_used = np.zeros(ns, np.int64)
 
-    acc = np.zeros((npair, b1 - b0), np.complex128)
+    # the spectra of the segments of one time bin, then their pair products summed in segment order (cc_kernel)
+    seg_bin = [min(nbin - 1, int((s0 + n // 2) / fs // bin_len)) for s0 in starts]
+    nb = b1 - b0
+    spec = np.zeros((max(np.bincount(seg_bin)) if seg_bin else 1, ns, nb), np.complex64)
+    spec_good = np.zeros((spec.shape[0], ns), bool)
+    acc = np.empty((npair, nb), np.complex128)
     acc_n = np.zeros(npair, np.int32)
+    kept = 0
     cur_hour = 0
+    chunk = opt["pair_chunk"]
+    threads = max(1, int(opt.get("threads") or 1))
 
     def flush(hour):
-        if not acc_n.any():
-            return
-        full = np.zeros((npair, nfreq), np.complex128)
-        full[:, b0:b1] = acc / np.maximum(acc_n, 1)[:, None]
-        cc = np.fft.irfft(full, n=nfft, axis=1)
-        hourly[hour] = np.concatenate([cc[:, -L:], cc[:, : L + 1]], axis=1).astype(np.float32)
-        count[hour] = acc_n
-        acc[:] = 0
+        nonlocal kept
+        if acc_n.any():
+            K.pair_sums(spec, spec_good, kept, iu, ju, acc, threads)
+            for c0 in range(0, npair, chunk):  # back to lag time, a block of pairs at a time
+                c1 = min(c0 + chunk, npair)
+                full = np.zeros((c1 - c0, nfreq), np.complex128)
+                full[:, b0:b1] = acc[c0:c1] / np.maximum(acc_n[c0:c1], 1)[:, None]
+                cc = np.fft.irfft(full, n=nfft, axis=1)
+                hourly[hour, c0:c1] = np.concatenate([cc[:, -L:], cc[:, : L + 1]], axis=1).astype(np.float32)
+            count[hour] = acc_n
+        kept = 0
         acc_n[:] = 0
 
-    chunk = opt["pair_chunk"]
-    for k, s0 in enumerate(starts):
-        hour = min(nbin - 1, int((s0 + n // 2) / fs // bin_len))
-        if hour != cur_hour:
-            flush(cur_hour)
-            cur_hour = hour
-        good = OK[:, s0 : s0 + n].all(axis=1) & (seg_std[:, k] > 0)
-        n_gapfree += good
+    def segment_good(k):
+        good = OK[:, starts[k] : starts[k] + n].all(axis=1) & (seg_std[:, k] > 0)
+        gapfree = good.copy()
         if opt["max_over_std"] > 0:
             good &= seg_peak[:, k] < opt["max_over_std"] * day_std
-        n_used += good
-        if good.sum() < 2:
-            continue
-        seg = detrend(X[:, s0 : s0 + n].astype(np.float64), axis=1, type="linear")
+        return gapfree, good
+
+    def segment_spectra(k):
+        """Whitened band spectra of segment k (every station; the bad ones are zeroed by the caller)."""
+        s0 = starts[k]
+        seg = K.detrend_linear(X[:, s0 : s0 + n].astype(np.float64))
         F = np.fft.rfft(seg * win, n=nfft, axis=1)[:, b0:b1]
         A = np.abs(F)
         if opt["smooth_bins"] > 1:
             A = uniform_filter1d(A, size=opt["smooth_bins"], axis=1, mode="nearest")
-        F = (F / (A + 1e-30) * spec_taper).astype(np.complex64)
-        F[~good] = 0
-        pm = good[iu] & good[ju]
-        for c0 in range(0, npair, chunk):
-            sel = slice(c0, min(c0 + chunk, npair))
-            acc[sel] += np.conj(F[iu[sel]]) * F[ju[sel]]
-        acc_n += pm
+        return (F / (A + 1e-30) * spec_taper).astype(np.complex64)
+
+    # The segments of one time bin are independent until their spectra are summed: their spectra are computed in
+    # parallel (threads), then taken in segment order exactly as before.
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(threads) as pool:
+        k = 0
+        while k < len(starts):
+            hour = seg_bin[k]
+            if hour != cur_hour:
+                flush(cur_hour)
+                cur_hour = hour
+            ks = [j for j in range(k, len(starts)) if seg_bin[j] == hour]
+            k = ks[-1] + 1
+            goods = [segment_good(j) for j in ks]
+            use = [j for j, (_, g) in zip(ks, goods) if g.sum() >= 2]
+            spectra = dict(zip(use, pool.map(segment_spectra, use)))
+            for j, (gapfree, good) in zip(ks, goods):
+                n_gapfree += gapfree
+                n_used += good
+                if good.sum() < 2:
+                    continue
+                F = spectra.pop(j)
+                F[~good] = 0
+                spec[kept] = F
+                spec_good[kept] = good
+                kept += 1
+                acc_n += good[iu] & good[ju]
     flush(cur_hour)
     return names, hourly, count, n_gapfree, n_used
+
+
+def read_days(by_station, todo, t0, opt):
+    """The decimated day of every station in `todo` (lant.data.read_day, then the 1-s comb removal where asked), read
+    by up to READ_THREADS threads (the decoding and filtering release the interpreter lock) -> in the order of
+    `todo`: (data, valid mask), None (no data) or the exception raised."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    fs = opt["fs"]
+
+    def one(name):
+        try:
+            y, ok = D.read_day(by_station[name], t0, fs)
+            if y is None or not ok.any():
+                return None
+            if opt["decomb"] is True or (opt["decomb"] and name in opt["decomb"]):
+                y = PU.remove_comb(y, ok, fs)
+            return y, ok
+        except Exception as exc:
+            return exc
+
+    n = max(1, min(READ_THREADS, int(opt.get("threads") or 1)))
+    if n == 1:
+        yield from map(one, todo)
+        return
+    with ThreadPoolExecutor(n) as ex:
+        pending = [ex.submit(one, name) for name in todo[:n]]
+        for k in range(len(todo)):  # at most n days in flight: memory does not grow with the stations
+            got = pending[k].result()
+            pending[k] = None
+            if k + n < len(todo):
+                pending.append(ex.submit(one, todo[k + n]))
+            yield got
 
 
 def pair_indices(names, coords=None, max_dist=None):
@@ -242,19 +304,28 @@ def process_day(task):
         redo = "recomputed (settings or input files changed): "
     t_start = time.time()
     failures = []
-    res = day_ccf(by_station, t0, opt, 24, failures)
-    if isinstance(res, str):
-        if os.path.exists(out_path):  # a file of an earlier run no longer stands for this day
-            os.remove(out_path)
-        return day, res, failures
-    names, hourly, count, n_gapfree, n_used = res
-    ns = len(names)
-    iu, ju = pair_indices(names, opt.get("coords"), opt.get("max_dist"))
-    npair = iu.size
-    pair_names = ["%s_%s" % (names[i], names[j]) for i, j in zip(iu, ju)]
     tmp = out_path + ".tmp"
-    with h5py.File(tmp, "w") as h:
-        h.create_dataset("hourly", data=hourly)
+    files = []
+
+    def out(names, shape):  # the hourly array goes to the file hour by hour instead of staying in memory
+        files.append(h5py.File(tmp, "w"))
+        return files[0].create_dataset("hourly", shape, np.float32)
+
+    try:
+        res = day_ccf(by_station, t0, opt, 24, failures, out=out)
+        if isinstance(res, str):
+            if files:
+                files[0].close()
+                os.remove(tmp)
+            if os.path.exists(out_path):  # a file of an earlier run no longer stands for this day
+                os.remove(out_path)
+            return day, res, failures
+        names, _, count, n_gapfree, n_used = res
+        ns = len(names)
+        iu, ju = pair_indices(names, opt.get("coords"), opt.get("max_dist"))
+        npair = iu.size
+        pair_names = ["%s_%s" % (names[i], names[j]) for i, j in zip(iu, ju)]
+        h = files[0]
         h.create_dataset("count", data=count)
         h.create_dataset("pairs", data=paths.ascii_names(pair_names))
         h.create_dataset("stations", data=paths.ascii_names(names))
@@ -262,24 +333,42 @@ def process_day(task):
         h.create_dataset("segments_used", data=n_used)
         h.attrs.update(settings_of(opt))
         h.attrs.update(dict(t0_utc=t0, method="cross-coherence", inputs=inputs))
+    except BaseException:
+        for h in files:
+            h.close()
+        if files and os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    finally:
+        for h in files:
+            h.close()
     os.replace(tmp, out_path)
     return day, "%sok %d stations %d pairs %.0f s" % (redo, ns, npair, time.time() - t_start), failures
 
 
-def resources(cfg, nsta, npair, ndays):
+def resources(cfg, nsta, npair, ndays, raw_fs=None):
     """What the cc step needs -> dict(memory_per_process_gb, disk_gb, ram_gb, lags, segment).  Memory of one process
-    (one day): the hourly array [24, npair, lags] in single precision with its work copies (x 2.5) and the day of
-    every station (samples in single precision and their mask).  Disk: the hourly files of every day."""
+    (one day): the day of every station (samples in single precision and their mask), and the larger of the reading
+    (READ_THREADS station-days at the raw rate, about 16 bytes per raw sample while decoded and filtered) and the
+    correlation (the pair sums of one hour in double precision, the spectra of its segments in single precision and
+    the transform of a block of pairs); the hourly array is written to the file hour by hour.  Disk: the hourly files
+    of every day."""
     c = cfg["correlation"]
-    nlag = 2 * float(c["maxlag_s"]) * float(c["fs"]) + 1
+    fs = float(c["fs"])
+    nlag = 2 * float(c["maxlag_s"]) * fs + 1
     hourly = 24.0 * npair * nlag * 4
-    day = nsta * 86400.0 * float(c["fs"]) * 5
+    day = nsta * 86400.0 * fs * 5
+    nseg = float(c["seg_len_s"]) * fs
+    nband = nseg / 2 + 1  # at most: the band is narrower
+    per_hour = 3600.0 / float(c["seg_step_s"]) + 2
+    reading = min(READ_THREADS, nsta) * 16 * 86400.0 * float(raw_fs or fs)
+    correlating = npair * nband * 16 + per_hour * nsta * nband * 8 + 3 * min(3000, npair) * nseg * 8
     from .resources import available_memory
 
     memory = available_memory()
     ram = memory / 1e9 if memory is not None else None
     return dict(
-        memory_per_process_gb=(2.5 * hourly + day) / 1e9,
+        memory_per_process_gb=(day + max(reading, correlating)) / 1e9,
         disk_gb=ndays * hourly / 1e9,
         ram_gb=ram,
         maxlag_s=float(c["maxlag_s"]),
@@ -292,7 +381,7 @@ def resources_text(cfg, r):
     v = cfg["data"]["velocity_range_kms"]
     return (
         "correlations: %d pairs, lags +-%g s, segments %g s: about %.1f GB of memory per process "
-        "(correlation.nproc = %d%s) and %.0f GB of disk for the hourly files.  Both grow with the lag window, "
+        "(one day%s) and %.0f GB of disk for the hourly files.  Both grow with the lag window, "
         "which is set by the slowest velocity of data.velocity_range_kms (%g km/s now): a range that fits the "
         "area shortens it"
         % (
@@ -300,7 +389,6 @@ def resources_text(cfg, r):
             r["maxlag_s"],
             r["seg_len_s"],
             r["memory_per_process_gb"],
-            int(cfg["correlation"]["nproc"]),
             "; %.0f GB effectively available" % r["ram_gb"] if r["ram_gb"] else "",
             r["disk_gb"],
             v[0],
@@ -343,24 +431,11 @@ def run(cfg):
         coords={k: (v["lon"], v["lat"]) for k, v in stations.items()},
     )
     npair = pair_indices(sorted(stations), opt["coords"], opt["max_dist"])[0].size
-    res = resources(cfg, len(stations), npair, len(days))
+    raw_fs = max((r["fs"] for v in rows.values() for r in v), default=None)
+    res = resources(cfg, len(stations), npair, len(days), raw_fs)
     from .resources import preflight
 
     preflight(cfg, res, out_dir)
-    nproc = int(c["nproc"])
-    if res["ram_gb"]:  # as many processes as fit into 70 % of the memory
-        fit = int(0.7 * res["ram_gb"] / res["memory_per_process_gb"])
-        if fit < 1:
-            raise D.DataError(
-                "%s.  One process alone does not fit: free memory or use a larger worker" % resources_text(cfg, res)
-            )
-        if fit < nproc:
-            print(
-                "  %s\n  -> %d processes instead of correlation.nproc = %d, so that they fit into the memory"
-                % (resources_text(cfg, res), fit, nproc),
-                flush=True,
-            )
-            nproc = fit
     tasks = []
     edge = 250.0 / opt["fs"] + 5.0  # read_day looks this far beyond the day (filter run-in, guard)
     for lab, (t0, trs) in days.items():
@@ -378,16 +453,22 @@ def run(cfg):
             ]
         tasks.append((lab, t0, by, opt))
     tasks.sort(key=lambda t: -len(t[2]))  # biggest days first so memory peaks early
-    for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):  # the configured value, not the shell's
-        os.environ[v] = str(c["threads_per_process"])
+    from . import resources as R
+
+    plan = R.plan(cfg, len(tasks), res["memory_per_process_gb"] * 1e9, "days")
+    opt["threads"] = plan["threads_each"]  # readers and pair sums of a day (cc_kernel) share the cores of its process
+    if plan["limited_by_memory"]:
+        print("  %s\n  -> %d days at a time, so that they fit into the memory" % (resources_text(cfg, res),
+              plan["parallel"]), flush=True)  # fmt: skip
     msgs, failed, skipped = {}, [], []
-    with Pool(nproc) as pool:
+    with Pool(plan["parallel"], initializer=R.limit_threads, initargs=(plan["threads_each"],)) as pool:
         for day, msg, fails in track(pool_results(pool, process_day, tasks), len(tasks), "days"):
             print("  %s %s" % (day, msg), flush=True)
             msgs[day] = msg
             failed += ["%s %s" % (day, f) for f in fails]
             if msg.startswith("too few stations"):
                 skipped.append("%s: %s" % (day, msg))
+        R.note_workers(w.pid for w in pool._pool)
     keep = {"day_%s.h5" % t[0] for t in tasks}
     for f in os.listdir(out_dir):  # day files of days no longer processed (other dates, other labels)
         if f.startswith("day_") and f.endswith(".h5") and f not in keep:

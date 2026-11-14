@@ -313,26 +313,33 @@ def run(cfg):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(7, 4.5))
+    from .plotting import style
+
+    fig, ax = plt.subplots(figsize=(8.0, 4.7))
     Y = img / (img.max(axis=1, keepdims=True) + 1e-30)
-    ax.pcolormesh(freqs, c, Y.T, cmap="jet", vmin=0, vmax=1, shading="nearest")
-    ax.plot(freqs[used], picks[used], "o", ms=3.5, mfc="w", mec="k", mew=0.6, label="picks used")
-    ax.plot(freqs, curve, "w-", lw=1.8, label="reference (held outside the picks)")
+    pm = ax.pcolormesh(freqs, c, Y.T, cmap=style.ENERGY, vmin=0, vmax=1, shading="nearest", rasterized=True)
+    ax.plot(freqs[used], picks[used], "o", ms=4.0, mfc="none", mec="k", mew=0.9, label="F-J picks used")
+    ax.plot(freqs, curve, "k-", lw=1.6, label="Reference curve (held outside picks)")
     for fb in (cfg["dispersion"]["fmin_hz"], cfg["dispersion"]["fmax_hz"]):
-        ax.axvline(fb, color="m", lw=1.0)
+        ax.axvline(fb, color="#c51b7d", lw=1.0, ls="-.")
     for v in cfg["data"]["velocity_range_kms"]:
-        ax.axhline(v, color="w", lw=0.8, ls=":")
+        ax.axhline(v, color="0.25", lw=0.8, ls=":")
     if lam_alias:
-        ax.plot(freqs, lam_alias * freqs, "w--", lw=1.0, label="wavelength = 2 x mean station spacing (picks above)")
+        ax.plot(freqs, lam_alias * freqs, "k--", lw=1.0, label="Wavelength = 2 x mean station spacing")
         ax.set_ylim(c[0], c[-1])
     ax.set_xscale("log")
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("Phase velocity (km/s)")
-    ax.set_title(
-        "F-J spectrum, normalised per frequency; magenta: measurement band; dotted: your velocity range", fontsize=9
+    ax.set_title("Array F-J phase-velocity spectrum (dash-dot: measurement band; dotted: velocity range)", fontsize=10)
+    ax.legend(fontsize=8, loc="upper right", framealpha=0.9)
+    fig.colorbar(pm, ax=ax, label="F-J amplitude normalized at each frequency")
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    fig.text(
+        0.02,
+        0.012,
+        "Array F-J spectrum across station pairs (not a single-pair phase-energy measurement).",
+        fontsize=8,
     )
-    ax.legend(fontsize=8, loc="lower left")
-    fig.tight_layout()
     fig.savefig(os.path.join(d, "fj.png"), dpi=150)
     plt.close(fig)
     zp = os.path.join(d, "zones.npz")

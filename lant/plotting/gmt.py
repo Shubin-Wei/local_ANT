@@ -15,10 +15,11 @@ SET = (
     "gmt set FORMAT_GEO_MAP ddd.xxF FONT_ANNOT_PRIMARY {a}p,Helvetica FONT_LABEL {l}p,Helvetica MAP_FRAME_TYPE plain "
     "MAP_FRAME_PEN 0.5p MAP_TICK_LENGTH_PRIMARY 0.07c MAP_ANNOT_OFFSET_PRIMARY 0.06c MAP_LABEL_OFFSET 0.12c PS_LINE_JOIN round"
 )
-# continuous colour tables of the figures (GMT colour lists): perturbation and checkerboards red (slow) - white -
-# blue (fast)
-PERT_CPT = "#7a0000,#e31a1c,#fd8d3c,#fee391,white,#9bdcff,#2b8cff,#0b3fbf,#081d6b"
-CHECK_CPT = "red,white,blue"
+# continuous colour tables of the figures: perturbations and checkerboards red (slow) - white (zero) - blue (fast),
+# GMT "polar" reversed (a common choice for checkerboard figures); Vs itself keeps plots.vs_cpt ("seis")
+
+PERT_CPT = "polar -I"
+CHECK_CPT = PERT_CPT
 ELEV_CPT = "#a8cfa0,#cfe0b0,#ece6bf,#e3cfa4,#cdb08a,#f4efe6"
 
 
@@ -40,7 +41,30 @@ def workdir():
     return tempfile.mkdtemp(prefix="lant_gmt_")
 
 
-def run(tmp, pre, cmd, out, formats=("png", "pdf"), dpi=300, font=(7, 8)):
+def run(tmp, pre, cmd, out, formats=("png",), dpi=300, font=(7, 8), backend=None):
+    from ..config import DEFAULTS
+
+    backend = backend or DEFAULTS["plots"]["backend"]
+    if backend == "pygmt":
+        from .pygmt_backend import render
+
+        try:
+            render(tmp, pre, cmd, formats, dpi, font)
+        except RuntimeError as exc:
+            raise GMTError(str(exc)) from exc
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        # Rendering scratch and results may be on different filesystems. Copy
+        # every completed format beside the destination before atomic promotion.
+        with tempfile.TemporaryDirectory(prefix=".lant_figure_", dir=os.path.dirname(os.path.abspath(out))) as staged:
+            for fmt in formats:
+                shutil.copy2(os.path.join(tmp, "lant_figure." + fmt), os.path.join(staged, "figure." + fmt))
+            for fmt in formats:
+                os.replace(os.path.join(staged, "figure." + fmt), os.path.abspath(out) + "." + fmt)
+        if not os.environ.get("LANT_KEEP_GMT"):
+            shutil.rmtree(tmp)
+        return [out + "." + f for f in formats]
+    if backend != "gmt":
+        raise ValueError("unknown plotting backend: %s" % backend)
     if not available():
         raise GMTError(
             "GMT 6 is not installed or not on PATH (needed for the map and section figures): "
@@ -91,10 +115,11 @@ def relief_cmds(cfg, tmp, W, E, S, N, palette="gray"):
         if note not in RELIEF_NOTES:
             RELIEF_NOTES.append(note)
         return [], False
+    shade = 0.22 if palette == "elevation" else 0.5
     pre = [
         "gmt grdcut %s -R%.5f/%.5f/%.5f/%.5f -G%s/topo.nc"
         % (shlex.quote(topo), W - pad, E + pad, S - pad, N + pad, tmp),
-        "gmt grdgradient %s/topo.nc -A315 -Nt0.5 -G%s/shade.nc" % (tmp, tmp),
+        "gmt grdgradient %s/topo.nc -A315 -Nt%g -G%s/shade.nc" % (tmp, shade, tmp),
     ]
     if palette == "gray":
         # elevations mapped onto the pale end of the grey scale: light relief under semi-transparent values
@@ -108,6 +133,10 @@ def relief_cmds(cfg, tmp, W, E, S, N, palette="gray"):
             "read ZMIN ZMAX <<< \"$(gmt grdinfo -C %s/topo.nc | awk '{print $6, $7}')\"; "
             "gmt makecpt -C%s -T$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{printf \"%%d/%%d\", a, (b>a)?b:a+1}') -Z > %s/relief.cpt"
             % (tmp, ELEV_CPT, tmp)
+        )
+    if cfg["plots"]["backend"] == "pygmt":
+        pre[-1] = dict(
+            action="palette", grid=os.path.join(tmp, "topo.nc"), palette=palette, output=os.path.join(tmp, "relief.cpt")
         )
     return pre, True
 

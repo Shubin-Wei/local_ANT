@@ -1,16 +1,18 @@
 """Which station of the table each record of the clean step belongs to, and whether the array geometry suits the
 methods: the rows of the station table (of data.line), records without codes named from their files, header codes
-matched to the table names (lant/stations.py) or records assigned by serial number and deployment window, the
+matched to the table names (match_names; the names are normalised by lant.stations) or records assigned by serial number and deployment window, the
 coordinates of the headers compared with the table, and the geometry checks.  Writes work/01_clean/stations.csv and
 stations_from_headers.csv.
 """
 
 import os
+import re
 from collections import defaultdict
 
 import numpy as np
 
 from . import data as D
+from .stations import StationError, _key, split_name
 
 
 def header_coordinates(traces):
@@ -66,7 +68,7 @@ def table_rows(cfg, traces, out, rep):
             "  line %s: %d of %d table rows" % (d["line"], sum(r.get("line") == d["line"] for r in rows), len(rows))
         )
         rows = [r for r in rows if r.get("line") == d["line"]]
-    nfile, unsplit = ST.names_from_files(traces, rows)
+    nfile, unsplit = names_from_files(traces, rows)
     if nfile:
         rep.append("  %d records without a station code in the header: named from their file or directory name" % nfile)
     if unsplit:
@@ -85,7 +87,7 @@ def match(cfg, traces, out, rep, rows):
     d = cfg["data"]
     nets = {t["net"] for t in traces if t["net"]} | {r["network"] for r in rows if r["network"]}
     try:
-        timed, other, tcoords, rows, trep = ST.assign_by_serial(rows, traces, nets.pop() if len(nets) == 1 else "XX")
+        timed, other, tcoords, rows, trep = assign_by_serial(rows, traces, nets.pop() if len(nets) == 1 else "XX")
     except ST.StationError as exc:
         raise D.DataError(str(exc)) from exc
     if trep:
@@ -128,7 +130,7 @@ def match(cfg, traces, out, rep, rows):
         for t in traces:
             if not t["net"]:
                 forced.setdefault(("", t["sta"]), "%s.%s" % (d["network_default"], t["sta"]))
-    mapping, coords, mrep = ST.match_names(rows, codes - set(forced))
+    mapping, coords, mrep = match_names(rows, codes - set(forced))
     for code, name in forced.items():
         if code in codes:
             mapping[code] = name
@@ -224,3 +226,265 @@ def geometry_check(used):
                 "of each pair out (data.exclude_stations)"
                 % (MIN_SPACING_M, ", ".join("%s = %s" % p for p in same[:10]))
             )
+
+
+def could_match(cfg):
+    """-> predicate(net, sta): False only for a header code that no rule of match_names, and no data.rename, can give
+    a station of the table (the clean step need not read such files in full); None when every file must be read
+    (the table cannot be read here, or data.network_default renames).
+
+    A superset of assign_by_serial (the header code is a serial of the table, whatever the time) and of match_names:
+    rule 1 is contained in 2 (same station code), 3 (network and station joined), 4 (the digits of the table name),
+    5 (leading zeros ignored).  A record without a station code always counts."""
+    from . import stations as ST
+
+    d = cfg["data"]
+    if not d["station_file"] or d["network_default"]:
+        return None
+    try:
+        rows, _ = ST.read_table(d["station_file"], D.label_offset_s(d.get("day_label")))
+    except (ST.StationError, OSError, ValueError):
+        return None
+    if d["line"]:
+        rows = [r for r in rows if str(r.get("line")) == str(d["line"])]
+    if not rows:
+        return None
+    codes, padded, joined = set(), set(), set()
+    for r in rows:
+        if r.get("serial"):
+            padded.add(_key(r["serial"]))
+            continue
+        net, sta = r["network"], r["station"]
+        if net is None:
+            n2, s2 = split_name(sta)
+            if n2:
+                net, sta = n2, s2
+        codes.add(sta.upper())
+        padded.add(_key(sta))
+        joined.add(((net or "") + sta).upper())
+        m = re.fullmatch(r"([A-Za-z]+)(\d+)", sta)
+        if m:
+            codes.add(m.group(2))
+    forced = {tuple(k.split(".", 1)) for k in (d["rename"] or {})}
+
+    def relevant(net, sta):
+        if not sta or (net, sta) in forced:
+            return True
+        return (
+            sta.upper() in codes
+            or _key(sta) in padded
+            or any((net + sep + sta).upper() in joined for sep in ("", ".", "_"))
+        )
+
+    return relevant
+
+
+def names_from_files(traces, table):
+    """Records without a station code in the header (SEG-Y, some SAC files): the code is taken from the file name
+    or the directory name when exactly one of their parts (split at characters other than letters and digits) is a
+    station name or serial of the table (leading zeros ignored).  A file with several records without a code that
+    overlap in time under one channel code (one trace per channel, as in many SEG-2 and SEG-Y files, where the
+    channel code is empty) cannot be split by its name: its records are left unnamed.  Records of one file following each other in time (a long record cut into traces) are named.
+    -> (number of records named, files left unnamed because their records overlap)."""
+    import os
+    from collections import defaultdict
+
+    bad = set()
+    per_file = defaultdict(list)  # records of one channel code at the same time: not separable
+    for t in traces:
+        if not t["sta"]:
+            per_file[(t["file"], t.get("channel", ""))].append((t["start"], t["end"]))
+    for (f, _), iv in per_file.items():
+        iv.sort()
+        if any(b[0] < a[1] - 1e-6 for a, b in zip(iv, iv[1:])):
+            bad.add(f)
+    known = {}
+    for r in table:
+        for nm in (r["station"], r.get("serial")):
+            if nm:
+                known.setdefault(_key(split_name(nm)[1]), nm)
+    n = 0
+    for t in traces:
+        if t["sta"] or t["file"] in bad:
+            continue
+        stem = os.path.splitext(os.path.basename(t["file"]))[0]
+        parts = (
+            re.split(r"[^A-Za-z0-9]+", stem)
+            + [stem]
+            + re.split(r"[^A-Za-z0-9]+", os.path.basename(os.path.dirname(t["file"])))
+        )
+        hit = {known[_key(p)] for p in parts if p and _key(p) in known}
+        if len(hit) == 1:
+            t["sta_header"] = t["sta"]  # the code in the file, to pick the record when it is read
+            t["sta"] = split_name(hit.pop())[1]
+            n += 1
+    return n, sorted(bad)
+
+
+def assign_by_serial(table, traces, default_net="XX"):
+    """Nodes moved during the survey: table rows with a serial (and optionally start / end).  A record whose header
+    station code is the serial is given to the point whose window [start, end] it overlaps and is cut to the window
+    (key "clip"); a record over two windows is used for both points.  The rows and records used here take no part
+    in match_names.  -> (records [with "station" and "clip"], other records, coords {NET.STA: ...}, other table
+    rows, report dict)."""
+    timed = [r for r in table if r.get("serial")]
+    rest_rows = [r for r in table if not r.get("serial")]
+    if not timed:
+        return [], traces, {}, table, {}
+    by_serial, coords = {}, {}
+    for r in timed:
+        net, sta = (r["network"], r["station"]) if r["network"] else split_name(r["station"])
+        name = "%s.%s" % (net or default_net, sta)
+        if name in coords:
+            raise StationError("the station table has two rows for point %s" % name)
+        coords[name] = dict(
+            lon=r["lon"], lat=r["lat"], elev=r["elev"], instrument=r.get("instrument"), line=r.get("line")
+        )
+        by_serial.setdefault(_key(r["serial"]), []).append(
+            (
+                r["t_start"] if r["t_start"] is not None else -np.inf,
+                r["t_end"] if r["t_end"] is not None else np.inf,
+                name,
+            )
+        )
+    for key, wins in by_serial.items():
+        wins.sort()
+        for a, b in zip(wins[:-1], wins[1:]):
+            if b[0] < a[1]:
+                raise StationError(
+                    "serial %s is at %s and at %s at the same time (windows overlap): correct the "
+                    "start / end times of the station table" % (key, a[2], b[2])
+                )
+    used, rest, outside, hit = [], [], 0, set()
+    for t in traces:
+        wins = by_serial.get(_key(t["sta"]))
+        if wins is None:
+            rest.append(t)
+            continue
+        got = False
+        for a, b, name in wins:
+            lo, hi = max(a, t["start"]), min(b, t["end"])
+            if hi > lo:
+                used.append(dict(t, station=name, start=lo, end=hi, clip=[max(a, -1e18), min(b, 1e18)]))
+                hit.add(name)
+                got = True
+        outside += not got
+    return (
+        used,
+        rest,
+        coords,
+        rest_rows,
+        dict(
+            points=len(coords),
+            records=len(used),
+            records_outside_windows=int(outside),
+            points_without_data=sorted(set(coords) - hit),
+        ),
+    )
+
+
+def match_names(table, data_codes):
+    """Match the table rows to the stations found in the headers.
+
+    data_codes: set of (network, station) of the headers (network may be '').
+    Rules, in order (a rule is used only when it gives one candidate):
+      1. same network and station;  2. same station code (the table, or the header, has no or another network);
+      3. the table name is network + station of the header joined ("YY1001", "YY.1001", "YY_1001");
+      4. the header station code is the table name without its leading letters ("1001" for "YY1001");
+      5. as 2, ignoring leading zeros of the numbers ("A001" = "A1", "0012" = "12").
+    A station without a network code anywhere gets the network code of the data set when there is only one, else XX.
+    Returns (mapping {(net, sta) of the header: canonical NET.STA}, table {NET.STA: coords}, report lines)."""
+    by_sta = {}
+    for n, s in data_codes:
+        by_sta.setdefault(s.upper(), []).append((n, s))
+    joined = {}
+    for n, s in data_codes:
+        for key in (n + s, n + "." + s, n + "_" + s):
+            joined.setdefault(key.upper(), []).append((n, s))
+    by_pad = {}
+    for n, s in data_codes:
+        by_pad.setdefault(_key(s), []).append((n, s))
+    mapping, coords, rep, unmatched, ambiguous = {}, {}, [], [], []
+    rows_of = {}
+    nets = {n for n, _ in data_codes if n} | {r["network"] for r in table if r["network"]}
+    default_net = nets.pop() if len(nets) == 1 else "XX"  # one network in the whole data set: use it everywhere
+    for row in table:
+        net, sta = row["network"], row["station"]
+        if net is None:
+            n2, s2 = split_name(sta)
+            if n2:
+                net, sta = n2, s2
+        cand = []
+        if net is not None:
+            cand = [c for c in data_codes if c[0].upper() == net.upper() and c[1].upper() == sta.upper()]
+        rule = 1
+        if not cand:
+            rule, cand = 2, by_sta.get(sta.upper(), [])
+        if not cand:
+            rule, cand = 3, joined.get(((net or "") + sta).upper(), [])
+        if not cand:
+            m = re.fullmatch(r"([A-Za-z]+)(\d+)", sta)
+            if m:
+                rule, cand = 4, by_sta.get(m.group(2), [])
+                if cand and not net:
+                    net = m.group(1)
+        if not cand:
+            rule, cand = 5, by_pad.get(_key(sta), [])
+        if len(cand) > 1:
+            ambiguous.append("%s%s: %s" % (net + "." if net else "", sta, ", ".join("%s.%s" % c for c in cand)))
+            continue
+        if not cand:
+            name = "%s.%s" % (net or default_net, sta)
+        elif rule == 1:
+            name = "%s.%s" % (net, sta)
+        elif rule == 2:
+            name = "%s.%s" % (net or cand[0][0] or default_net, cand[0][1])
+        else:
+            name = "%s.%s" % (cand[0][0] or net or default_net, cand[0][1])
+        if not cand:
+            unmatched.append(name)
+            coords.setdefault(
+                name,
+                dict(
+                    lon=row["lon"],
+                    lat=row["lat"],
+                    elev=row["elev"],
+                    instrument=row.get("instrument"),
+                    line=row.get("line"),
+                ),
+            )
+            continue
+        rows_of.setdefault(cand[0], []).append((name, row, rule))
+        if cand[0] in mapping:
+            continue
+        mapping[cand[0]] = name
+        coords[name] = dict(
+            lon=row["lon"], lat=row["lat"], elev=row["elev"], instrument=row.get("instrument"), line=row.get("line")
+        )
+        if rule > 1:
+            rep.append("%s.%s (header) -> %s (table) [rule %d]" % (cand[0][0], cand[0][1], name, rule))
+    for code, lst in rows_of.items():  # one header station claimed by several table rows: none is used
+        if len(lst) > 1:
+            name = mapping.pop(code)
+            coords.pop(name, None)
+            rep[:] = [x for x in rep if not x.startswith("%s.%s (header)" % code)]
+            ambiguous.append(
+                "header station %s.%s matches %d table rows (%s): not used until the table is fixed or "
+                "data.rename says which"
+                % (
+                    code[0],
+                    code[1],
+                    len(lst),
+                    "; ".join("%s at %.5f %.5f" % (n, r["lon"], r["lat"]) for n, r, _ in lst),
+                )
+            )
+    return (
+        mapping,
+        coords,
+        dict(
+            renamed=rep,
+            table_without_data=unmatched,
+            ambiguous=ambiguous,
+            data_without_table=sorted("%s.%s" % c for c in data_codes if c not in mapping),
+        ),
+    )
