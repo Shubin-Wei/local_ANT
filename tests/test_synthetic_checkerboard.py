@@ -4,6 +4,8 @@ import numpy as np
 
 from lant import synthetic_checkerboard as checker
 
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz  # NumPy 2 renamed trapz (removed in 2.4)
+
 
 def test_axis_path_has_the_integral_of_a_half_sine():
     positive, negative = checker.path_weights(1.5, 1.5, [np.pi / 2], 9.0, 3.0)
@@ -19,8 +21,8 @@ def test_incoming_paths_match_dense_quadrature():
         x, y = 4.2 - s * np.sin(az), 6.3 - s * np.cos(az)
         inside = (x >= 0) & (x <= 9) & (y >= 0) & (y <= 9)
         values = np.sin(np.pi * x / 3) * np.sin(np.pi * y / 3) * inside
-        assert abs(got[0][i] - np.trapz(np.maximum(values, 0), s)) < 0.001
-        assert abs(got[1][i] - np.trapz(np.maximum(-values, 0), s)) < 0.001
+        assert abs(got[0][i] - _trapezoid(np.maximum(values, 0), s)) < 0.001
+        assert abs(got[1][i] - _trapezoid(np.maximum(-values, 0), s)) < 0.001
 
 
 def test_ray_outside_square_has_no_checkerboard_delay():
