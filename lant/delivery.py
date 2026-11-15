@@ -1,4 +1,4 @@
-"""Project entry points and retained scientific deliverables; no computation lives here."""
+"""Project entry points and retained scientific deliverables; no computation lives here (REPORT.md: run_report)."""
 
 import json
 import os
@@ -92,7 +92,9 @@ figures and links to everything below.
 | `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` | the rules for AI assistants working in this directory: one file, for the assistant chosen with project.ai_assistant (AGENTS.md when none is chosen) |
 
 `vs_model.csv` columns: `longitude_deg`, `latitude_deg` (WGS84), `depth_km` (below the surface of the model),
-`vs_km_s`.  The values are those DSurfTomo wrote (`work/06_inversion/main/DSurfTomo.inMeasure.dat`), sorted by depth, latitude
+`vs_km_s`, `dws` (summed data sensitivity at the node in the last iteration: 0 where no ray passes, empty where the
+inversion does not update the node).  `results/validation/checkerboard_recovery.csv`: per checkerboard and depth the
+recovered fraction of the anomaly (slope) and the pattern correlation r.  The values are those DSurfTomo wrote (`work/06_inversion/main/DSurfTomo.inMeasure.dat`), sorted by depth, latitude
 and longitude.  Nodes far from the ray paths keep the starting model: read the model with the checkerboard figures.
 
 ## Operating rules
@@ -215,11 +217,12 @@ def _publish_evaluation(cfg, dest, inv):
         raise RuntimeError("the main model has not finished; the retained model is kept")
 
     def model(new):
-        write_model_table(inv / "main" / "DSurfTomo.inMeasure.dat", new / "vs_model.csv")
+        write_model_table(inv / "main" / "DSurfTomo.inMeasure.dat", new / "vs_model.csv", inv / "main" / "DWS.dat")
 
     def validation(new):  # the numbers of the checks; their recovered models are in the figures and in work/
         for p in sorted((inv / "evaluation").iterdir()):
             shutil.copy2(str(p), str(new / p.name))
+        write_recovery_table(inv / "evaluation" / "evaluation.json", new / "checkerboard_recovery.csv")
 
     for name, fill in (("model", model), ("validation", validation)):
         _swap(cfg, dest / name, fill)
@@ -255,224 +258,41 @@ def _retire(cfg, target):
 MODEL_COLUMNS = ("longitude_deg", "latitude_deg", "depth_km", "vs_km_s")
 
 
-def write_model_table(model, target):
-    """DSurfTomo's "lon lat depth vs" rows with a header, sorted by depth, latitude, longitude.  The numbers are
-    copied as DSurfTomo wrote them (no conversion, no rounding)."""
+def write_model_table(model, target, dws=None):
+    """The solver's "lon lat depth vs" rows with a header, sorted by depth, latitude, longitude; the numbers are copied
+    as written (no conversion, no rounding).  dws: the solver's DWS.dat (lon lat depth DWS of the updated nodes, last
+    iteration): a column `dws`, the summed sensitivity of the kept data at the node (0: no ray; empty: a node the
+    inversion does not update, the outer ring and the deepest depth).  Read the model where the data reach, together
+    with the checkerboards (Rawlinson & Spakman 2016)."""
     rows = [line.split() for line in Path(model).read_text().splitlines() if line.strip()]
     if any(len(r) != 4 for r in rows):
         raise RuntimeError("%s: expected four columns (lon lat depth vs)" % model)
     rows.sort(key=lambda r: (float(r[2]), float(r[1]), float(r[0])))
-    Path(target).write_text(",".join(MODEL_COLUMNS) + "\n" + "".join(",".join(r) + "\n" for r in rows))
+    columns = list(MODEL_COLUMNS)
+    if dws is not None and Path(dws).exists():
+        key = lambda a, b, c: (round(float(a), 4), round(float(b), 4), round(float(c), 4))  # noqa: E731
+        sens = {}
+        for line in Path(dws).read_text().splitlines():
+            if line.strip() and not line.startswith("#"):
+                a, b, c, v = line.split()
+                sens[key(a, b, c)] = "%.4g" % float(v)
+        rows = [r + [sens.get(key(*r[:3]), "")] for r in rows]
+        columns.append("dws")
+    Path(target).write_text(",".join(columns) + "\n" + "".join(",".join(r) + "\n" for r in rows))
 
 
-def _origin(mark, state):
-    if not mark:
-        return "origin not recorded"
-    if "run" not in mark:
-        return "written by step %s" % mark["step"]
-    made = state.get(mark["step"], {})
-    origin = "from run %d of step %s (%s)" % (mark["run"], mark["step"], mark["time"])
-    if made.get("run") != mark["run"]:
-        origin += "; OLDER than the latest run %s of that step (%s)" % (made.get("run"), made.get("state"))
-    elif made.get("state") != "done":
-        origin += "; that step is now %s; read its report before use" % made.get("state", "not run")
-    return origin
+def write_recovery_table(evaluation, target):
+    """checkerboard_recovery.csv: test, depth_km, slope (fraction of the anomaly recovered), r (pattern
+    correlation), nodes, from the evaluation (nodes with data sensitivity)."""
+    import json
 
-
-def write_report(cfg: dict) -> None:
-    from . import manifest, report
-
-    root = Path(cfg["project"]["output_dir"])
-    marks_path = Path(records.rec_dir(cfg)) / "published.json"
-    marks = json.loads(marks_path.read_text()) if marks_path.exists() else {}
-    resolved = report.resolved(cfg)
-    state = manifest.status(resolved, check_inputs=False)
-    command, why = manifest.next_action(resolved, state)
-    lines = ["# Run report", "", "**%s.**" % (why[0].upper() + why[1:].rstrip(".")) if why else ""]
-    if command:
-        who = " (your decision: read the items below first)" if command.startswith("lant confirm") else ""
-        lines += ["", "Next%s: `%s`" % (who, command)]
-    lines += ["", "*The state of the latest recorded run; `lant status -c CONFIG` also rechecks the raw inputs.*"]
-    numbers = key_numbers(cfg)
-    if numbers:
-        lines += ["", "## Key numbers", ""] + ["- " + n for n in numbers]
-    recorded = manifest.load(cfg)["steps"]
-    waiting = [
-        (s, recorded.get(s, {}).get("to_confirm") or []) for s, info in state.items() if info["state"] == "to confirm"
-    ]
-    if waiting:
-        lines += ["", "## For you to judge", ""]
-        for step, items in waiting:
-            lines += [
-                "Step **%s** (details and figures: [.lant/steps/%s.md](.lant/steps/%s.md)):" % (step, step, step),
-                "",
-            ]
-            lines += ["- " + item for item in items] + [""]
-        lines.append('Decide, then record it: `lant confirm STEP -c CONFIG --reason "your decision and its evidence"`.')
-    if (root / "results/parameters.yaml").is_file():
-        rel = "results/parameters.yaml"
-        lines += [
-            "",
-            "## Parameters",
-            "",
-            "- [%s](%s): every value resolved, with your confirmations; %s. The values each step used are in its "
-            "report (.lant/steps/)." % (rel, rel, _origin(marks.get(rel), state)),
-        ]
-    figures = main_figures(root)
-    if figures:
-        lines += ["", "## Main figures", ""]
-        for f, caption in figures:
-            rel = f.relative_to(root).as_posix()
-            lines += ["**%s** (`%s`)" % (caption, f.name), "", "![%s](%s)" % (f.stem, rel), ""]
-            if rel in marks:
-                lines += [_origin(marks[rel], state), ""]
-    lines += ["", "## Steps", "", "| Step | State | Time | Detail |", "|---|---|---|---|"]
-    seconds = step_seconds(cfg)
-    for step, info in state.items():
-        detail = ("Caches cleaned; rebuilding needs upstream work. " if info.get("cache_cleaned") else "") + info.get(
-            "reason", ""
-        )
-        detail = detail.replace("|", "\\|").replace("\n", " ")
-        link = ".lant/steps/%s.md" % step
-        label = "[%s](%s)" % (step, link) if (root / link).exists() else step
-        when = _duration(seconds.get(step))  # of its latest completed run, also when it is out of date now
-        lines.append("| %s | %s | %s | %s |" % (label, info["state"], when, detail))
-    lines += ["", "## Retained results", ""]
-    trees = [p for p in (root / "results").iterdir() if p.is_dir()] if (root / "results").is_dir() else []
-    for tree in sorted(p for p in trees if not p.name.startswith(".")):  # not staging left by an interruption
-        rel = tree.relative_to(root).as_posix()
-        origin = "the main ones are shown above" if tree.name == "figures" else _origin(marks.get(rel), state)
-        files = sorted(p for p in tree.rglob("*") if p.is_file())
-        lines.append("- [%s/](%s): %d files, %s" % (rel, rel, len(files), origin))
-        if tree.name == "figures":
-            continue  # the main ones are shown above; the folder holds them all
-        shown = files if len(files) <= 25 else [p for p in files if p.parent == tree][:25]
-        for p in shown:
-            link = p.relative_to(root).as_posix()
-            lines.append("  - [%s](%s)" % (p.relative_to(tree).as_posix(), link))
-        if len(shown) < len(files):
-            lines.append("  - ... %d more files in the directory" % (len(files) - len(shown)))
-    lines += [
-        "",
-        "## Limits",
-        "",
-        "Every parameter, its value and what it rests on are in the linked step reports.",
-        "Jackknife uncertainty is conditional, not a calibrated total error. Review checkerboards with the model.",
-        "Directional-noise and higher-mode limitations remain those of the documented method.",
-    ]
-    conf = cfg.get("_confirmed") or {}
-    if conf:
-        lines += ["", "## Confirmation record", ""]
-        for step, entry in conf.items():
-            lines.append(
-                "- %s: %s; reason: %s; invocation: %s"
-                % (
-                    step,
-                    entry.get("_at", "unknown"),
-                    entry.get("_reason", "not recorded"),
-                    entry.get("_invocation", "not recorded"),
-                )
-            )
-    atomic_text(root / "REPORT.md", "\n".join(lines) + "\n")
-
-
-FIGURES = (
-    ("0_data_coverage", "Data coverage after cleaning"),
-    ("1_stations", "Stations"),
-    ("2_station_qc", "Station diagnostics (candidates require your decision)"),
-    ("3_fj_phase_velocity", "Array F-J phase-velocity spectrum and reference picks"),
-    ("3_reference_zones", "Local reference curves"),
-    ("3_dispersion_curves", "Phase-velocity curves used by the inversion"),
-    ("4_start_model", "1-D starting model and its fit"),
-    ("5_depth_slices", "Vs at depth"),
-    ("5_sections", "Vs sections"),
-    ("6_checkerboard_*", "Checkerboard test (the first; all are in results/figures)"),
-    ("6_recovery", "Checkerboard recovery with depth"),
-    ("6_residuals", "Travel-time residuals of the starting and final model"),
-)
-
-
-def main_figures(root):
-    """(figure, caption) a reader looks at first, in reading order (the first checkerboard stands for all)."""
-    folder = Path(root) / "results" / "figures"
-    found = []
-    for name, caption in FIGURES:
-        found += [(f, caption) for f in sorted(folder.glob(name + ".png"))[:1]]
-    return found
-
-
-def key_numbers(cfg):
-    """A few numbers that tell what the run produced, from the step summaries (absent steps are left out)."""
-
-    def summary(step):
-        return records.read_summary(cfg, step) or {}
-
-    def count(n, word):
-        return "%d %s%s" % (n, word, "" if n == 1 else "s")
-
-    out = []
-    clean = summary("clean")
-    if clean.get("stations"):
-        out.append("%s, %s" % (count(clean["stations"], "station"), count(clean.get("days", 0), "processing day")))
-    export = summary("disp").get("export") or {}
-    if "phase_curves" in export:
-        out.append(
-            "%s (%s)" % (count(export["phase_curves"], "phase-velocity curve"), count(export["phase_points"], "point"))
-        )
-    residuals = summary("evaluate").get("residuals") or {}
-    start = next((r for r in residuals.get("iterations") or [] if r.get("model") == "start"), None)
-    final = residuals.get("final") or {}
-    if final.get("rms_ms") is not None:
-        out.append(
-            "residual rms of all %d travel times %s%.1f ms"
-            % (final.get("n", 0), "%.1f -> " % start["rms_ms"] if start else "", final["rms_ms"])
-        )
-    project = summary("inversion").get("project") or {}
-    if project.get("weight") is not None:
-        out.append("smoothing weight %g, damping %g" % (project["weight"], project["damp"]))
-    checks = summary("evaluate").get("checkerboards") or {}
-    if checks:
-        out.append(count(len(checks), "checkerboard test"))
-    folder = Path(cfg["project"]["output_dir"]) / "results" / "figures"
-    shown = sorted(folder.glob("*.png")) if folder.is_dir() else []
-    if shown:
-        out.append("%s in results/figures" % count(len(shown), "figure"))
-    return out
-
-
-def step_seconds(cfg):
-    """Wall time (s) of the latest completed run of every step, from .lant/run_log.jsonl."""
-    path = Path(records.rec_dir(cfg)) / "run_log.jsonl"
-    out = {}
-    if path.exists():
-        for line in path.read_text().splitlines():
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            if e.get("event") == "done" and e.get("step") and e.get("seconds") is not None:
-                out[e["step"]] = float(e["seconds"])
-    return out
-
-
-def _duration(seconds):
-    if seconds is None:
-        return ""
-    if seconds < 90:
-        return "%.0f s" % seconds
-    if seconds < 5400:
-        return "%.0f min" % (seconds / 60)
-    return "%.1f h" % (seconds / 3600)
-
-
-def finish_lines(cfg):
-    """What a finished chain tells the user: where to look, and what it produced."""
-    root = Path(cfg["project"]["output_dir"])
-    lines = ["  report:  %s" % (root / "REPORT.md"), "  results: %s/" % (root / "results")]
-    numbers = key_numbers(cfg)
-    if numbers:
-        lines.append("  " + "; ".join(numbers))
-    return lines
+    path = Path(evaluation)
+    checks = json.loads(path.read_text()).get("checkerboards") or {} if path.exists() else {}
+    lines = ["test,depth_km,slope,r,nodes"]
+    for name, rows in sorted(checks.items()):
+        for r in rows if isinstance(rows, list) else []:
+            lines.append("%s,%g,%.3f,%.3f,%d" % (name, r["depth_km"], r["slope"], r["r"], r["n"]))
+    Path(target).write_text("\n".join(lines) + "\n")
 
 
 def append_note(cfg, line):

@@ -9,10 +9,6 @@
 
 中文 | [English](README.md)
 
-![已知真值的合成检验](docs/assets/overview.png)
-
-<sub>**已知真值的合成检验**（可用 `python tools/readme_figure.py` 复现）。36 个随机分布的台站，横波速度含 ±6 %、3 km 格子的棋盘异常，并加入 2 % 的非相干噪声。(a) 输入异常与反演所用的 612 个台站对；(b) lant 在 0.6 km 深度恢复的横向 Vs 异常；(c) 两台法相速度、台阵参考曲线与真实背景；(d) 真实背景、一维起始模型及三维模型的水平平均与离散范围。恢复程度向射线覆盖边缘减弱，实际模型须结合棋盘测试解释。</sub>
-
 ## 概述
 
 lant 是用于密集台阵（面状台阵和测线）高频背景噪声成像的命令行流程。输入为任意目录结构、ObsPy 可读的任意格式的连续原始记录，输出为三维 Vs 模型及其频散数据、分辨率检验和运行报告。
@@ -38,7 +34,7 @@ flowchart LR
 | `stack` | 叠加与子叠加；以留一法相关系数和时移诊断台站 | Stehly et al. (2007)；Sens-Schönfelder (2008) |
 | `reference` | 由台阵频率—贝塞尔谱得到参考相速度曲线 | Wang et al. (2019) |
 | `disp` | 两台法相速度：相位匹配滤波、刀切法误差、质量控制 | Yao et al. (2006)；Levshin & Ritzwoller (2001)；Bensen et al. (2007) |
-| `inversion`、`run` | 一维起始模型；由走时直接反演三维 Vs（DSurfTomo，已移植为 Python） | Fang et al. (2015) |
+| `inversion`、`run` | 一维起始模型；由走时直接反演三维 Vs（DSurfTomo 的方法移植为 Python，正则化、剔除和求解为 lant 的） | Fang et al. (2015)；[方法](docs/methods.zh.md)第 8.3–8.4 节 |
 | `evaluate`、`figures` | 残差、棋盘恢复与对照反演；平面图、剖面和频散图 | Lévêque et al. (1993)；Rawlinson & Spakman (2016) |
 
 ## 安装
@@ -52,12 +48,6 @@ lant check                                                   # 列出缺失项�
 ```
 
 ## 快速开始
-
-先在已知答案的合成台阵上运行完整流程（数分钟）：
-
-```bash
-lant demo --out ~/lant_demo
-```
 
 处理自己的数据：
 
@@ -88,22 +78,47 @@ lant run all -c /data/result/config.yaml       # 从第一个不成立的步骤�
 
 各文件的说明见 [docs/outputs.zh.md](docs/outputs.zh.md)。
 
+## 已知模型上的检验
+
+反演层面的合成测试（[docs/validation.zh.md](docs/validation.zh.md)）：给定台站布局，算出已知模型（一维背景上 ±6 %、格子 3 km 的棋盘）的走时，加周期 2.5 % 的高斯噪声，lant 和原版 DSurfTomo 在同样 8 个 CPU 上反演同一份输入文件。正则化和剔除各用各的（lant：权重 1；DSurfTomo：权重 1、阻尼 1）。
+
+| 测试 | 反演 | 与真值的均方根误差（起始模型 88.5 / 82.0 m/s） | 异常恢复比例 | 用时（8 CPU） |
+|---|---|---:|---:|---:|
+| 面阵，64 台 | **lant** | **31.4 m/s** | 0.82 | **76 s** |
+| | DSurfTomo | 60.0 m/s | 0.44 | 522 s |
+| 测线，24 台 | **lant** | **15.3 m/s** | 0.91 | **72 s** |
+| | DSurfTomo | 65.5 m/s | 0.25 | 1522 s |
+
+该测试反演的是加了噪声的精确走时，不检验频散测量；实际数据含测量误差和理论近似误差，可以预期恢复得更少。
+
+![三个深度上的 Vs 异常：真值、lant、DSurfTomo 及二者与真值之差](docs/assets/compare_model.png)
+
+<sub>面阵，64 个台站（三角形），16 223 条走时。各列：真实模型、lant、DSurfTomo、lant − 真值、DSurfTomo − 真值；虚线为台站凸包，均方根误差在凸包内统计。台阵以外两个模型都没有数据约束。</sub>
+
+![沿测线的 Vs 异常：真值、lant、DSurfTomo 及各自与真值之差](docs/assets/line_sections.png)
+
+<sub>测线，24 个台站（倒三角），3 143 条走时：两端台站之间沿线的 Vs 异常及各模型与真值之差。</sub>
+
+![同样 8 个 CPU 上每次迭代和总用时](docs/assets/compare_runtime.png)
+
+<sub>面阵：6 次迭代各自的用时和整个主工程的用时，两者绑在同样的 8 个 CPU 上。</sub>
+
 ## 适用范围与限制
 
 - 仅处理垂直分量（ZZ，基阶 Rayleigh 波）；支持面状台阵和测线（每条测线一个工程）。
 - 假定噪声场接近各向同性；噪声方向性引起的偏差未经检验。
 - 仅支持 Linux。台站坐标须为经纬度；跨越日界线或纬度高于 80° 的台阵不予处理。
-- 最多 80 个周期；台距小于约 200 m 的台对受 DSurfTomo 单精度坐标（移植版保留）影响存在测距误差。
+- 三维反演最多 60 个周期（DSurfTomo 的 CalSurfG）。台站坐标与 DSurfTomo 一样是单精度（约 0.4 m）；观测走时和预测走时用同一组坐标，在检验工程中进入反演的台对（0.5 km 以上，更短的被波长规则去掉）的距离与双精度相差不超过 0.2 %。
 - 不提供响应文件时，所有台站须为同一型号仪器；同型号仪器之间的公差会引入约为走时 0.1–1 % 的随机相位误差。
 - 合成检验的具体数字见 [docs/validation.zh.md](docs/validation.zh.md)。
 
-全部用 Python 运行：反演是 DSurfTomo 的移植版，它与原版的对比见 [docs/python_backends.zh.md](docs/python_backends.zh.md)。
+全部用 Python 运行：反演是 DSurfTomo 的移植版，正演部分（快速行进、射线、相速度）与原版一致，2.0.1 起正则化、剔除和最小二乘求解为 lant 自己的；与原版的对比和每一处不同见 [docs/python_backends.zh.md](docs/python_backends.zh.md)。
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
-| [快速上手](docs/quickstart.zh.md) | 安装、合成数据试运行、处理自己的数据 |
+| [快速上手](docs/quickstart.zh.md) | 安装、处理自己的数据、流程停下等你判断的地方 |
 | [教程](docs/tutorial.zh.md) | 数据准备及每一步的目的、做法、参数和检查要点 |
 | [方法](docs/methods.zh.md) | 原理、公式、文献依据和适用条件 |
 | [参数](docs/parameters.zh.md) | 每个配置键的默认值、含义和依据 |

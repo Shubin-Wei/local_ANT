@@ -252,14 +252,13 @@ def _did_inversion(cfg, g):
         )
     )
     L.append(
-        "grid %s x %s nodes, spacing %s x %s deg; weight %s, damp %s; Vs bounds %s-%s km/s"
+        "grid %s x %s nodes, spacing %s x %s deg; smoothing weight %s; Vs bounds %s-%s km/s"
         % (
             gr.get("nx"),
             gr.get("ny"),
             gr.get("dvxd"),
             gr.get("dvzd"),
             p.get("weight"),
-            p.get("damp"),
             st.get("vmin"),
             st.get("vmax"),
         )
@@ -301,10 +300,12 @@ def _did_run(cfg, g):
     )
     nz = g("checkerboard_noise") or {}
     if nz:
+        v = nz["value"]
+        size = "%.2f %% of each time" % (100 * v) if not isinstance(v, (list, tuple)) else "per period"
         L.append(
-            "Gaussian noise of the checkerboard travel times: %.2f %% of each time (%s)%s"
+            "Gaussian noise of the checkerboard travel times: %s (%s)%s"
             % (
-                100 * nz["value"],
+                size,
                 nz["reason"],
                 "; the checkerboards ran after the main project" if auto.noise_is_auto(cfg) else "",
             )
@@ -378,8 +379,8 @@ def _did_evaluate(cfg, g):
             )
         else:
             L.append(
-                "control %s (smoothing weight %s, damping %s): final models differ by %.3f km/s rms, %.3f km/s at most"
-                % (name, c.get("weight"), c.get("damp"), c.get("rms_km_s", float("nan")),
+                "control %s (smoothing weight %s): final models differ by %.3f km/s rms, %.3f km/s at most"
+                % (name, c.get("weight"), c.get("rms_km_s", float("nan")),
                    c.get("max_abs_km_s", float("nan")))
             )  # fmt: skip
     pr = g("pruned_solver_files") or {}

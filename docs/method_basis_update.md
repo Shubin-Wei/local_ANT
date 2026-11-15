@@ -15,7 +15,7 @@ This supplements the historical 170-item local audit; it neither changes its cou
 | Main-figure process isolation and concurrency | `plotting.figure_batch`, `plotting.figures` | Engineering scheduling under the existing automatic resource plan. The user requested speed with server headroom. Private renderer state, source-identity checks, staged publication and failed-group preservation are retained; 17 PNGs match byte for byte. |
 | Figure memory estimate | `plotting.figure_batch.memory_estimate` | Explicitly empirical: 600 MB interpreter/rendering allowance, eight float64 buffers for stack/hourly arrays, existing pair-image work estimate, and model-file parsing allowance. A scheduling estimate, not a guaranteed RSS bound. |
 | Common-observation solver comparison | external comparison record; `tools/plot_solver_comparison.py` | Same measured-mode files and matching parsed observed times isolate inversion differences from observation generation. The checkerboard observations are serialized once from the existing native zero-noise calculation. Grid, weights and iteration counts are fixed benchmark choices; their values do not become production defaults. |
-| Checkerboard and figure appearance | synthetic example and comparison figures | User decision, 2026-11-13: retain checkerboards and the README overview style. This display preference is not a resolution criterion. |
+| Checkerboard and figure appearance | synthetic example and comparison figures | User decision, 2026-11-13: retain checkerboards and one journal figure style. This display preference is not a resolution criterion. |
 
 ## Weighted linear stacking
 

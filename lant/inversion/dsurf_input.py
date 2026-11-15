@@ -168,6 +168,16 @@ class Measurements:
                 order.extend((k + 1, s, r) for r in range(self.nrc1[k, s]))
         return np.array(order, dtype=np.int64).reshape(-1, 3)
 
+    def row_periods(self):
+        """Period index (1-based) of each residual cbst(i) = obst(i) - dsyn(i): CalSurfG order for the rows it
+        predicts (lant's files: the same as the file order), file order for any rows beyond."""
+        out = np.zeros(len(self.observed), np.int64)
+        for k, s, r in zip(*np.nonzero(self.file_row >= 0)):
+            out[self.file_row[k, s, r]] = k + 1
+        visited = self.calsurfg_rows()[:, 0]
+        out[: len(visited)] = visited[: len(out)]
+        return out
+
 
 def read_measurements(path, control):
     """Parse surfdata.dat with the grouping and overwrite rules of main.f90."""

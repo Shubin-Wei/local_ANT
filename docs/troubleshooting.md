@@ -63,7 +63,7 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 
 | Symptom | Cause and remedy |
 |---|---|
-| few accepted points | `.lant/steps/disp.md` counts the rejected points by reason. Mostly snr: stacking time too short, or no energy in the band; mostly wavelength / path_short: distances too short relative to the wavelength; mostly off_band: the frequency is outside the band excited by the noise sources |
+| few accepted points | `.lant/steps/disp.md` counts the rejected points by reason. Mostly snr: stacking time too short, or no energy in the band; mostly wavelength / path_short: distances too short relative to the wavelength |
 | `median_vs_reference.txt` shows a systematic offset | the reference curve may be wrong (higher mode, cycle skip); go back to reference and check `3_fj_phase_velocity.png` |
 | line: the reference covers only a small part of the measured band, and the medians at high frequencies change with the velocity range | beyond the picks of the reference, the cycle count relies on continuation along frequency and the group pick is not guided by the reference, so a fast population can enter. On one real line, with the default range 0.1–5 km/s the reference covered only 1.7–2.8 Hz, and the medians at 3–13 Hz were 4–9 % higher than with the range of the area, 1–4 km/s; the extra points were 8–16 % faster than the points accepted in both runs and did not agree with the F-J ridge. On a line, always give the velocity range of the area, and check in `3_fj_phase_velocity.png` that the picks follow the ridge up to the aliasing line |
 | you want to loosen quality control for more points | not recommended. If it is really needed, record the reason with `lant note` and state it in your report |
@@ -72,7 +72,7 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 
 | Symptom | Cause and remedy |
 |---|---|
-| `periods ... the solver accepts at most 60` | at most 60 periods (the limit of DSurfTomo's CalSurfG). Reduce `dispersion.per_octave` as suggested, or shorten the exported period range |
+| `periods ... the solver accepts at most 60` | at most 60 periods (the limit of DSurfTomo's CalSurfG). Reduce `inversion.per_octave` as suggested, or shorten the exported period range |
 | `inversion.sparsity = ... reserves too little` | the sparse reserve given by hand is too small and DSurfTomo would end with a segmentation fault. Use `auto` |
 | DSurfTomo `segmentation fault` | look at the end of `work/06_inversion/main/run.log`. Common causes: sparse reserve too small (`inversion.sparsity: auto` estimates it from the grid and the paths), not enough memory (increase `grid_spacing_deg` or reduce `grid_refine`), stack size too small |
 | a project is marked invalid by the precheck | under the starting model the rejection rule of DSurfTomo would remove more than half of the data, or the residuals are systematically offset. The starting model does not match the data; check the reference curve and the 1-D fit (`results/figures/4_start_model.png`) |
@@ -89,4 +89,4 @@ Start with `lant status -c CONFIG`: it gives the state of each step, why the cha
 
 - Disk: size of the raw data (archive) + per day pairs × 24 × (2 × lag window × sampling rate + 1) × 4 bytes (hourly correlations). The clean report gives an estimate.
 - Memory: each cc process needs about 2.5 times the size of one day of hourly correlations plus the waveforms of all stations for one day; DSurfTomo grows with grid nodes and travel times.
-- Time (for reference, 16-station synthetic example): clean, cc, stack and reference a few seconds to tens of seconds each, disp about half a minute, one DSurfTomo project (10 iterations) about 5–25 minutes.
+- Time (for reference, 16-station synthetic example): clean, cc, stack and reference a few seconds to tens of seconds each, disp about half a minute, one inversion project (6 iterations) about 1.5 minutes on 8 threads (measured with all 12 periods per octave; the 3-D inversion now takes 4).

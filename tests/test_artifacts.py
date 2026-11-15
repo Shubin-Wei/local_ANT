@@ -64,9 +64,9 @@ def test_cleanup_honors_lock_and_retains_deliverables(tmp_path, monkeypatch):
     artifacts.register(cfg, before)
     manifest._save(cfg, {"steps": {"cc": {}}})
     monkeypatch.setattr(manifest, "status", lambda *a, **k: {"evaluate": {"state": "done"}})
-    import lant.delivery
+    import lant.run_report
 
-    monkeypatch.setattr(lant.delivery, "write_report", lambda cfg: None)
+    monkeypatch.setattr(lant.run_report, "write_report", lambda cfg: None)
     artifacts.clean(cfg, ["cc"], execute=True)
     assert not cache.exists() and model.read_text() == "model"
     assert manifest.load(cfg)["steps"]["cc"]["cache_cleaned"]
@@ -208,7 +208,7 @@ def test_step_protects_unknown_forward_cache_files(tmp_path, step):
 
 
 def test_forward_cleanup_is_optional_and_preserves_other_state(tmp_path, monkeypatch):
-    from lant import delivery, manifest
+    from lant import manifest, run_report
 
     cfg = setup_project(tmp_path)
     cfg["data"]["raw_dir"] = str(tmp_path)
@@ -220,7 +220,7 @@ def test_forward_cleanup_is_optional_and_preserves_other_state(tmp_path, monkeyp
     (folder / "unknown.npz").write_bytes(b"user")
     manifest._save(cfg, {"steps": {"cc": {"state": "done"}}})
     monkeypatch.setattr(manifest, "status", lambda *a, **kw: {"evaluate": {"state": "done"}})
-    monkeypatch.setattr(delivery, "write_report", lambda _: None)
+    monkeypatch.setattr(run_report, "write_report", lambda _: None)
     plan = artifacts.clean(cfg, ["forward"])
     assert [v["path"] for v in plan["files"]] == [".lant/forward_cache/registered.npz"]
     artifacts.clean(cfg, ["forward"], execute=True)

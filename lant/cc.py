@@ -14,11 +14,12 @@ correlation.fs.  Then
 Sign convention: positive lag = energy travelling from station i to j, (i, j) in sorted order of the names.
 
 Each day file records its settings and a fingerprint of its input files (path, size, modification time and time
-span of every record of the day).  An existing day file is reused only when both agree with the present run;
-otherwise the day is computed again and the file replaced.  (A file whose content changed while its size and
+span of every record of the day), and the stations that failed to read.  An existing day file is reused only when
+both agree with the present run and no station failed; otherwise the day is computed again and the file replaced.  (A file whose content changed while its size and
 modification time stayed the same is not noticed.)
 """
 
+import json
 import os
 import time
 from multiprocessing import Pool
@@ -33,6 +34,7 @@ from . import paths
 from . import pulse as PU
 from .processes import pool_results
 from .progress import track
+from .runtime_identity import code_digest
 
 SETTINGS = (
     "fs",
@@ -47,6 +49,7 @@ SETTINGS = (
     "max_over_std",
     "detrend",
     "band_taper",
+    "code",
 )
 READ_THREADS = 4  # station-days read and decimated at the same time in one day process (memory: resources())
 
@@ -65,6 +68,7 @@ def settings_of(opt):
         max_over_std=opt["max_over_std"],
         detrend="linear",
         band_taper="quarter-octave cosine",
+        code=code_digest("cc"),  # a day file computed by other code is computed again
     )
 
 
@@ -297,11 +301,16 @@ def process_day(task):
                     and h.attrs.get("inputs", "") == inputs
                     and all(have[k] is not None and have[k] == v for k, v in want.items())
                 )
+                failed_before = json.loads(h.attrs.get("read_failures", "[]"))
         except OSError:
-            same = False  # an unreadable (half-written) file is computed again
-        if same:
+            same, failed_before = False, []  # an unreadable (half-written) file is computed again
+        if same and not failed_before:
             return day, "exists (%d stations)" % nst, []
-        redo = "recomputed (settings or input files changed): "
+        redo = (
+            "recomputed (%d station(s) failed to read last time): " % len(failed_before)
+            if same
+            else "recomputed (settings or input files changed): "
+        )
     t_start = time.time()
     failures = []
     tmp = out_path + ".tmp"
@@ -333,6 +342,7 @@ def process_day(task):
         h.create_dataset("segments_used", data=n_used)
         h.attrs.update(settings_of(opt))
         h.attrs.update(dict(t0_utc=t0, method="cross-coherence", inputs=inputs))
+        h.attrs["read_failures"] = json.dumps(failures)  # a day with failures is read again by the next run
     except BaseException:
         for h in files:
             h.close()

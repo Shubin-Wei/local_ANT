@@ -17,7 +17,7 @@
 
 ## Local checks
 
-Install `pip install -e ".[dev]"`, then run `ruff check lant tests tools examples`, `ruff format --check lant tests tools examples` and `python -m pytest tests --cov=lant`; the lint rules and the reasons for the ignored ones are in `pyproject.toml`. Formatting stays in its own commits. Build both distributions with `python -m build`, then verify a wheel outside the checkout. CI runs lint and format, the tests on Python 3.11, 3.12 and 3.13, the quick synthetic example to the inversion project, and an installed wheel.
+Install `pip install -e ".[dev]"`, then run `ruff check lant tests tools`, `ruff format --check lant tests tools` and `python -m pytest tests --cov=lant`; the lint rules and the reasons for the ignored ones are in `pyproject.toml`. Formatting stays in its own commits. Build both distributions with `python -m build`, then verify a wheel outside the checkout. CI runs lint and format, the tests on Python 3.11, 3.12 and 3.13, the quick synthetic example to the inversion project, and an installed wheel.
 
 ## Responsibility review, 2026-11-13
 

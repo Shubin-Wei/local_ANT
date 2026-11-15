@@ -337,7 +337,9 @@ GROUPS = [_station_map, _moveout, _example_pairs, _curves_and_start, _model, _ch
 
 
 def make_all(cfg, which=None):
-    """Draw the figures `which` (names of NAMES; all by default) -> dict(drawn, not_drawn, plot_parameters)."""
+    """Draw the figures `which` (names of NAMES; all by default) -> dict(drawn, not_drawn, failed, plot_parameters).
+    failed: figures whose drawing raised ("name: reason"); the step is then incomplete (lant.pipeline.run_step),
+    their previous images are kept.  A figure with nothing to draw is not_drawn only."""
     F = _Figures(cfg, which)
     notes = resolve(cfg, F.model, F.stations)
     G.RELIEF_NOTES.clear()
@@ -360,6 +362,7 @@ def make_all(cfg, which=None):
     return dict(
         drawn=F.done,
         not_drawn=F.skipped,
+        failed=["%s: %s" % (n, F.skipped.get(n, "failed")) for n in sorted(F.failed)],
         figure_seconds=F.seconds,
         plot_parameters={k: dict(value=cfg["plots"][k], rule=v) for k, v in notes.items()},
     )

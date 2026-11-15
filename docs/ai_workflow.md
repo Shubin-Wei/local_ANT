@@ -60,7 +60,7 @@ lant status -c OUT/config.yaml --json                        # 2. after every st
 | stack | `candidates.txt`, `results/figures/2_station_qc.png` | more candidates than expected by chance (1): the chain stops; show them, the user decides. One candidate: listed in the report only |
 | reference | `3_fj_phase_velocity.png`: is the ridge continuous, is it the slowest branch; measured velocities against `velocity_range_kms` | possibly a higher mode: give your reasons, propose `track_fundamental`, a narrower velocity range or a borrowed curve; the user decides |
 | disp | accepted samples, rejections by reason, `3_dispersion_curves.png`, `median_vs_reference.txt` | few points: report which criterion rejects them; do not loosen it yourself |
-| inversion | `4_start_model.png`, `4_kernels.png`, number of periods, depth nodes | more periods than the solver takes: change `per_octave` as the message says |
+| inversion | `4_start_model.png`, `4_kernels.png`, number of periods, depth nodes | more periods than the solver takes: change `inversion.per_octave` as the message says |
 | run, evaluate | share kept by the precheck, residuals, checkerboard recovery, control differences | main project invalid in the precheck: stop and report |
 | figures | slices, sections | show the checkerboards along with them |
 

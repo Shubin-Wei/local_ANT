@@ -33,19 +33,6 @@ lant check          # 逐项列出 Python 包和 GMT 的状态及缺失项的安
 
 最终主图组也按此资源计划在独立进程中运行，每进程一个数值线程。只请求一组或预算仅够一个进程时串行执行。记录单图耗时，失败组保留上次完整图。经验内存估计包含 600 MB 解释器／绘图预算及工作数组，仍保留相同的可用内存余量。
 
-### 1.4 先跑合成算例
-
-`lant demo` 生成一个小型合成台阵，在数分钟内运行完整流程（见 quickstart.zh.md）。逐步运行完整算例：
-
-```bash
-python examples/synthetic/make_synthetic.py              # 16 台、3 天，5–20 分钟，约 300 MB
-                                                         # （--quick：16 台、6 小时，约 1 分钟；见 quickstart.zh.md）
-lant run all -c examples/synthetic/synthetic.yaml        # 停在需要你判断的地方，并打印下一条命令
-python examples/synthetic/compare_truth.py               # 与已知答案比较
-```
-
-数据由 Rayleigh 平面波从随机方位入射叠加而成，介质是一维背景加 ±6 % 正弦棋盘格（正方形边长内三个格子）。`true_model.txt`、`true_dispersion.txt` 是背景，`true_checkerboard.json` 记录图样、坐标、格子大小及合成限制。局部慢度在背景及 ±6 % 缩放的剖面（DSurfTomo 的 surfdisp96）之间插值，再沿入射直线路径在台阵正方形内积分（128 点 Gauss–Legendre 求积）。这是运动学近似，不含折射、散射或振幅聚焦；反演使用弯曲射线，不应期待完美恢复。miniSEED 与 SAC 混放在多层目录里，台站表没有表头。`--layout line` 生成线状台阵，`--model sediment` 生成低速沉积模型，`--uniform` 生成横向均匀介质。这些设置是演示用的工程选择，不是文献规定的检验标准。高阶模式和直接互相关加噪声试验用 `make_stack.py`（validation.zh.md）。
-
 ## 2. 准备数据
 
 所需输入只有两项：原始数据目录和台站表。无需整理目录、重命名文件、转换格式、按天切分或合并记录。
@@ -160,7 +147,7 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 2. 相位用相位匹配滤波读取（Herrin & Goforth 1977；Levshin & Ritzwoller 2001）：用实测群到时曲线构造相位改正，消除频散造成的包络内相位变化，再在中心频率读相位；远场相位常数 π/4（Lin et al. 2008）。走时 t = −(Φ − π/4)/ω 加整周数，相速度 c = 台距 / t（两台法，Yao et al. 2006），台距按 WGS84 椭球计算（Vincenty 1975）。
 3. 整周数在路径为 1–3.5 个参考波长的频段确定（这里参考曲线不可能差一周），再沿频率连续递推。
 4. 误差：把子叠加分组做 delete-a-group 刀切，每组重测一遍。误差未做校准，只反映时间上的可重复性。
-5. 质控：每个被拒的点记录原因（位掩码），报告按原因统计。判据包括信噪比、刀切误差、路径不短于 2 个自身波长（Luo et al. 2015）、连续段长度、群速度与相速度的一致性、频带边缘（相干信号——信号窗减去后段时延的非相干噪声、全部台对合并——的振幅谱低于滤波带内均值一半的频率不测）等；每个门限的依据见 parameters.zh.md，标“经验值”的没有文献取值。
+5. 质控：每个被拒的点记录原因（位掩码），报告按原因统计。判据包括信噪比、刀切误差、路径不短于 2 个自身波长（Luo et al. 2015）、连续段长度、群速度与相速度的一致性等；每个门限的依据见 parameters.zh.md，标“经验值”的没有文献取值。
 6. 导出：每个台对只留最长的一段连续曲线，写成 DSurfTomo 的输入。
 
 **看什么**：`results/figures/3_dispersion_curves.png`（全部曲线与参考）、`pair_figures/`（单台对：速度谱、拾取、被拒原因）、`median_vs_reference.txt`。
@@ -169,7 +156,7 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 
 ### 4.6 inversion：建反演工程（`06_inversion`）
 
-**做什么**：台阵平均曲线做一维反演得到起始模型（阻尼最小二乘，平滑约束模型本身，Constable et al. 1987）；深度节点步长取 max(最短波长 / 4, 深度 / 4)，到最长波长的一半（经验法则，Foti et al. 2018）；网格间距取测量波长中位数 / 3；建主工程、四个棋盘工程（Lévêque et al. 1993；三个水平，格子为测量波长中位数的 1、2、3 倍，一个随深度变化，见 methods.zh.md 第 9 节）和默认一个对照工程：换起始模型（`start_grad0.05`；Rawlinson & Spakman 2016）；平滑权重减半和加倍（`reg_x0.5`、`reg_x2`）可在 `checks.controls` 里加。稀疏矩阵预留按路径估计（`inversion.sparsity: auto`）。平滑权重和阻尼固定（`inversion.weight` 1、`inversion.damp` 0.1，在合成算例上标定，见 methods.zh.md 第 8.4 节）；检验工程用同样的值。最多 60 个周期（DSurfTomo 的 CalSurfG），超出时这一步停下，并给出合适的 `dispersion.per_octave`。
+**做什么**：台阵平均曲线做一维反演得到起始模型（阻尼最小二乘，平滑约束模型本身，Constable et al. 1987）；深度节点步长取 max(最短波长 / 4, 深度 / 4)，到最长波长的一半（经验法则，Foti et al. 2018）；网格间距取测量波长中位数 / 3；建主工程、四个棋盘工程（Lévêque et al. 1993；三个水平，格子为测量波长中位数的 1、2、3 倍，一个随深度变化，见 methods.zh.md 第 9 节）和默认一个对照工程：换起始模型（`start_grad0.05`；Rawlinson & Spakman 2016）；平滑权重减半和加倍（`reg_x0.5`、`reg_x2`）可在 `checks.controls` 里加。正则化平滑的是模型本身，数据项和模型项都取均值（见 methods.zh.md 第 8.4 节）；平滑权重（1）是在面状合成算例上标定的固定默认值（不用阻尼），检验工程用同样的值。三维反演取测量周期中落在每倍频程 `inversion.per_octave`（4）个网格上的那些，即 12 个测量周期每 3 个取 1 个（methods.md 8.3）；最多 60 个周期（DSurfTomo 的 CalSurfG），超出时这一步停下，并给出合适的 `inversion.per_octave`。
 
 **看什么**：`results/figures/4_start_model.png`、`4_kernels.png`（各周期的敏感深度）。**留给你判断的**：起始模型、最深节点、速度上下限是否合理。
 
@@ -195,7 +182,7 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 - 噪声场近似各向同性。方向性噪声造成的相速度偏差不检验、不改正。
 - 只用垂直分量、只测基阶 Rayleigh 波相速度。
 - Vp 和密度由 Vs 按 Brocher (2005) 的经验关系换算（DSurfTomo 及其移植版内部固定）；实际 Vp/Vs 偏离时 Vs 有系统偏差。
-- DSurfTomo 的坐标是单精度，相距约 200 m 以内的台对有距离误差。
+- DSurfTomo 的坐标是单精度（约 0.4 m）。观测走时和预测走时用同一组坐标；在检验工程中，进入反演的台对（0.5 km 以上）与双精度距离相差不超过 0.2 %。远短于 0.2 km 的台对误差会到百分之一以上，频散步骤的波长规则通常会把它们去掉。
 - 刀切误差未校准。
 - 模型只在棋盘恢复得出的尺度和深度上可解释；台站覆盖以外的节点没有约束。
 

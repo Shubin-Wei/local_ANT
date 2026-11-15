@@ -224,12 +224,13 @@ def test_controls_are_checked_before_anything_runs():
     cfg = config.defaults()
     cfg["data"].update(raw_dir="raw", station_file="stations.csv")
     cfg["project"]["output_dir"] = "out"
-    cfg["checks"]["controls"] = ["reg_x0.5", "reg_w2_d0.5", "start_grad-0.05", "start_x1.1", "reg_x1e-1"]
+    cfg["checks"]["controls"] = ["reg_x0.5", "reg_w2", "start_grad-0.05", "start_x1.1", "reg_x1e-1"]
     config.validate(cfg)
     for bad in (
         ["reg_x0"],
         ["reg_xabc"],
-        ["reg_w1"],
+        ["reg_w0"],
+        ["reg_w2_d0.5"],
         ["start_grad0.6"],
         ["start_x-1"],
         ["other"],
@@ -240,9 +241,9 @@ def test_controls_are_checked_before_anything_runs():
             config.validate(cfg)
 
 
-@pytest.mark.parametrize("key", ["weight", "damp"])
+@pytest.mark.parametrize("key", ["weight"])
 def test_automatic_regularization_was_removed(tmp_path, key):
-    """inversion.weight / damp: auto is refused with a message (fixed calibrated defaults since 2.0)."""
+    """inversion.weight: auto is refused with a message (a fixed calibrated default)."""
     p = write_cfg(
         tmp_path,
         """
@@ -252,5 +253,79 @@ def test_automatic_regularization_was_removed(tmp_path, key):
         """
         % (REQ, key),
     )
-    with pytest.raises(config.ConfigError, match="auto was removed in 2.0"):
+    with pytest.raises(config.ConfigError, match="auto was removed"):
         config.load(p)
+
+
+@pytest.mark.parametrize("key", ["grid_refine", "sublayers", "sparsity", "threshold", "damp"])
+def test_removed_inversion_keys_are_refused(tmp_path, key):
+    """Keys that lant no longer needs (2.0.1) are refused with what to do instead."""
+    p = write_cfg(
+        tmp_path,
+        """
+        project: {output_dir: out, array_type: surface}
+        data: {raw_dir: raw, station_file: s.csv, %s}
+        inversion: {%s: 3}
+        """
+        % (REQ, key),
+    )
+    with pytest.raises(config.ConfigError, match="2.0.1"):
+        config.load(p)
+
+
+def test_band_edge_was_removed(tmp_path):
+    """dispersion.qc.band_edge (no literature basis) is refused with a message since 2.0.1."""
+    p = write_cfg(
+        tmp_path,
+        """
+        project: {output_dir: out, array_type: surface}
+        data: {raw_dir: raw, station_file: s.csv, %s}
+        dispersion: {qc: {band_edge: 0.5}}
+        """
+        % REQ,
+    )
+    with pytest.raises(config.ConfigError, match="removed in 2.0.1"):
+        config.load(p)
+
+
+@pytest.mark.parametrize("out", ["raw", "raw/output"])
+def test_output_inside_raw_is_refused(tmp_path, out):
+    """The raw directory is searched recursively: an output directory in it would feed lant its own products."""
+    p = write_cfg(
+        tmp_path,
+        """
+        project: {output_dir: %s, array_type: surface}
+        data: {raw_dir: raw, station_file: s.csv, %s}
+        """
+        % (out, REQ),
+    )
+    with pytest.raises(config.ConfigError, match="must not be data.raw_dir or inside it"):
+        config.load(p)
+
+
+@pytest.mark.parametrize(
+    "change, msg",
+    [
+        (("data", "start_date", "2024-02-31"), "not a date"),
+        (("data", "min_trace_length_s", -1.0), "min_trace_length_s"),
+        (("reference", "zone_km", -2.0), "zone_km"),
+        (("inversion", "depth_sequence_km", []), "at least two depths"),
+    ],
+)
+def test_values_that_cannot_work_are_refused(change, msg):
+    cfg = config.defaults()
+    *keys, value = change
+    config._set(cfg, keys, value)
+    with pytest.raises(config.ConfigError, match=msg):
+        config.validate(cfg)
+
+
+def test_dates_in_order_and_steps_of_whole_samples():
+    cfg = config.defaults()
+    cfg["data"].update(start_date="2024-03-02", end_date="2024-03-01")
+    with pytest.raises(config.ConfigError, match="start_date must not be after"):
+        config.validate(cfg)
+    cfg = config.defaults()
+    cfg["correlation"].update(fs=50.0, seg_step_s=0.001)  # round(0.05) = 0 samples
+    with pytest.raises(config.ConfigError, match="less than one sample"):
+        config.validate(cfg)

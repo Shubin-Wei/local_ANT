@@ -33,19 +33,6 @@ Nobody sets the number of cores: `resources.cores: auto` takes 80 % of the cores
 
 Main figure groups also run in separate processes under this resource plan, each with one numerical thread. A single requested group or a one-process budget uses the serial path. Per-figure elapsed times are recorded; failed groups retain their previous complete images. The empirical memory estimate includes a 600 MB interpreter/rendering budget and work arrays, with the same available-memory headroom.
 
-### 1.4 Run the synthetic example first
-
-`lant demo` makes a small synthetic array and runs the whole chain in a few minutes (quickstart.md). Step by step, with the full example:
-
-```bash
-python examples/synthetic/make_synthetic.py              # 16 stations, 3 days; 5–20 minutes, about 300 MB
-                                                         # (--quick: 16 stations, 6 hours, about 1 minute; quickstart.md)
-lant run all -c examples/synthetic/synthetic.yaml        # stops where a judgement is yours and prints the next command
-python examples/synthetic/compare_truth.py               # comparison with the known answer
-```
-
-The data are a sum of plane Rayleigh waves from random azimuths in a known 1-D background with a ±6 % sinusoidal checkerboard (three cells across the square). `true_model.txt` and `true_dispersion.txt` describe the background; `true_checkerboard.json` records the pattern, coordinates, cell size and synthesis limits. Local slowness is interpolated between the background and ±6 % scaled profiles (DSurfTomo's surfdisp96) and integrated on incoming straight paths through the array square (128-point Gauss–Legendre quadrature). This kinematic approximation omits refraction, scattering and amplitude focusing; the inversion uses bent rays, so perfect recovery is not expected. miniSEED and SAC records are mixed in nested folders and the station table has no header. `--layout line` makes a line array, `--model sediment` a slow sedimentary model, `--uniform` a laterally uniform medium. These are illustrative engineering choices, not a prescribed validation standard. Higher modes and direct-correlation noise tests use `make_stack.py` (validation.md).
-
 ## 2. Preparing the data
 
 Two inputs are needed: the raw-data directory and a station table. The records need no sorting into folders, renaming, format conversion, cutting into days or merging.
@@ -160,7 +147,7 @@ Header scans reuse unchanged files using nanosecond file metadata; old cache sig
 2. The phase is read with a phase-matched filter (Herrin & Goforth 1977; Levshin & Ritzwoller 2001): the measured group-arrival curve gives a phase correction that removes the phase variation inside the envelope caused by dispersion, and the phase is then read at the centre frequency; far-field phase constant π/4 (Lin et al. 2008). Travel time t = −(Φ − π/4)/ω plus whole cycles, phase velocity c = distance / t (two-station method, Yao et al. 2006), with distances on the WGS84 ellipsoid (Vincenty 1975).
 3. The cycle count is fixed where the path is 1–3.5 reference wavelengths (there the reference cannot be a cycle off) and then followed continuously in frequency.
 4. Errors: delete-a-group jackknife over groups of sub-stacks, each measured again. The errors are not calibrated; they show repeatability in time only.
-5. Quality control: every rejected sample carries its reasons (bit mask), counted in the report. Criteria include signal-to-noise ratio, jackknife error, a path of at least 2 of the sample's own wavelengths (Luo et al. 2015), run length, agreement of group and phase velocity, and the band edge (frequencies where the amplitude spectrum of the coherent signal, i.e. of the signal window minus the incoherent noise of late lags, over all pairs, is below half its mean inside the filter band are not measured); the basis of every threshold is in parameters.md, and those labelled "empirical" have no literature value.
+5. Quality control: every rejected sample carries its reasons (bit mask), counted in the report. Criteria include signal-to-noise ratio, jackknife error, a path of at least 2 of the sample's own wavelengths (Luo et al. 2015), run length, and agreement of group and phase velocity; the basis of every threshold is in parameters.md, and those labelled "empirical" have no literature value.
 6. Export: per pair only the longest continuous segment, written as DSurfTomo input.
 
 **Look at**: `results/figures/3_dispersion_curves.png` (all curves and the reference), `pair_figures/` (single pairs: velocity spectrum, picks, reasons), `median_vs_reference.txt`.
@@ -169,7 +156,7 @@ Header scans reuse unchanged files using nanosecond file metadata; old cache sig
 
 ### 4.6 inversion: building the projects (`06_inversion`)
 
-**What**: 1-D inversion of the array's average curve for the starting model (damped least squares, smoothness applied to the model itself, Constable et al. 1987); depth nodes in steps of max(shortest wavelength / 4, depth / 4) down to half the longest wavelength (rule of thumb, Foti et al. 2018); grid spacing the median measured wavelength / 3; the main project, four checkerboard projects (Lévêque et al. 1993; three horizontal with cells of 1, 2 and 3 median measured wavelengths, and one depth-varying, methods.md section 9) and by default one control project, another starting model (`start_grad0.05`; Rawlinson & Spakman 2016); the smoothing weight halved and doubled (`reg_x0.5`, `reg_x2`) can be added in `checks.controls`. The sparse-matrix reserve is estimated from the paths (`inversion.sparsity: auto`). The smoothing weight and the damping are fixed (`inversion.weight` 1, `inversion.damp` 0.1, calibrated on the synthetic examples, methods.md section 8.4); the check projects use the same values. At most 60 periods (DSurfTomo's CalSurfG); with more, the step stops and names the `dispersion.per_octave` that fits.
+**What**: 1-D inversion of the array's average curve for the starting model (damped least squares, smoothness applied to the model itself, Constable et al. 1987); depth nodes in steps of max(shortest wavelength / 4, depth / 4) down to half the longest wavelength (rule of thumb, Foti et al. 2018); grid spacing the median measured wavelength / 3; the main project, four checkerboard projects (Lévêque et al. 1993; three horizontal with cells of 1, 2 and 3 median measured wavelengths, and one depth-varying, methods.md section 9) and by default one control project, another starting model (`start_grad0.05`; Rawlinson & Spakman 2016); the smoothing weight halved and doubled (`reg_x0.5`, `reg_x2`) can be added in `checks.controls`. The regularization smooths the model itself, the data and model terms as means (methods.md section 8.4); its weight (1) is a fixed default calibrated on the areal synthetic example (no damping), and the check projects use the same values. The 3-D inversion takes the measured periods on a grid of `inversion.per_octave` (4) per octave, every third of the 12 measured (methods.md 8.3); at most 60 periods (DSurfTomo's CalSurfG); with more, the step stops and names the `inversion.per_octave` that fits.
 
 **Look at**: `results/figures/4_start_model.png`, `4_kernels.png` (depth sensitivity of the periods). **Left to you**: whether starting model, deepest node and velocity bounds are reasonable.
 
@@ -195,7 +182,7 @@ One project per line. The defaults that differ are listed at the end of paramete
 - The noise field is close to isotropic. The phase-velocity bias from directional noise is neither tested nor corrected.
 - Vertical components only; fundamental-mode Rayleigh phase velocities only.
 - Vp and density follow Vs by the empirical relations of Brocher (2005), fixed inside DSurfTomo (and its port); where the real Vp/Vs differs, Vs is biased.
-- DSurfTomo holds coordinates in single precision; pairs closer than about 200 m carry distance errors.
+- DSurfTomo holds coordinates in single precision (about 0.4 m). Observed and predicted travel times use the same coordinates; on the test projects the pairs that reach the inversion (0.5 km and longer) differ from double-precision distances by at most 0.2 %. Pairs much shorter than 0.2 km would carry errors of a percent or more; the wavelength rule of the dispersion step normally removes them.
 - The jackknife errors are not calibrated.
 - The model can be interpreted only at the scales and depths the checkerboards recover; nodes outside the station coverage are unconstrained.
 

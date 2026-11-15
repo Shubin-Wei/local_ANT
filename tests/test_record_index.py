@@ -87,3 +87,23 @@ def test_files_of_stations_outside_the_table_are_read_only_at_their_ends(tmp_pat
     table.write_text("network,station,latitude,longitude,elevation\nXX,A1,30.0,100.0,0\nXX,Z99,30.1,100.1,0\n")
     again = record_index.build_index(cfg)
     assert again["header_only"] == 0 and not any(t.get("header_only") for t in again["traces"])
+
+
+def test_read_error_is_not_kept_in_the_header_cache(tmp_path, monkeypatch):
+    """A file that could not be read (OSError: disk, network share) is scanned again by the next run; a file that is
+    not seismic data stays cached as such."""
+    cfg, path, _ = fixture(tmp_path)
+    original = record_index.read_quiet
+
+    def unreadable(*args, **kwargs):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(record_index, "read_quiet", unreadable)
+    try:
+        record_index.build_index(cfg)
+    except Exception:
+        pass  # no readable record at all may stop the index; the cache is what matters here
+    cache = json.loads((tmp_path / "out/work/01_clean/header_cache.json").read_text())
+    assert str(path) not in cache["files"]
+    monkeypatch.setattr(record_index, "read_quiet", original)
+    assert record_index.build_index(cfg)["traces"][0]["sta"] == "A01"

@@ -11,7 +11,7 @@ Open an issue with the bug template. It asks for what makes a problem reproducib
 - `lant status -c CONFIG --json`, and the report of the failed step (`OUT/.lant/steps/<step>.md`);
 - the end of `OUT/.lant/lant.log`.
 
-Do not attach raw records or station coordinates you may not share; a synthetic example (`lant demo`, `python -m lant.synthetic`) that shows the problem is the most useful.
+Do not attach raw records or station coordinates you may not share; a small example that shows the problem is the most useful.
 
 ## Changing the code
 
@@ -21,10 +21,10 @@ Before a pull request:
 
 ```bash
 pip install -e ".[dev]"
-ruff check lant tests tools examples
-ruff format --check lant tests tools examples
+ruff check lant tests tools
+ruff format --check lant tests tools
 python -m pytest tests
-python tools/run_synthetic.py --dir DIR      # after python -m lant.synthetic --quick --out DIR, for a changed step
+python tests/smoke_records.py make --out DIR && python tests/smoke_records.py run --dir DIR   # the chain runs
 ```
 
 A change of a computation needs the same-input comparison of the deterministic products (stack, measurements, solver inputs) against the previous version, and a note in `docs/history.md`.

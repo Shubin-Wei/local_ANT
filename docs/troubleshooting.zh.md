@@ -63,7 +63,7 @@
 
 | 现象 | 原因与处理 |
 |---|---|
-| 接受的点很少 | `.lant/steps/disp.md` 按原因统计了被拒的点。原因主要是 snr 时，叠加时间不够或频带内无能量；主要是 wavelength / path_short 时，台距相对波长太短；主要是 off_band 时，该频率超出了噪声源激发的频带 |
+| 接受的点很少 | `.lant/steps/disp.md` 按原因统计了被拒的点。原因主要是 snr 时，叠加时间不够或频带内无能量；主要是 wavelength / path_short 时，台距相对波长太短 |
 | `median_vs_reference.txt` 显示系统偏离 | 参考曲线可能拾错（高阶、跳周），回到 reference 检查 `3_fj_phase_velocity.png` |
 | 测线：参考曲线只覆盖测量频带的一小段，高频的中位数随速度范围设置而变 | 参考曲线拾取范围以外，整周数靠沿频率递推，群速度拾取不受参考约束，可能混入一支偏快的点。在一条实测测线上，默认速度范围 0.1–5 km/s 时参考只覆盖 1.7–2.8 Hz，3–13 Hz 的中位数比写成本区范围 1–4 km/s 时高 4–9 %，多出的点比两次都接受的点快 8–16 %，与 F-J 脊线不符。测线务必写本区的速度范围，并看 `3_fj_phase_velocity.png` 中拾取是否沿脊线到达混叠线 |
 | 想放宽质控门限多得点 | 不建议。确需修改时用 `lant note` 记下理由，并在报告中说明 |
@@ -72,7 +72,7 @@
 
 | 现象 | 原因与处理 |
 |---|---|
-| `periods ... the solver accepts at most 60` | 最多 60 个周期（DSurfTomo 中 CalSurfG 的上限）。按提示减小 `dispersion.per_octave`，或缩短导出的周期范围 |
+| `periods ... the solver accepts at most 60` | 最多 60 个周期（DSurfTomo 中 CalSurfG 的上限）。按提示减小 `inversion.per_octave`，或缩短导出的周期范围 |
 | `inversion.sparsity = ... reserves too little` | 手工给的稀疏预留比例太小，DSurfTomo 会以段错误退出。改为 `auto` |
 | DSurfTomo `segmentation fault` | 先看 `work/06_inversion/main/run.log` 末尾。常见原因：稀疏预留不够（`inversion.sparsity: auto` 已按网格和路径估计）、内存不够（增大 `grid_spacing_deg` 或减小 `grid_refine`）、栈空间不够 |
 | 工程被预检标为 invalid | 起始模型下 DSurfTomo 的剔除规则会去掉一半以上的数据，或残差系统偏离。说明起始模型与数据不匹配；检查参考曲线与一维模型拟合（`results/figures/4_start_model.png`） |
@@ -89,4 +89,4 @@
 
 - 磁盘：原始数据大小（归档）+ 每天 台对数 × 24 × (2 × 时延窗 × 采样率 + 1) × 4 字节（逐小时互相关）。clean 报告给出估计。
 - 内存：cc 每个进程约为一天逐小时互相关大小的 2.5 倍加一天全部台站的波形；DSurfTomo 随网格节点数与走时数增长。
-- 时间（参考，16 台合成算例）：clean、cc、stack、reference 各数秒至数十秒，disp 约半分钟，一个 DSurfTomo 工程（10 次迭代）约 5–25 分钟。
+- 时间（参考，16 台合成算例）：clean、cc、stack、reference 各数秒至数十秒，disp 约半分钟，一个反演工程（6 次迭代）8 线程约 1.5 分钟（按每倍频程 12 个周期测得；现在三维反演取 4 个）。

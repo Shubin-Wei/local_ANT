@@ -6,7 +6,7 @@
 
 ## 总览
 
-先打开 `REPORT.md`：每一步的状态、耗时和下一条命令，关键数字（含平滑权重和阻尼），留给你判断的事项、主要图件，以及保留成果的链接和各自来自哪次运行。`README.md` 说明各目录和操作规则。`notes.md` 是你的笔记和决定（`lant note`）。
+先打开 `REPORT.md`：每一步的状态、耗时和下一条命令，关键数字（含平滑权重），留给你判断的事项、主要图件，以及保留成果的链接和各自来自哪次运行。`README.md` 说明各目录和操作规则。`notes.md` 是你的笔记和决定（`lant note`）。
 
 | 文件 | 内容 |
 |---|---|
@@ -25,11 +25,12 @@
 
 | 文件 | 内容 |
 |---|---|
-| ★ `model/vs_model.csv` | 三维模型：`longitude_deg`、`latitude_deg`（WGS84）、`depth_km`、`vs_km_s`，按深度、纬度、经度排序；数值与 DSurfTomo 写出的完全相同。远离射线的节点保持起始模型：要结合棋盘图看 |
+| ★ `model/vs_model.csv` | 三维模型：`longitude_deg`、`latitude_deg`（WGS84）、`depth_km`、`vs_km_s`、`dws`（最后一轮该节点的数据敏感度之和：没有射线经过为 0，不参与更新的节点为空），按深度、纬度、经度排序；数值与求解器写出的完全相同。远离射线的节点保持起始模型：要结合棋盘图看 |
 | ★ `dispersion/curves.csv` | 每个台对、每个测量频率：测量值、`accepted_qc`、`used_in_inversion` 和交给 DSurfTomo 的值 |
 | `parameters.yaml` | 全部取值已确定的配置及确认记录；由最近完成的步骤写出（部分 auto 值在后续步骤才推出） |
 | `figures/` | 成果图（见下） |
 | `validation/evaluation.json` | 起始模型和最终模型的残差统计、各深度的棋盘恢复、对照反演 |
+| `validation/checkerboard_recovery.csv` | 每个棋盘、每个深度：异常的恢复比例（斜率）、图案相关系数 r、节点数 |
 | `validation/residuals_start.csv`、`residuals_final.csv` | 每个台对和周期的观测、预测走时，以及是否被 DSurfTomo 的规则保留 |
 
 重跑或重画所需的一切都在 `work/`（不必重新计算）：主模型的求解器文件在 `work/06_inversion/main/`（`DSurfTomo.in`、`surfdata.dat`、`MOD`、最终模型 `DSurfTomo.inMeasure.dat`），起始模型和平均曲线在 `work/06_inversion/`，台站表在 `work/01_clean/stations.csv`。全部测量及其拒绝原因和诊断量（`disp.h5`、`median_vs_reference.txt`）、逐台对的诊断图留在 `work/05_dispersion/`（`results/` 里不再复制）；棋盘、对照工程及其恢复模型留在 `work/06_inversion/`。棋盘图只画当前配置的检验工程（`work/06_inversion/checks.json`，与评估所用的相同）；以前配置留下的工程目录保留在 `work/`，但不再出图。
@@ -97,12 +98,12 @@ clean（数据覆盖）、stack（台站诊断）和 reference（F-J 谱、分�
 
 | 文件 | 内容 |
 |---|---|
-| `disp.h5` | 每个台对、每个测量频率的相速度 `vc`、群速度 `vg`、信噪比、刀切误差、整周数、是否接受 `ok_c`、被拒原因位掩码 `reason`、频带边缘比值 `band_amp` |
+| `disp.h5` | 每个台对、每个测量频率的相速度 `vc`、群速度 `vg`、信噪比、刀切误差、整周数、是否接受 `ok_c`、被拒原因位掩码 `reason` |
 | ★ `median_vs_reference.txt` | 各频率接受点的中位数与参考曲线之差；系统偏离说明参考曲线或整周数可能有问题 |
 | `curves.csv` | 测量样点及质控、反演选择标记；独立反演列保留六位小数周期、五位小数速度 |
 | `pair_figures/` | 单台对图（`export.curve_figures` 个按台距均匀抽取的台对，另加被拒点最多和偏离中位数最大的台对）：速度—频率图像、拾取、被拒原因 |
 
-`reason` 的位：1 无群速度拾取，2 信噪比不足，4 无数据，8 群速度偏离参考，16 路径太短，32 旁瓣，64 无法定整周数，128 跳周，512 刀切误差，4096 群速度与相速度不一致，8192 连续段太短，16384 波长规则，32768 无参考曲线，65536 频带边缘。
+`reason` 的位：1 无群速度拾取，2 信噪比不足，4 无数据，8 群速度偏离参考，16 路径太短，32 旁瓣，64 无法定整周数，128 跳周，512 刀切误差，4096 群速度与相速度不一致，8192 连续段太短，16384 波长规则，32768 无参考曲线（65536 频带边缘已在 2.0.1 去掉）。
 
 ## work/06_inversion/：反演工程
 
@@ -111,9 +112,9 @@ clean（数据覆盖）、stack（台站诊断）和 reference（F-J 谱、分�
 | `average_curve.txt` | 台阵平均曲线（每个周期的中位数和台对数） |
 | `vs1d.txt`、`vs1d_fit.txt` | 一维起始模型及其对平均曲线的拟合 |
 | `kernels.txt` | 各周期的深度敏感核 |
-| `main/` | 主工程：`surfdata.dat`、`DSurfTomo.in`、`MOD`、`project.json`（网格、周期、稀疏预留、平滑权重和阻尼）、`precheck.json`、`run.log`、`solver.json`（实现、线程数、各轮各模块秒数、峰值内存）、`DWS.dat`（最后一轮每个节点的 DWS）、最终模型 `DSurfTomo.inMeasure.dat`、各轮模型 `*.iterNNN` |
+| `main/` | 主工程：`surfdata.dat`、`DSurfTomo.in`、`MOD`、`project.json`（网格及其间距的由来、周期及每倍频程个数、平滑权重）、`precheck.json`、`run.log`、`solver.json`（实现、线程数、各轮各模块秒数、LSMR 停止代码和被剔除的走时数、峰值内存）、`DWS.dat`（最后一轮每个节点的 DWS）、最终模型 `DSurfTomo.inMeasure.dat`、各轮模型 `*.iterNNN` |
 | `checkerboards/<名字>/` | 棋盘检验工程：输入、`MOD.true`、真模型和恢复模型（`Vs_model.real`、`DSurfTomo.inSyn.dat`）、日志。评估后删除这里和 `controls/` 中 lant 不读的 DSurfTomo 文件（`*.iterNNN`、`residualFirst.dat`、`residualLast.dat`、`velmap2dRc.dat`），仅当它们由 lant 写出且未改动；`main/` 保留 |
-| `checkerboard_noise.json` | 棋盘合成走时的噪声（`inversion.noise: auto`）：数值和来历 |
+| `checkerboard_noise.json` | 棋盘合成走时的噪声（`inversion.noise: auto`）：每个周期的标准差（秒）和来历；每个棋盘工程里存为 `noise_seconds.txt` |
 | `controls/<名字>/` | 对照工程（起始模型对照、正则化对照） |
 | `evaluation/evaluation.json` | 残差、棋盘恢复（各深度的相关系数和斜率）、对照与主模型之差 |
 | `evaluation/residuals_final.csv` | 每条走时：台站坐标、周期、距离、观测与预测走时、是否被剔除规则保留 |
@@ -142,7 +143,7 @@ clean（数据覆盖）、stack（台站诊断）和 reference（F-J 谱、分�
 | `6_residuals` | 全部观测的毫秒残差直方图、分周期相对 RMS；均值、总体标准差和 RMS 分列，并列保留/全部数量；已有逐轮评估才显示实际迭代曲线 | 全部 |
 
 画不出的图在 figures 报告里列出原因（例如某频带没有测量结果、离线时取不到地形）。
-工作流只写 PNG（`plots.formats: [png]`）。图件参照 README 首图风格，输入与恢复异常图使用相同色标范围。
+工作流只写 PNG（`plots.formats: [png]`）。图件用统一的期刊风格（衬线字体、刻度朝内、红慢蓝快），输入与恢复异常图使用相同色标范围。
 
 恢复热图支持单深度，检查深度严格递增且各试验对齐，保留负相关与超出 100% 的幅度。色块表示节点采样，不代表可分辨深度区间。剖面明确标为相对一维参考的异常，避免将它误称为非均匀初模的实际更新。
 

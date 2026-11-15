@@ -21,8 +21,11 @@ def _task_key(name, rows, t0, opt):
     for r in sorted(rows, key=lambda r: (r["file"], r["start"])):
         files.append([r["file"], file_signature(r["file"]), r["start"], r["end"], r.get("clip"), r.get("cmpinc")])
     resp = opt.get("response")
+    from .runtime_identity import code_digest
+
     what = [
         ARCHIVE_VERSION,
+        code_digest("clean"),
         name,
         t0,
         files,

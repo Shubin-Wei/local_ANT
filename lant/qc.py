@@ -44,7 +44,7 @@ def lambda_qc(cfg, path):
 
 # reason codes of a rejected phase-velocity sample (bit mask in the "reason" dataset of the measurement files)
 # (every sample that is not accepted carries at least one bit; 0 = accepted; bits 1024 and 2048 belonged to two
-# criteria removed in version 1.4 and are not used)
+# criteria removed in version 1.4, bit 65536 ("off_band", qc.band_edge) to one removed in 2.0.1; they are not used)
 REASONS = {
     "no_group_pick": 1,
     "snr_group": 2,
@@ -59,7 +59,6 @@ REASONS = {
     "short_run": 8192,
     "wavelength": 16384,
     "no_reference": 32768,
-    "off_band": 65536,
 }
 
 

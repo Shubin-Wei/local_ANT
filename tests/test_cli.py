@@ -122,7 +122,7 @@ def test_note_does_not_wait_for_a_running_step(tmp_path, capsys):
 def test_finished_chain_says_where_to_look(tmp_path):
     import json
 
-    from lant import delivery
+    from lant import run_report
 
     rec = tmp_path / ".lant/summary"
     rec.mkdir(parents=True)
@@ -139,7 +139,7 @@ def test_finished_chain_says_where_to_look(tmp_path):
         (rec / ("%s.json" % step)).write_text(json.dumps(data))
     (tmp_path / "results/figures").mkdir(parents=True)
     (tmp_path / "results/figures/1_stations.png").write_bytes(b"")  # counted as published, not as drawn
-    lines = delivery.finish_lines({"project": {"output_dir": str(tmp_path)}})
+    lines = run_report.finish_lines({"project": {"output_dir": str(tmp_path)}})
     assert lines[0].endswith("REPORT.md") and "results" in lines[1]
     assert lines[2] == (
         "  10 stations, 1 processing day; 35 phase-velocity curves (840 points); residual rms of all 810 "
@@ -155,7 +155,7 @@ def test_version_and_guidance_without_a_command(capsys):
     assert stop.value.code == 0 and capsys.readouterr().out.strip() == "lant %s" % __version__
     cli.main([])
     out = capsys.readouterr().out
-    assert "lant demo" in out and "First time: lant check, then lant demo." in out
+    assert "lant demo" not in out and "First time: lant check, then lant run all" in out
 
 
 def test_messages_say_what_to_do(tmp_path, capsys):
@@ -172,18 +172,23 @@ def test_messages_say_what_to_do(tmp_path, capsys):
         cli.main(["validate", "-c", str(template)])
 
 
-def test_demo_never_works_in_a_directory_it_did_not_make(tmp_path):
-    from lant import demo
-
-    (tmp_path / "real.mseed").write_bytes(b"data of a user")
-    with pytest.raises(RuntimeError, match="not made by lant demo"):
-        demo.run(tmp_path)
-    with pytest.raises(RuntimeError, match="not a generated synthetic example"):
-        demo.run_known_truth(tmp_path)
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["real.mseed"]
-
-
 def test_init_creates_the_directory_of_the_configuration(tmp_path, capsys):
     config = tmp_path / "result" / "config.yaml"  # the output directory does not exist yet
     cli.main(["init", "-o", str(config), "--out", str(tmp_path / "result"), "--raw", "raw", "--stations", "s.csv"])
     assert config.is_file() and "output_dir" in config.read_text()
+
+
+def test_check_without_gmt_is_incomplete(monkeypatch, capsys):
+    """With the default plotting backend a missing GMT makes the installation incomplete (nonzero exit)."""
+    import argparse
+
+    import pytest
+
+    from lant import cli
+    from lant.plotting import gmt
+
+    monkeypatch.setattr(gmt, "available", lambda: None)
+    with pytest.raises(SystemExit) as stop:
+        cli.cmd_check(argparse.Namespace(config=None))
+    assert "incomplete" in str(stop.value)
+    assert "complete;" not in capsys.readouterr().out

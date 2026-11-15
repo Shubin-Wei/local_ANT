@@ -1,154 +1,91 @@
-# Validation: synthetic tests and their numbers
+# Validation: synthetic tests at the inversion level
 
 [中文](validation.zh.md) | English
 
-Numbers only; what they mean for your data is yours to judge. Sections 1–11 use synthetic data with a known answer, each with the version it was run with; section 12 reports trial runs on real data; section 13 lists what has not been tested; section 14 records the current implementation timing.
+Numbers only; what they mean for your data is yours to judge.
 
-The generator now defaults to a checkerboard (`true_checkerboard.json`); the older numerical tests below retain their original stated inputs and versions. The current solver comparison and timing figures are in [python_backends.md](python_backends.md). A quick raw-data demo checks the workflow; it is not a guarantee of checkerboard recovery or real-data resolution.
+lant's accuracy is tested at the inversion level, the usual synthetic test of seismic tomography (Rawlinson & Spakman 2016): travel times of a known 3-D model are computed for a station layout, Gaussian noise is added, and the data are inverted, with lant and with the original DSurfTomo (a651faf, the program lant's 3-D inversion derives from), both compared with the true model. Such a test shows what the inversion recovers from the paths of the layout; it does not test the measurement of the dispersion (its basis and checks are in [methods.md](methods.md), section 7), nor the ray and local 1-D approximations both programs share. Read a real model together with its own checkerboard tests, which lant runs on the actual paths.
 
-## 1. How the test data are made
+## 1. Test data
 
-| Generator | What it makes | What it can show |
+| | areal array | line |
 |---|---|---|
-| `examples/synthetic/make_synthetic.py` | raw noise records: plane Rayleigh waves in a 1-D background with a ±6 % checkerboard (`--uniform`: background only), from random azimuths (16 stations, 3 days, aperture 9 km; `--layout line`: 24 stations, 2 days) | the whole chain from raw files; approximate straight-ray synthesis, isotropic, fundamental mode only |
-| `examples/synthetic/make_stack.py` | the correlations themselves, J0(2πf t(f)), as a stack file: laterally varying medium (chequer pattern), a second faster arrival, incoherent noise | measurement and inversion with lateral variation, a higher mode, noise |
+| stations | 64 at random in a 9 km square, at least 0.4 km apart | 24 along a straight line at azimuth 60° across the square, up to 1 % of its length off it |
+| true model | 1-D background (Vs 2.30 km/s at the surface to 3.40 km/s at 3 km) with a ±6 % sinusoidal checkerboard of 3-km cells inside the square, Vs₀(z)[1 + 0.06 sin(πx/3) sin(πy/3)] | the same |
+| periods | 11, 0.21–1.19 s | 17, 0.074–1.19 s |
+| travel times | 16 223 | 3 143 |
 
-Comparison scripts: `compare_truth.py` (the saved checkerboard truth; `--uniform` gives zero amplitude), `compare_hetero.py` (laterally varying medium). The tests in `tests/test_numerics.py` repeat the benchmark of section 2 in a small form.
+- Periods on lant's inversion grid (4 per octave through 1 Hz); every pair at least two wavelengths long at that period (`dispersion.qc.lam_c`).
+- True travel times: DSurfTomo's forward (the fast marching and surfdisp96 both programs use) with the true model on its own depth nodes (0–3 km) and a grid of half the inversion's spacing, so that the data do not come from the inversion's own discretization (the "inverse crime", Rawlinson & Spakman 2016).
+- Noise: Gaussian, standard deviation 2.5 % of the period in seconds (a phase error of 0.025 cycles; the residuals left by inverting dispersion that lant measured on synthetic waveforms were 1.2–3.5 % of the period), fixed seed; rms 13.4 ms on the areal data.
+- The inversion project is built by lant's own rules from these data: average curve and 1-D starting model, depth nodes, velocity bounds, grid (median wavelength / 3) and inversion periods. All programs read the same `surfdata.dat`, `MOD` and `DSurfTomo.in` (checked by their hashes), with 6 iterations.
+- Regularization and rejection are each program's own: lant weight 1 (its default; no damping) and rejection beyond 3 × 1.4826 MAD per period; DSurfTomo weight 1 and damping 1 (the damping commonly used with it) and its rejection outside 3 × the signed quartiles.
+- Score: rms difference from the true model and regression slope of the recovered on the true anomaly (both relative to the starting model), on the nodes of the updated depths inside the stations' convex hull (areal array) or along the line between the end stations (line).
+- Time: one run at a time, both pinned to the same 8 CPUs (`taskset`), lant `--threads 8`, DSurfTomo `OMP_NUM_THREADS=8`.
 
-## 2. Two-station phase velocity on exact J0 correlations
+## 2. Areal array
 
-Correlations J0(2πf d / c(f)) of a uniform medium, no noise; relative error of the measured phase velocity by path length in wavelengths:
+| | rms error vs truth | recovered fraction | correlation | final residual rms; kept | time (8 CPUs) |
+|---|---:|---:|---:|---:|---:|
+| starting model | 88.5 m/s | | | 39.9 ms | |
+| lant 2.0.1 | **31.4 m/s** | 0.82 | 0.94 | 14.8 ms; 99.6 % | **76 s** |
+| DSurfTomo | 60.0 m/s | 0.44 | 0.75 | 19.1 ms; 88.0 % | 522 s |
 
-| path length | median error | 95th percentile of the absolute error |
-|---|---|---|
-| 2–3 λ | 0.007 % | 2.9 % |
-| 3–5 λ | 0.064 % | 0.83 % |
-| 5–10 λ | 0.096 % | 0.20 % |
-| ≥ 10 λ | 0.085 % | 0.11 % |
+![Vs anomaly at three depths: truth, lant, DSurfTomo and both differences](assets/compare_model.png)
 
-The default `dispersion.qc.lam_c` accepts paths from 2 wavelengths.
+![Error against the truth and recovered fraction with depth](assets/compare_depth.png)
 
-## 3. Phase reading: phase-matched filter against the earlier instantaneous-frequency correction
+- lant's error grows from 22–24 m/s above 0.4 km to 47 m/s at 1.5 km, the recovered fraction falls from 1.0 to 0.65; DSurfTomo recovers 0.8–1.0 between 0.12 and 0.36 km, 0.26 at the surface and less than 0.25 below 0.9 km (its damping holds each update towards zero, and the faces of its parameter box, the top layer included, are not smoothed).
+- The final residual of lant (14.8 ms) is that of the added noise (13.4 ms). DSurfTomo's rejection on the signed quartiles drops 12 % of the data, which carry no outliers.
+- Outside the array lant's model continues the anomalies of its edge (no data there; the smoothing alone sets it), DSurfTomo stays near the starting model; neither is constrained there.
 
-Same stack of the uniform example (`make_synthetic.py`), same quality control:
+![Travel-time residuals of the starting and final models](assets/compare_residuals.png)
 
-| | earlier method | phase-matched filter |
-|---|---|---|
-| accepted samples | 5085 | 4955 |
-| median difference to the true phase velocity | −0.25 % | +0.07 % |
-| at 1.26 Hz | −0.75 % | +0.07 % |
-| at 0.89 Hz | −0.83 % | −0.23 % |
-| samples above the 12-Hz upper end of the source band | 351 | 234 |
+![Time per iteration and in total, 8 CPUs each](assets/compare_runtime.png)
 
-(Version 1.3.0.)
+## 3. Line
 
-**Band-edge criterion (redefined in version 1.4.0).** The criterion of 1.3.0 used the amplitude spectrum of each pair and did not act on data with a high signal-to-noise ratio: in one day of synthetic data (noise sources cut off at 12 Hz) all 120 pairs were accepted at 12.7, 13.45 and 14.25 Hz. Version 1.4.0 uses the amplitude spectrum of the coherent signal ([methods.md](methods.md), section 7.6):
+| | rms error vs truth | recovered fraction | correlation | final residual rms; kept | time (8 CPUs) |
+|---|---:|---:|---:|---:|---:|
+| starting model | 82.0 m/s | | | 25.2 ms | |
+| lant 2.0.1 | **15.3 m/s** | 0.91 | 0.99 | 8.9 ms; 99.7 % | **72 s** |
+| DSurfTomo | 65.5 m/s | 0.25 | 0.68 | 15.8 ms; 94.2 % | 1522 s |
 
-| frequency (Hz) | amplitude ratio (one day / three days of data) | pairs accepted (one day of data, 1.3.0 → 1.4.0) |
-|---|---|---|
-| 12.7 | 0.64 / 0.66 | 120 → 120 |
-| 13.45 | 0.37 / 0.33 | 120 → 0 |
-| 14.25 | 0.25 / 0.19 | 120 → 0 |
+![Vs anomaly along the line: truth, lant, DSurfTomo, and each minus the truth](assets/line_sections.png)
 
-With half of the pairs the result is the same.
+![Error against the truth and recovered fraction with depth along the line](assets/line_depth.png)
 
-## 4. Reference curve: frequency-Bessel spectrum computed in lant
+![Time of the main project, 8 CPUs each](assets/line_runtime.png)
 
-Uniform example: the picks differ from those of CC-FJpy (used up to v1.2) by at most 0.39 %; median difference to the true curve +0.30 % (CC-FJpy +0.24 %). With the default velocity range 0.1–5 km/s (scan 0.05–8 km/s, two passes) 43 picks were used between 0.27 and 3.0 Hz; with the range 1.5–3.5 km/s, 40 picks between 0.33 and 3.2 Hz (version 1.3.0).
+- The truth and the models are compared on the line between its end stations (62 nodes along the line, 15 updated depths); the noise rms is 9.0 ms.
+- lant's error grows from 7 m/s at the surface to 27 m/s at 1.5 km; DSurfTomo's from 37–56 m/s near the surface to 98 m/s, its recovered fraction at most 0.61 (0.08 km) and below 0.1 under 0.75 km.
 
-New examples of version 1.4.0: areal (range 1.5–3.5 km/s) 41 picks at 0.28–3.17 Hz, median difference to the true curve +0.28 %; line (`track_fundamental`) 36 picks at 0.35–2.83 Hz, median +0.15 %, at most 3.5 % (the lowest frequencies). The line picks stop at 2.83 Hz because of the limit of wavelengths to at least twice the mean station spacing (0.775 km for this line); the measurement still reaches 12.7 Hz (section 5), where above the picks the number of cycles is carried along frequency.
+## 4. Smoothing weight and damping on this test
 
-## 5. The whole chain on a uniform medium
+**Weight against the number of travel times**: the first 16 and 32 of the 64 stations and all 64, the same model, periods and noise; lant at seven weights each (rms error vs truth inside the hull, m/s):
 
-`make_synthetic.py`, then `lant run all`, then `compare_truth.py`. "Difference" is the median over the pairs against the true curve per frequency; Vs is the horizontal mean of the model against the true model at the depth nodes.
+| stations; travel times | 0.2 | 0.35 | 0.5 | 0.7 | **1** | 1.4 | 2 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 16; 948 | 32.3 | 26.0 | **25.1** | 25.8 | 29.6 | 35.2 | 46.4 |
+| 32; 3 920 | 31.8 | **29.5** | 29.8 | 31.4 | 34.3 | 38.5 | 44.8 |
+| 64; 16 223 | 25.7 | **24.5** | 25.2 | 27.5 | 31.4 | 36.1 | 42.5 |
 
-| | areal, range 1.5–3.5 km/s (1.4.0) | line, 24 stations (1.4.0) | areal, default range 0.1–5 km/s (1.3.0) |
-|---|---|---|---|
-| pairs / curves exported | 120 / 118 | 276 / 215 | 120 / 116 |
-| samples accepted by the measurement / points exported | 5908 / 3139 | 9505 / 8039 | 5053 / — |
-| phase velocity: median difference over all frequencies | +0.10 % | +0.02 % | +0.04 % |
-| phase velocity: largest difference at one frequency | 0.94 % | 0.76 % | 0.79 % |
-| Vs at the depth nodes: range of the differences | −0.4 … +0.3 % | −0.6 … +0.2 % | −0.1 … +0.2 % |
-| travel-time residual, final (RMS; relative) | 5.6 ms; 0.38 % | 5.0 ms; 0.40 % | — |
-| share of data kept by DSurfTomo's rejection rule | 0.86 | 0.86 | — |
-| checkerboard (cells of 3 km): noise derived from the main fit; recovery slope over the depths; pattern correlation | 0.11 %; 0.01–0.16; 0.36–0.54 (fixed 2 %: 0.01–0.22; 0.42–0.56) | 0.07 %; 0.00–0.28; 0.21–0.70 (fixed 2 %: 0.00–0.27; 0.28–0.69) | — |
-| starting-model control against the main model (RMS / largest) | 0.099 / 0.246 km/s | 0.102 / 0.265 km/s | — |
-| station diagnosis: candidates | 0 | 1 | 0 |
-| seconds: clean / cc / stack / reference / disp | 6 / 24 / 2 / 5 / 51 | 4 / 29 / 3 / 6 / 64 | 6 / 60 / 73 / 7 / 119 |
-| seconds: inversion / run / evaluate / figures | 10 / 1930 + 1786 / 597 / 71 | 12 / 14008 + 8640 / 986 / 41 | — |
+The best weight stays at 0.35–0.5 while the number of travel times changes 17-fold: the data and model terms taken as means ([methods.md](methods.md), section 8.4) keep the weight's meaning. Its value depends on the errors of the data: on these data with independent Gaussian noise 0.35–0.5 recovers most; on dispersion measured from synthetic waveforms, whose errors also carry the measurement and the approximations of the synthesis, 1 did (smaller weights were clearly worse there). The default stays 1, the conservative value for real data; the controls `reg_x0.5` and `reg_x2` show how much a model depends on it.
 
-The times are from a fully loaded shared server (40 cores, load average 30–100) and give only the order of magnitude. "run" is given in two parts: main project, control and checkerboards with a fixed noise of 2 %, then the checkerboards again with the noise derived from the main fit (`inversion.noise: auto`, the default since then); evaluate and figures are of the second run. Making the data (`make_synthetic.py`) took 33–34 minutes under that load.
+**Damping** (rows d (m + dv − m0), as a mean over the parameters, in a test copy of the code), 64 stations; criteria set before the test: damping is kept only if it worsens the error inside the hull by at most 1 m/s and clearly holds the nodes no ray reaches (DWS = 0) at the starting model:
 
-Starting-model control of the areal example: the model difference is close to the ±5 % gradient applied; the weighted residual of the control fell from 38.5 to 10.0 ms, that of the main project from 2.7 to 2.0 ms. The control had not converged to the level of the main project, so part of the difference is the starting model itself; 16 stations and 3 days constrain the model only weakly.
+| weight; damping | 0 | 0.03 | 0.1 | 0.3 |
+|---|---:|---:|---:|---:|
+| 1: error inside the hull (m/s) | 31.4 | 31.4 | 34.0 | 48.1 |
+| 1: departure of the nodes without rays from the starting model, rms / largest (m/s) | 136 / 221 | 111 / 181 | 43 / 89 | 7 / 27 |
+| 0.5: error inside the hull (m/s) | 25.2 | 24.5 | 27.3 | 46.3 |
+| 0.5: departure of the nodes without rays, rms / largest (m/s) | 118 / 215 | 74 / 143 | 21 / 60 | 3 / 17 |
 
-In these examples the starting model (1-D inversion of the average curve) already agrees with the true model within the numbers above, and the 3-D inversion changes it by less than 0.002 km/s; they test the measurement and the 1-D step, not lateral resolution.
+Damping 0.1 holds the extrapolation to a third and worsens the model inside the array by 2–2.6 m/s; 0.03 leaves it unchanged and the extrapolation hardly (−19 % at weight 1). lant keeps no damping: where no ray passes, the model is the smooth continuation of its surroundings, not a result; `results/model/vs_model.csv` gives the DWS of every node (0: no data).
 
-The quick example (`make_synthetic.py --quick`: 10 stations, 6 hours) took about 36 s to make on the same server and about 6 minutes for the whole chain; one run gave a median phase-velocity difference of +0.33 % and at most 1.35 %.
+## 5. Other checks
 
-## 6. Laterally varying medium
-
-(Version 1.3.0.) `make_stack.py --hetero 0.06 --cell 3 --noise 0.02` on the geometry of the areal example (16 stations): Vs pattern of ±6 % with 3-km cells, the same at all depths; then the chain from the reference step, and `compare_hetero.py`.
-
-Phase velocities against the path average of the truth (accepted samples):
-
-| band (Hz) | samples | median difference | 95th percentile of the absolute difference |
-|---|---|---|---|
-| 0.63–1.37 | 523 | −0.02 % | 0.43 % |
-| 1.37–3.00 | 1406 | +0.03 % | 0.63 % |
-| 3.00–6.54 | 1508 | +0.07 % | 0.35 % |
-| 6.54–14.3 | 1652 | +0.02 % | 0.09 % |
-| all | 5089 | +0.03 % | 0.30 % |
-
-Path anomaly relative to the uniform background: standard deviation 1.64 % (truth) and 1.66 % (measured), correlation 0.983, regression slope 0.994.
-
-Model against the pattern, at the 552 grid nodes within one cell of a station, and the checkerboard test of the same run (cells of 3 km, ±10 %) for comparison:
-
-| depth (km) | model: correlation | model: slope | checkerboard: correlation | checkerboard: slope |
-|---|---|---|---|---|
-| 0.00 | 0.49 | 0.08 | 0.54 | 0.09 |
-| 0.12 | 0.50 | 0.17 | 0.57 | 0.20 |
-| 0.24 | 0.50 | 0.21 | 0.57 | 0.24 |
-| 0.36 | 0.50 | 0.20 | 0.57 | 0.23 |
-| 0.48 | 0.49 | 0.16 | 0.57 | 0.18 |
-| 0.60 | 0.48 | 0.12 | 0.56 | 0.14 |
-| 0.75 | 0.46 | 0.09 | 0.55 | 0.10 |
-| 0.94 | 0.45 | 0.06 | 0.54 | 0.07 |
-| 1.20 | 0.43 | 0.03 | 0.52 | 0.04 |
-| 1.50 | 0.40 | 0.01 | 0.47 | 0.01 |
-
-Travel-time residual: 34.3 ms (1.69 %) for the starting model, 18.9 ms (0.98 %) for the final model; share kept by the rejection rule 0.89. The straight-ray travel times of the test data and the bent rays of DSurfTomo differ; this is part of the numbers.
-
-DSurfTomo's rejection threshold (`inversion.threshold`, in interquartile ranges; default 3) on the same data, model against the pattern:
-
-| threshold | correlation at 0.24 km | slope at 0.24 km | slope at 0.60 km | standard deviation of the weighted residual after the last iteration (ms) |
-|---|---|---|---|---|
-| 3 | 0.50 | 0.21 | 0.12 | 12.4 |
-| 4 | 0.52 | 0.25 | 0.14 | 13.0 |
-| 5 | 0.53 | 0.27 | 0.16 | 13.4 |
-
-## 7. Quality-control screens with noise and a second arrival
-
-(Version 1.3.0; this section is the basis for removing `dev_c` and `smooth_c` in 1.4.0.) `make_stack.py` on the same geometry, uniform medium, with incoherent noise (`--noise`, relative to the largest amplitude of each correlation) and a second arrival at 1.25 times the phase velocity above 4 Hz (`--higher-mode`, amplitude relative to the fundamental). Errors are against the true phase velocity; "> 2 %" and "> 5 %" count accepted samples.
-
-| case | screens | accepted | median abs. error | > 2 % | > 5 % | largest |
-|---|---|---|---|---|---|---|
-| noise 0.05 | all | 5016 | 0.07 % | 38 | 0 | 4.9 % |
-| | without `dev_c`, `smooth_c`, `ucons_c` | 5016 | 0.07 % | 38 | 0 | 4.9 % |
-| | also without `dev_pre`, `side_c` | 5096 | 0.08 % | 55 | 0 | 4.9 % |
-| noise 0.15 | all | 3949 | 0.20 % | 84 | 3 | 6.1 % |
-| | without the five | 3949 | 0.20 % | 84 | 3 | 6.1 % |
-| second arrival 0.8, noise 0.05 | all | 5069 | 0.09 % | 138 | 5 | 5.9 % |
-| | without `dev_c`, `smooth_c`, `ucons_c` | 5080 | 0.09 % | 149 | 6 | 5.9 % |
-| | also without `dev_pre`, `side_c` | 5156 | 0.09 % | 179 | 8 | 6.9 % |
-| second arrival 1.5, noise 0.05 | all | 2576 | 0.22 % | 99 | 29 | 32.5 % |
-| | without `dev_c`, `smooth_c`, `ucons_c` | 2579 | 0.22 % | 101 | 29 | 32.5 % |
-| | also without `dev_pre`, `side_c` | 3491 | 0.17 % | 229 | 118 | 32.5 % |
-
-In these four cases `dev_c` and `smooth_c` alone changed nothing; `ucons_c` removed 3–11 samples. With a second arrival stronger than the fundamental, 29 accepted samples are more than 5 % off with all screens on.
-
-## 8. Test for the 1-s periodic signal: false and true detections
-
-The fold F test of `clean` ([methods.md](methods.md), section 3) at a significance of 0.1 %, on two sets of synthetic noise without any pulse:
+**1-s periodic signal** (`clean`, [methods.md](methods.md) section 3): the fold F test at a significance of 0.1 %, on synthetic noise without any pulse:
 
 | noise | sampling rate (Hz) | set A (20 records of 6 h each): 1.3.0 → 1.4.0 | set B (200 records each): 1.3.0 → 1.4.0 |
 |---|---|---|---|
@@ -157,102 +94,20 @@ The fold F test of `clean` ([methods.md](methods.md), section 3) at a significan
 | microseism-like | 100 / 250 | 0 → 0 / 0 → 0 | 0 → 0 / 0 → 0 |
 | band-limited | 100 / 250 | 0 → 0 / 3 → 0 | 2 → 0 / 14 → 0 |
 
-For white noise the F test is exact and both versions use the same limit; the one false detection in set A at 250 Hz is the same record in both versions. A pulse of 0.5 times the noise standard deviation once per second: detected in 200 of 200 records of set B (both versions).
+For white noise the F test is exact; the one false detection in set A at 250 Hz is the same record in both versions. A pulse of 0.5 times the noise standard deviation once per second was detected in 200 of 200 records of set B.
 
-## 9. Inter-station distances
+**Inter-station distances**: on the WGS84 ellipsoid (Vincenty 1975). The ratio to the distance on a sphere of radius 6371 km depends on azimuth: at latitude 30° +0.30 % north–south and −0.18 % east–west; near the equator up to +0.56 % north–south. On 200 random pairs the relative difference to ObsPy `gps2dist_azimuth` is below 10⁻⁸ (`tests/test_numerics.py`).
 
-Version 1.4.0 computes distances on the WGS84 ellipsoid (Vincenty 1975). The ratio to the distance on a sphere of radius 6371 km depends on azimuth: at latitude 30° +0.30 % north–south and −0.18 % east–west; near the equator up to +0.56 % north–south. On 200 random pairs the relative difference to ObsPy `gps2dist_azimuth` is below 10⁻⁸ (`tests/test_numerics.py`).
+**The chain runs**: on every change the continuous integration generates raw records (plane waves in a laterally uniform medium, mixed miniSEED and SAC, a station table without header) and runs the chain to the inversion project (`tests/smoke_records.py`); this checks that the steps run, not their accuracy.
 
-## 10. Station diagnosis: injected clock errors
+## 6. Not tested
 
-Version 1.4.0. In the stack file of the three-day areal example, every pair of one station in one sub-stack is shifted by some samples (sign by the order of the pair, the full stack updated accordingly), and the station diagnosis is run. Six trials per shift (different stations and sub-stacks):
-
-| shift | detected | other candidates |
-|---|---|---|
-| 0.5 samples (0.01 s) | 6/6 | 0 in every trial |
-| 1 sample | 6/6 | 0 |
-| 2 samples | 6/6 | 0 |
-| 5 samples | 6/6 | 0 |
-
-Without an injected shift: 0 candidates.
-
-## 11. Instrument responses, SEG-Y input, directional noise
-
-Version 1.4.0, quick example (`make_synthetic.py --quick`: 10 stations, 6 hours), whole chain.
-
-**Two sensor types** (`--responses`): alternate stations recorded through geophones of 2 Hz and 10 Hz natural frequency (damping 0.7), responses given as StationXML.
-
-| | responses removed (`data.response`) | responses not removed |
-|---|---|---|
-| curves exported: pairs of different / of the same sensor type | 23 of 25 / 20 of 20 | 15 of 25 / 20 of 20 |
-| phase velocity: median difference to the true curve; largest at one frequency | +0.39 %; 2.16 % | +0.21 %; 2.23 % |
-
-Without removal the velocities are hardly biased: the phase difference of two sensors shifts the causal and the acausal branch of their correlation the same way in time, and the symmetric component (causal plus time-reversed acausal) cancels it to first order. The pairs with different sensors lose curves instead (15 of 25 against 23 of 25). With noise from one side only this cancellation fails; the rule that stations without response files must be of one model stays.
-
-**SEG-Y without station codes** (unit test `test_segy_input`): three stations, one file each, two hours cut into traces of 300 s (SEG-Y holds at most 32 767 samples per trace), plus one file with three traces at the same time. The 72 traces are named from their file names and joined to 6 station-hours, with and without the archive; the file with three traces at the same time is reported and not used. Before this test such records were taken as one unnamed station and none was cleaned (history.md, v1.4).
-
-**Directional noise** (`--directional F`: a fraction F of the plane waves from azimuth 45° ± 15°, the rest from random azimuths; one run each, 6 hours of record):
-
-| | isotropic (F = 0) | F = 0.4 | F = 0.7 |
-|---|---|---|---|
-| F-J reference: picks; band | (section 5) | 35; 0.30–2.12 Hz | 11; 0.35–0.63 Hz |
-| curves exported | 42 | 36 | 0 |
-| phase velocity: median difference to the true curve; largest at one frequency | +0.33 %; 1.62 % | +0.57 %; 2.19 % | — |
-| median difference of the pairs at 0–30° / 30–60° / 60–90° from the noise direction | +0.25 / +0.33 / +0.27 % | +0.27 / +0.78 / +0.26 % | — |
-
-With F = 0.7 the frequency-Bessel spectrum gives a ridge only at the lowest frequencies, no number of cycles can be fixed in the measurement band, and nothing is exported: the chain gives no curve rather than doubtful ones. The effect of directional noise on the velocities that are exported depends on the source distribution and was tested for this one geometry only.
-
-## 12. Trial runs on real data
-
-Version 1.4.0, run from the raw records on two unpublished nodal arrays (results kept outside the repository; data and station names are not given here).
-
-**A line**: 55 stations, 15.4 km long, 6 days, 200 Hz vertical component, miniSEED.
-
-| | velocity range left at the default 0.1–5 km/s | velocity range given as 1–4 km/s |
-|---|---|---|
-| clean | 457 s | (the same cleaning) |
-| cc | 943 s (lag window ±600 s, 48 GB of hourly files) | 1015 s |
-| stack; station-diagnosis candidates (1.3.0 rule → 1.4.0 rule) | 402 s; 78 → 3 | 83 s; 78 → 4 |
-| reference: band of the F-J picks | 1.68–2.83 Hz | 1.06–3.17 Hz |
-| disp: curves / points exported | 334 / 5620 | 346 / 5665 |
-| inversion: run / evaluate | stopped part-way (see below) | 7995 s (5 projects side by side, 10 iterations; checkerboards at a fixed 2 %), then 7294 s for the 3 checkerboards with the derived noise / 1003 s |
-| travel-time residual, starting → final model (RMS; relative); share kept | — | 130.3 → 102.2 ms; 12.3 → 8.6 %; 0.88 |
-| checkerboards 2.5 / 3.7 / 5.3 km: noise derived from the main fit; largest recovery slope; pattern correlation | — | 4.81 % (relative RMS of the 4943 of 5623 residuals kept); 0.30 / 0.33 / 0.21; 0.28–0.63 (fixed 2 %: 0.31 / 0.34 / 0.21; 0.31–0.62) |
-| starting-model control against the main model (RMS / largest) | — | 0.085 / 0.240 km/s |
-
-- Station diagnosis: under the 1.3.0 rule nearly all 78 candidates were poorly measured time shifts of sub-stacks with low correlation (60 % of the sub-stacks with a correlation below 0.2 were beyond the limit). With the standard-error condition of 1.4.0 what remains are shifts of 0.29–0.61 s that agree between the pairs of a station; two of them appear under both settings.
-- Reference curve: with 1–4 km/s, the tracking rule of 1.3.0 broke where the dispersion is steep (a fall of 7–8 % per 1/12 octave) and continued on an aliased ridge about 15 % too slow; the rule of 1.4.0 (slope limit widening with the frequency step, strongest peak, wavelength at least twice the mean station spacing) follows the continuous ridge of the image up to 3.17 Hz.
-- Dispersion: of the 2753 points accepted under both settings, 97–99 % have the same number of cycles, with a median residual of 0.02–0.04 cycles. With the default range the reference covers only 1.68–2.83 Hz; the extra points accepted there are 7 / 14 / 16 % faster than the common points at 3.2 / 5 / 8 Hz and do not agree with the F-J ridge at 3.2 Hz, so the medians are 4–9 % higher than with the range of the area. A line needs the velocity range of the area ([troubleshooting.md](troubleshooting.md)).
-- Checkerboards of the line: the pattern is recovered only between about 4.5 and 10.5 km along the line, where the stations are dense; at the sparse ends (stations 0.7–1.2 km apart, against 0.08–0.3 km in the middle) nothing is recovered. The slope and correlation are taken over all nodes within 0.3 km of a station, the ends included, which is why they are lower than inside the dense part. The figures are sections along the line (`6_checkerboard_*`).
-- On the fully loaded server each pre-check of the default-range project took about 19 minutes, and its inversion was stopped part-way; the inversion was completed only for the project with the velocity range.
-
-**An areal array**: 166 stations, 8 days, 200 Hz, without the archive (raw files read directly). clean 245 s, cc 3954 s (13695 pairs, ±40 s), stack 210 s, reference 203 s, disp 677 s; 4647 curves exported. The correlation candidates of the station diagnosis concentrate on 4 stations, the same ones found abnormal earlier and independently from their noise power spectra. The F-J spectrum shows one continuous fundamental-mode ridge. Against an existing, independent processing of this array (from a longer record), point by point on the common pairs, the median difference of the phase velocities is about +0.1 %; the detailed numbers are not given because the data are unpublished.
-
-## 13. Not tested
-
-- Response removal on real data (both trial data sets are of one instrument model, without response files; section 11 uses synthetic records); moved nodes are covered by unit tests on constructed records only.
-- The 1-s periodic signal is not tested when the archive is not written (the report marks it as not checked); the areal trial array is known to carry such a signal, which was not removed in this run.
-- SEG-2 input (ObsPy cannot write SEG-2, and no long passive recording was at hand; it goes through the same reading path as SEG-Y); arrays of thousands of stations (the pair-distance limit and the memory estimate were used on small and medium arrays only).
-- Directional noise on real data, and a real higher mode with its own dispersion (the second arrival of section 7 is the fundamental curve scaled by 1.25).
+- The dispersion measurement against a known answer in a 3-D medium with full wave physics (finite-frequency effects, higher modes, directional noise); only the measurement's own derivations and unit tests cover it.
+- Response removal on real data; moved nodes are covered by unit tests on constructed records only.
+- SEG-2 input (it goes through the same reading path as SEG-Y); arrays of thousands of stations.
 - Zone references (`reference.zone_km`) on a medium that needs them.
-- The run-through with an AI assistant described in ai_workflow.md.
 
-## 14. First optimization phase timing (2026-11-13)
+## References
 
-A frozen-source comparison of `e70fbe0` and `8c85a68` uses the same six-hour, 16-station checkerboard records, eight cores and fresh output directories. Both implementations are warmed first; generation is excluded, while confirmations, startup, all pair diagnostics and final figures are included. One warm pass per version on a shared server took **118.96 → 104.55 s**, 12.1% less time. This is an observation for this small example, not a prediction for a larger array.
-
-The dispersion stage, including pair diagnostics, changed from 23 to 7 s. A separate rendering check produced 35 byte-identical PNGs in 22.365 s with one renderer and 4.558 s with eight. Production retains automatic cores and the memory safety plan.
-
-Both workflow runs exported 101 curves / 2233 points with identical quality masks, rejection reasons and cycle assignments. Floating-point values are not bitwise identical: maximum hourly-correlation difference 3.73e-9; maximum phase-velocity difference 2.38e-6 km/s; final model max/RMS difference 2.10e-4 / 1.798e-5 km/s. These are measured differences on this fixture, not universal tolerances. The native-solver comparison uses a different experiment ([python_backends.md](python_backends.md)).
-
-Unrounded timings, code identifiers and protocol are in [the performance record](assets/workflow_performance_summary.json); the scripts and full logs are kept with the development records outside the repository.
-
-## 15. Main figures and whole-workflow optimization (2026-11-13)
-
-The next frozen-source comparison uses `1b58f41` → `2683cd7`, the same six-hour/16-station raw records and fresh outputs. The resource rule selected 14 cores once; only benchmark copies hold this equal budget fixed. Production still uses `resources.cores: auto`. Both versions are warmed first, followed by one measured pass each. Total elapsed time, including startup, synthetic confirmations, all diagnostics and final figures, is **101.26 → 75.05 s**, 25.9% less time (1.35×). Raw-record generation is excluded. The server is shared; differences in stages whose numerical code did not change are ordinary run-to-run variation. These measurements cannot be combined with the previous eight-core result into one cumulative speed ratio.
-
-The final-figures stage changes from 26 to 6 s. A separate rendering check takes 26.830 → 6.501 s for 17 PNGs, with every PNG byte-identical. In the full workflow, every hourly-correlation, stack and dispersion dataset compared is identical (including quality masks and rejection/cycle fields); the final model is identical, and all 17 main PNGs are byte-identical. Main plotting uses 13 one-thread workers under the 14-core budget; the planner estimates 0.671 GB per worker from 107.76 GB available, so memory does not limit this example. Reported worker RSS is a per-process peak, not a simultaneous total or a bound including its GMT subprocess.
-
-The source changes do not alter the 13 numerical `dsurf_*`/solver files, which are byte-identical to the baseline. A representative real-case column profile spends 2.138 of 2.151 s in dispersion calls across three repetitions; allocation and Python dispatch have little remaining share there, so this phase leaves the scientific kernel unchanged. Resource fractions also stay unchanged because no memory scheduling bottleneck was observed.
-
-Verification: **255 tests pass** under Python 3.12 / NumPy 1.26; 127 Python files pass Ruff lint/format. An installed wheel outside the checkout completes all nine steps with NumPy 2.2.6 and automatic resources in 1:48.78, with 101 curves, 2233 points and 17 main figures. This installation check is separate from the warmed benchmark; the full NumPy/Python matrix was not repeated. The public [performance record](assets/workflow_acceptance_performance_summary.json) keeps exact timings and identities; native/Python final-model comparisons are reported separately in [python_backends.md](python_backends.md).
+- Rawlinson, N., & Spakman, W. (2016). On the use of sensitivity tests in seismic tomography. *Geophysical Journal International*, 205, 1221–1243. doi:10.1093/gji/ggw084
+- Vincenty, T. (1975). Direct and inverse solutions of geodesics on the ellipsoid with application of nested equations. *Survey Review*, 23(176), 88–93.

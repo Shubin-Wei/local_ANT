@@ -135,7 +135,7 @@ def step_inversion(cfg):
         auto.reset(cfg, [("inversion", "noise")])
         noise = None
     else:
-        noise = float(inv["noise"])
+        noise = inv["noise"] if isinstance(inv["noise"], (list, tuple)) else float(inv["noise"])
     checks = PROJ.build_checks(cfg, main, d, noise=noise)
     projects = (
         [("checkerboards", n) for n, _ in checks["built"] if not n.startswith(("reg_", "start_"))]
@@ -187,19 +187,25 @@ def check_dirs(cfg):
 
 @records.timed_phase("automatic_noise")
 def checkerboard_noise(cfg, main):
-    """inversion.noise auto: the relative rms of the residuals of the final main model that DSurfTomo's rejection
-    rule keeps (one forward run; kept in work/06_inversion/checkerboard_noise.json while the main model is unchanged)."""
+    """inversion.noise auto: for each period the robust standard deviation (1.4826 MAD, the scale of the rejection
+    rule, inversion.dsurf_system.robust_centre_scale) of the residuals of the final main model, in seconds, so that
+    the synthetic data are as noisy as the real data remain after the inversion (Rawlinson & Spakman 2016).  Per period
+    and in seconds: a phase error grows with the period, not with the path (inversion.dsurf_main.synthetic_data).
+    One forward run; kept in work/06_inversion/checkerboard_noise.json while the main model is unchanged."""
+    from .inversion import dsurf_input, dsurf_system
+
     p = inv_dir(cfg, "checkerboard_noise.json")
-    # Reuse the exact forward request, not a separately cached mtime-only RMS.
     _, R, _ = RUN.evaluate(cfg, main)
-    kept = R[:, 5] != 0
-    rel = (R[kept, 2] - R[kept, 1]) / R[kept, 2]
+    c = dsurf_input.read_control(os.path.join(main, "DSurfTomo.in"))
+    rows = dsurf_input.read_measurements(os.path.join(main, c.datafile), c).row_periods()
+    _, scale = dsurf_system.robust_centre_scale(R[:, 2] - R[:, 1], rows)
+    value = [[float(c.periods_rc[k - 1]), round(float(scale[rows == k][0]), 6)] for k in np.unique(rows)]
+    sig = np.array([s for _, s in value])
     out = dict(
-        value=float(np.sqrt(np.mean(rel**2))),
-        n_kept=int(kept.sum()),
+        value=value,
         n=int(len(R)),
-        reason="relative rms of the %d residuals of the final main model kept by DSurfTomo's rejection rule "
-        "(of %d)" % (int(kept.sum()), len(R)),
+        reason="per period, 1.4826 MAD of the %d residuals of the final main model: %.1f-%.1f ms"
+        % (len(R), 1e3 * sig.min(), 1e3 * sig.max()),
     )
     json.dump(out, open(p, "w"), indent=1)
     return out
@@ -249,8 +255,8 @@ def step_run(cfg, what="all"):
                 "the checkerboards need the finished main project (inversion.noise: auto); main: %s" % why
             )
         nz = checkerboard_noise(cfg, main)
-        print("  checkerboard noise %.4f: %s" % (nz["value"], nz["reason"]), flush=True)
-        auto.write(cfg, {"inversion.noise": dict(value=round(nz["value"], 4), reason=nz["reason"])}, None)
+        print("  checkerboard noise: %s" % nz["reason"], flush=True)
+        auto.write(cfg, {"inversion.noise": dict(value=nz["value"], reason=nz["reason"])}, None)
         built = PROJ.build_checks(cfg, main, inv_dir(cfg), noise=nz["value"], part="checkerboards")
         res2 = _run_batch(cfg, [inv_dir(cfg, "checkerboards", n) for n, _ in built["built"]], main)
         res = dict(
@@ -260,9 +266,7 @@ def step_run(cfg, what="all"):
         )
         res["checkerboard_noise"] = {k: nz[k] for k in ("value", "reason")}
     elif want_checks and check_dirs(cfg):
-        res["checkerboard_noise"] = dict(
-            value=float(cfg["inversion"]["noise"]), reason="inversion.noise in the configuration"
-        )
+        res["checkerboard_noise"] = dict(value=cfg["inversion"]["noise"], reason="inversion.noise in the configuration")
     for d, why in res["invalid"].items():
         print("  %s INVALID, not run: %s" % (d, "; ".join(why)), flush=True)
     if res["failed"]:
@@ -270,7 +274,20 @@ def step_run(cfg, what="all"):
             "%d project(s) failed:\n  " % len(res["failed"])
             + "\n  ".join("%s: %s" % (d, res["results"][d]) for d in res["failed"])
         )
+    # the step stands for every project of the configuration: --what main or checks alone leaves it incomplete
+    res["failed"] = ["%s: not run yet (lant run run)" % d for d in unfinished_projects(cfg)]
     return res
+
+
+def unfinished_projects(cfg):
+    """The projects of the configuration (main and work/06_inversion/checks.json) whose solver has not finished,
+    relative to work/06_inversion; projects the precheck found invalid are left out (they carry their own reason)."""
+    todo = [inv_dir(cfg, "main")]
+    if os.path.exists(inv_dir(cfg, "checks.json")):
+        todo += [inv_dir(cfg, sub, n) for sub, n in json.load(open(inv_dir(cfg, "checks.json")))["projects"]]
+    return [
+        os.path.relpath(d, inv_dir(cfg)) for d in todo if precheck_state(d)[0] is not False and RUN.status(d) != "done"
+    ]
 
 
 @records.timed_phase("prechecks")
@@ -346,7 +363,6 @@ def step_evaluate(cfg):
             meta = json.load(open(os.path.join(d, "project.json")))
             s["controls"][os.path.basename(d)] = dict(
                 weight=meta.get("weight"),
-                damp=meta.get("damp"),
                 rms_km_s=float(np.sqrt(np.nanmean(diff**2))),
                 max_abs_km_s=float(np.nanmax(np.abs(diff))),
                 rms_by_depth={
@@ -436,7 +452,7 @@ def run_step(cfg, name, **kw):
                 inputs=inputs,
             )
             try:
-                from .delivery import write_report
+                from .run_report import write_report
 
                 report.write_step_report(rcfg, name, s, rec)
                 write_report(rcfg)
@@ -456,7 +472,7 @@ def run_step(cfg, name, **kw):
                 inputs=inputs,
             )
             try:
-                from .delivery import write_report
+                from .run_report import write_report
 
                 write_report(cfg)
             except Exception as report_error:

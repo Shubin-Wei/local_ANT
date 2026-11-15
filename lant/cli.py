@@ -2,7 +2,6 @@
 
 Getting started
   lant check                                check the installation (Python packages, GMT)
-  lant demo [--out DIR]                     run a small synthetic array with a known answer (a few minutes)
   lant run all --raw DIR --stations FILE --out DIR
                                             your data: writes OUT/config.yaml and runs the whole chain
 
@@ -157,7 +156,9 @@ def cmd_check(a):
     )
     from importlib.metadata import PackageNotFoundError, version
 
-    if (cfg["plots"]["backend"] if cfg else "gmt") == "pygmt":
+    backend = cfg["plots"]["backend"] if cfg else "gmt"
+    ok &= bool(v) or backend != "gmt"  # the default backend draws the maps and sections with GMT
+    if backend == "pygmt":
         for package in ("pygmt", "rasterio"):
             try:
                 rows.append(("plots.backend pygmt: " + package, version(package)))
@@ -356,7 +357,7 @@ def cmd_run(a):
         cmd, why = manifest.next_action(rc, manifest.status(rc))
         print("\n[lant] %s%s" % (why, "\n  next: " + cmd if cmd else ""))
         if not cmd:
-            from .delivery import finish_lines
+            from .run_report import finish_lines
 
             print("\n".join(finish_lines(rc)))
         if cmd and cmd.startswith("lant confirm"):
@@ -512,12 +513,6 @@ def _reason(text):
     return text
 
 
-def cmd_demo(a):
-    from . import demo
-
-    demo.run(a.out)
-
-
 def main(argv=None):
     from . import __version__
 
@@ -544,10 +539,6 @@ def main(argv=None):
     q.add_argument("--full", action="store_true", help="write all keys with their defaults and sources")
     q = command("check", cmd_check, "check the installation: Python packages, GMT, selected solver")
     q.add_argument("-c", "--config", help="also check optional implementations selected by this configuration")
-    q = command("demo", cmd_demo, "run a small synthetic array with a known answer through the whole chain")
-    q.add_argument(
-        "--out", default="lant-demo", metavar="DIR", help="a new directory for the demo (default: %(default)s)"
-    )
     for name, fn, text in (
         ("validate", cmd_validate, "check the configuration, the station table and the raw directory"),
         ("status", cmd_status, "the state of every step, why, and the next command"),
@@ -608,7 +599,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     if not a.cmd:
         p.print_help()
-        print("\nFirst time: lant check, then lant demo.")
+        print("\nFirst time: lant check, then lant run all --raw DIR --stations FILE --out DIR.")
         return
     _interrupt_on_termination()
     try:

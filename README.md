@@ -9,10 +9,6 @@
 
 [中文](README.zh.md) | English
 
-![Overview of a synthetic test with a known answer](docs/assets/overview.png)
-
-<sub>**Synthetic test with a known answer** (reproducible with `python tools/readme_figure.py`). A random array of 36 stations over a ±6 % chequer pattern of shear velocity with 3-km cells and 2 % incoherent noise. (a) Input pattern and the 612 station pairs used by the inversion. (b) Lateral Vs anomaly recovered by lant at 0.6 km depth. (c) Two-station phase velocities, the reference curve of the array and the true background. (d) True background, 1-D starting model and the horizontal mean and spread of the 3-D model. Recovery weakens towards the edge of the ray coverage; read real models together with their checkerboard tests.</sub>
-
 ## Overview
 
 lant is a command-line workflow for high-frequency ambient-noise tomography with dense arrays (areal arrays and lines). It takes raw continuous records in any directory layout and any format ObsPy reads, and returns a 3-D Vs model with its dispersion data, resolution tests and a report.
@@ -38,7 +34,7 @@ flowchart LR
 | `stack` | Stack and sub-stacks; station diagnosis by leave-one-out correlation and time shift | Stehly et al. (2007); Sens-Schönfelder (2008) |
 | `reference` | Reference phase-velocity curve of the array from its frequency–Bessel spectrum | Wang et al. (2019) |
 | `disp` | Two-station phase velocities with phase-matched filtering, jackknife errors and quality control | Yao et al. (2006); Levshin & Ritzwoller (2001); Bensen et al. (2007) |
-| `inversion`, `run` | 1-D starting model; direct inversion of travel times for 3-D Vs (DSurfTomo, ported to Python) | Fang et al. (2015) |
+| `inversion`, `run` | 1-D starting model; direct inversion of travel times for 3-D Vs (DSurfTomo's method ported to Python, with lant's regularization, rejection and solve) | Fang et al. (2015); [methods](docs/methods.md) 8.3–8.4 |
 | `evaluate`, `figures` | Residuals, checkerboard recovery and control inversions; maps, sections and dispersion figures | Lévêque et al. (1993); Rawlinson & Spakman (2016) |
 
 ## Installation
@@ -53,13 +49,7 @@ lant check                                                   # reports anything 
 
 ## Quick start
 
-Run the whole chain on a synthetic array with a known answer (a few minutes):
-
-```bash
-lant demo --out ~/lant_demo
-```
-
-Then on your own data:
+On your data:
 
 ```bash
 lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
@@ -88,22 +78,47 @@ lant run all -c /data/result/config.yaml       # continues from the first step t
 
 Every file is described in [docs/outputs.md](docs/outputs.md).
 
+## Tests against a known model
+
+A synthetic test at the inversion level ([docs/validation.md](docs/validation.md)): travel times of a known model, a ±6 % checkerboard of 3-km cells on a 1-D background, are computed for a station layout, Gaussian noise of 2.5 % of the period is added, and lant and the original DSurfTomo invert the same input files on the same 8 CPUs. Each uses its own regularization and rejection (lant: weight 1; DSurfTomo: weight 1, damping 1).
+
+| test | inversion | rms error vs truth (start 88.5 / 82.0 m/s) | recovered fraction of the anomaly | time, 8 CPUs |
+|---|---|---:|---:|---:|
+| areal array, 64 stations | **lant** | **31.4 m/s** | 0.82 | **76 s** |
+| | DSurfTomo | 60.0 m/s | 0.44 | 522 s |
+| line, 24 stations | **lant** | **15.3 m/s** | 0.91 | **72 s** |
+| | DSurfTomo | 65.5 m/s | 0.25 | 1522 s |
+
+The test inverts exact travel times with noise; it does not test the measurement of the dispersion, and real data, with measurement and theory errors, can be expected to recover less.
+
+![Vs anomaly at three depths: truth, lant, DSurfTomo and their differences from the truth](docs/assets/compare_model.png)
+
+<sub>Areal array, 64 stations (triangles), 16 223 travel times. Columns: true model, lant, DSurfTomo, lant − truth, DSurfTomo − truth; the dashed line is the convex hull of the stations, inside which the rms errors are taken. Outside the array neither model is constrained by data.</sub>
+
+![Vs anomaly along the line: truth, lant, DSurfTomo and each minus the truth](docs/assets/line_sections.png)
+
+<sub>Line, 24 stations (inverted triangles), 3 143 travel times: Vs anomaly along the line and each model minus the truth, between the end stations.</sub>
+
+![Time per iteration and in total on the same 8 CPUs](docs/assets/compare_runtime.png)
+
+<sub>Areal array: time of each of the 6 iterations and of the whole main project, both pinned to the same 8 CPUs.</sub>
+
 ## Scope and limitations
 
 - Vertical components only (ZZ, fundamental-mode Rayleigh waves); areal arrays and lines (one project per line).
 - The noise field is assumed to be close to isotropic; the bias from directional noise is not tested.
 - Linux only. Station coordinates in longitude and latitude; arrays across the date line or beyond 80° latitude are refused.
-- At most 80 periods; pairs closer than about 200 m carry distance errors from DSurfTomo's single-precision coordinates (kept in the port).
+- At most 60 periods in the 3-D inversion (DSurfTomo's CalSurfG). Station coordinates are single precision, as in DSurfTomo (about 0.4 m); observed and predicted travel times share them, and on the test projects the distances of the pairs that reach the inversion (0.5 km and longer: the wavelength rule removes shorter ones) differ from double precision by at most 0.2 %.
 - Without response files all stations must be of one instrument model; tolerances within a model leave random phase errors of 0.1–1 % of the travel time.
 - The numbers of the synthetic tests are in [docs/validation.md](docs/validation.md).
 
-Everything runs in Python: the inversion is a port of DSurfTomo; how it was compared with the original is in [docs/python_backends.md](docs/python_backends.md).
+Everything runs in Python: the inversion is a port of DSurfTomo whose forward part (fast marching, rays, phase velocities) matches the original, with lant's own regularization, rejection and least-squares solve since 2.0.1; the comparison with the original and every departure from it are in [docs/python_backends.md](docs/python_backends.md).
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [Quick start](docs/quickstart.md) | Installation, a first run on synthetic data, your own data |
+| [Quick start](docs/quickstart.md) | Installation, your own data, where the chain stops for you |
 | [Tutorial](docs/tutorial.md) | Data preparation and every step: purpose, procedure, parameters, what to check |
 | [Methods](docs/methods.md) | Principles, formulas, sources and conditions of validity |
 | [Parameters](docs/parameters.md) | Every configuration key: default, meaning, basis |

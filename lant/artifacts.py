@@ -124,12 +124,23 @@ def register(cfg, before):
     atomic_text(Path(records.rec_dir(cfg)) / "artifacts.json", json.dumps(previous, indent=1) + "\n")
 
 
+def _modified(current, owned):
+    return sorted(p for p in owned if p in current and owned[p] != current[p] and p not in INTERNAL)
+
+
+def modified(cfg):
+    """Registered files whose size or modification time changed since lant wrote them; empty while a write command
+    is under way or was interrupted (its files are registered when it ends or is recovered)."""
+    if interrupted(cfg) is not None:
+        return []
+    return _modified(snapshot(cfg), load(cfg))
+
+
 def audit(cfg: dict) -> dict:
     current, owned = snapshot(cfg), load(cfg)
     unknown = sorted(p for p in current if p not in owned and p not in INTERNAL)
     missing = sorted(p for p in owned if p not in current)
-    changed = sorted(p for p in owned if p in current and owned[p] != current[p] and p not in INTERNAL)
-    return dict(unregistered=unknown, missing=missing, modified=changed, scratch=scratch_usage(cfg))
+    return dict(unregistered=unknown, missing=missing, modified=_modified(current, owned), scratch=scratch_usage(cfg))
 
 
 def _pending(cfg):
@@ -266,7 +277,7 @@ def cleanup_plan(cfg, selection):
 def clean(cfg: dict, selection, execute: bool = False) -> dict:
     """Delete registered, unchanged caches only after scientific products are complete."""
     from . import manifest, report
-    from .delivery import write_report
+    from .run_report import write_report
 
     check_roots(cfg)
     if not execute:

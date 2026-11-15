@@ -219,7 +219,7 @@ def _design_project(tmp_path, spacing_deg, periods, velocity):
     recs, T = project.records_from_curves(curves, 60)
     info = project.write_surfdata(recs, str(tmp_path / "surfdata.dat"))
     g = project.grid(info["stations"], (spacing_deg / 2, spacing_deg / 2))
-    inv = dict(weight=1, damp=1, sublayers=3, vmin=1, vmax=4, iterations=1, sparsity=0.1, threshold=3)
+    inv = dict(weight=1, vmin=1, vmax=4, iterations=1, outlier_mad=3)
     project.write_in(str(tmp_path / "DSurfTomo.in"), g, 6, info["nsrc"], inv, T)
     return str(tmp_path)
 
@@ -274,19 +274,19 @@ def test_regularization_controls_carry_their_weight(tmp_path):
     main = solver_project(tmp_path / "main")
     z = np.array([0, 0.1, 0.3, 1, 3])
     np.savetxt(main / "vs1d.txt", np.c_[z, [2, 2.2, 2.6, 3.1, 3.5]])
-    meta = dict(grid=project.grid([(30, 100), (30.01, 100.02)], (0.01, 0.01)), weight=1.4, damp=1.0)
+    meta = dict(grid=project.grid([(30, 100), (30.01, 100.02)], (0.01, 0.01)), weight=1.4)
     (main / "project.json").write_text(json.dumps(meta))
     cfg = config.defaults()
-    cfg["checks"].update(checkerboards=[], vertical=[], controls=["reg_x0.5", "reg_w2_d0.5"])
+    cfg["checks"].update(checkerboards=[], vertical=[], controls=["reg_x0.5", "reg_w2"])
     built = project.build_checks(cfg, str(main), str(tmp_path / "checks"))
-    assert [n for n, _ in built["built"]] == ["reg_x0.5", "reg_w2_d0.5"]
-    for name, w, d in (("reg_x0.5", 0.7, 1.0), ("reg_w2_d0.5", 2.0, 0.5)):
+    assert [n for n, _ in built["built"]] == ["reg_x0.5", "reg_w2"]
+    for name, w, d in (("reg_x0.5", 0.7, 0.0), ("reg_w2", 2.0, 0.0)):
         c = tmp_path / "checks" / "controls" / name
         line = next(ln for ln in (c / "DSurfTomo.in").read_text().splitlines() if "c: weight damp" in ln)
         assert [float(x) for x in line.split()[:2]] == [w, d]
         m = json.loads((c / "project.json").read_text())
-        assert (m["weight"], m["damp"], m["control"]) == (w, d, name)
-    for bad in ("reg_x0", "reg_xabc", "reg_w1"):
+        assert (m["weight"], m["control"]) == (w, name) and "damp" not in m
+    for bad in ("reg_x0", "reg_xabc", "reg_w0"):
         cfg["checks"]["controls"] = [bad]
         with pytest.raises(RuntimeError, match="needs a positive number"):
             project.build_checks(cfg, str(main), str(tmp_path / "bad"))
@@ -294,7 +294,7 @@ def test_regularization_controls_carry_their_weight(tmp_path):
 
 def test_grid_spacing_is_a_third_of_the_median_wavelength():
     """inversion.grid_spacing_deg auto: the final cell is the median c T / 3 km in both directions (longitude
-    widened by 1 / cos(latitude)), two significant digits; the coarse spacing is grid_refine times it."""
+    widened by 1 / cos(latitude)), two significant digits."""
     import math
 
     from lant.inversion.project import KM_PER_DEG, grid_spacing, median_wavelength
@@ -302,7 +302,44 @@ def test_grid_spacing_is_a_third_of_the_median_wavelength():
     recs = [dict(values={0.5: 2.0, 1.0: 2.4}), dict(values={0.5: 1.8, 2.0: 3.0})]  # c T: 1.0, 2.4, 0.9, 6.0
     assert median_wavelength(recs) == pytest.approx(1.7)
     pts = [(60.0, 10.0), (60.0, 10.1)]
-    (dlat, dlon), why = grid_spacing(recs, pts, 2)
-    assert dlat == pytest.approx(2 * float("%.2g" % (1.7 / 3 / KM_PER_DEG)))
-    assert dlon == pytest.approx(2 * float("%.2g" % (1.7 / 3 / KM_PER_DEG / math.cos(math.radians(60)))))
+    (dlat, dlon), why = grid_spacing(recs, pts)
+    assert dlat == pytest.approx(float("%.2g" % (1.7 / 3 / KM_PER_DEG)))
+    assert dlon == pytest.approx(float("%.2g" % (1.7 / 3 / KM_PER_DEG / math.cos(math.radians(60)))))
     assert "/ 3" in why
+
+
+def test_inversion_periods_on_the_coarser_grid():
+    """inversion.per_octave 4 of 12 measured per octave: every third frequency of the grid through 1 Hz."""
+    f = 2.0 ** (np.arange(-24, 13) / 12)  # 0.25-2 Hz
+    keep = project.on_coarse_grid(1 / f, 12, 4)
+    assert np.allclose(np.log2(f[keep]) * 4, np.round(np.log2(f[keep]) * 4)) and keep.sum() == 13
+    assert project.on_coarse_grid(1 / f, 12, 12).all() and project.on_coarse_grid(1 / f, 12, 24).all()
+    curves = [
+        dict(name="A_B", lat1=30.0, lon1=100.0, lat2=30.05, lon2=100.02, T=1 / f[:7], v=np.full(7, 2.5)),
+        dict(name="A_C", lat1=30.0, lon1=100.0, lat2=30.06, lon2=100.0, T=1 / f[1:3], v=np.full(2, 2.5)),
+    ]
+    recs, periods = project.records_from_curves(curves, 60, (12, 4))
+    assert [r["name"] for r in recs] == ["A_B"]  # A_C has no period on the coarse grid
+    assert np.allclose(sorted(1 / np.array(periods)), f[[0, 3, 6]], rtol=1e-5)
+
+
+def test_main_project_alone_leaves_the_run_step_incomplete(tmp_path, monkeypatch):
+    """lant run run --what main: the checks of the configuration have not run, so the step is not done."""
+    import json
+    import os
+
+    from lant import auto, config, pipeline
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    monkeypatch.setattr(auto, "noise_is_auto", lambda cfg: False)  # a fixed noise: checkerboards built in advance
+    main = pipeline.inv_dir(cfg, "main")
+    os.makedirs(main)
+    open(os.path.join(main, "DSurfTomo.in"), "w").write("")
+    json.dump(dict(projects=[["checkerboards", "cb_1"]]), open(pipeline.inv_dir(cfg, "checks.json"), "w"))
+    monkeypatch.setattr(pipeline, "_run_batch", lambda cfg, dirs, main: dict(results={}, failed=[], invalid={}))
+    monkeypatch.setattr(pipeline.RUN, "status", lambda d: "done" if d == main else "missing")
+    res = pipeline.step_run(cfg, what="main")
+    assert res["failed"] == ["checkerboards/cb_1: not run yet (lant run run)"]
+    monkeypatch.setattr(pipeline.RUN, "status", lambda d: "done")
+    assert pipeline.step_run(cfg, what="checks")["failed"] == []

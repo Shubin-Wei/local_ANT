@@ -33,7 +33,7 @@ from .model_evaluation import read_model as read_model
 from .model_evaluation import residual_stats as residual_stats
 from .model_evaluation import residuals as residuals
 
-INPUTS = ("DSurfTomo.in", "MOD", "MOD.true", "surfdata.dat")
+INPUTS = ("DSurfTomo.in", "MOD", "MOD.true", "surfdata.dat", "noise_seconds.txt")  # the last: dsurf_main.NOISE_FILE
 BUILT = INPUTS + ("vs1d.txt", "project.json")
 
 

@@ -60,7 +60,7 @@ lant status -c OUT/config.yaml --json                        # 2. 每次停下�
 | stack | `candidates.txt`、`results/figures/2_station_qc.png` | 候选多于偶然期望数（1 个）时流程停下：给使用者看，由使用者决定剔不剔；只有 1 个时只在报告里列出 |
 | reference | `3_fj_phase_velocity.png`：脊是否连续、是不是最慢的那一支；实测速度与 `velocity_range_kms` 的比较 | 可能是高阶：说明理由，建议 `track_fundamental`、缩小速度范围或借用曲线，由使用者定 |
 | disp | 接受的点数、按原因统计的拒绝数、`3_dispersion_curves.png`、`median_vs_reference.txt` | 点很少：报告是哪条判据拒的，不擅自放宽 |
-| inversion | `4_start_model.png`、`4_kernels.png`、周期数、深度节点 | 周期超过求解器上限：按提示改 `per_octave` |
+| inversion | `4_start_model.png`、`4_kernels.png`、周期数、深度节点 | 周期超过求解器上限：按提示改 `inversion.per_octave` |
 | run、evaluate | 预检保留比例、残差、棋盘恢复、对照差 | 主工程预检无效：停下汇报 |
 | figures | 切片、剖面 | 汇报时同时给棋盘图 |
 

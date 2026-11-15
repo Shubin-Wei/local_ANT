@@ -50,6 +50,61 @@ def reject(residuals, q25, q75, threshold):
     return weights, r
 
 
+MAD_SCALE = 1.4826  # MAD x 1.4826 estimates the standard deviation of normal data (Rousseeuw & Croux 1993)
+# Rows a period needs for its own median and MAD; fewer: the nearest periods are pooled with it until there are
+# this many.  The MAD scale of n normal values has a standard error of about 1.16 sigma / sqrt(n) (its asymptotic
+# efficiency is 37 %, Rousseeuw & Croux 1993), about 25 % at 20 rows.
+MAD_MIN_ROWS = 20
+
+
+def robust_centre_scale(residuals, groups=None, min_rows=MAD_MIN_ROWS):
+    """Median and 1.4826 MAD of the residuals, per group (period) when groups is given -> two arrays, one value per
+    residual.  A group with fewer than min_rows residuals takes the nearest groups (in group order) as well."""
+    r = np.asarray(residuals, np.float64)
+    if groups is None:
+        med = np.median(r) if r.size else 0.0
+        return np.full(r.size, med), np.full(r.size, MAD_SCALE * np.median(np.abs(r - med)) if r.size else 0.0)
+    g = np.asarray(groups)
+    keys, inverse, counts = np.unique(g, return_inverse=True, return_counts=True)
+    centre, scale = np.zeros(r.size), np.zeros(r.size)
+    for i in range(len(keys)):
+        lo = hi = i
+        while counts[lo : hi + 1].sum() < min_rows and (lo > 0 or hi < len(keys) - 1):
+            # widen towards the side whose next group is nearer in group order; on a tie both
+            below = keys[i] - keys[lo - 1] if lo > 0 else np.inf
+            above = keys[hi + 1] - keys[i] if hi < len(keys) - 1 else np.inf
+            if below <= above:
+                lo -= 1
+            if above <= below:
+                hi += 1
+        pool = r[(inverse >= lo) & (inverse <= hi)]
+        med = np.median(pool)
+        centre[inverse == i] = med
+        scale[inverse == i] = MAD_SCALE * np.median(np.abs(pool - med))
+    return centre, scale
+
+
+def reject_mad(residuals, k, groups=None, min_rows=MAD_MIN_ROWS):
+    """lant's rejection (replaces main.f90's): a travel-time residual further than k x 1.4826 x MAD from the median
+    gets weight 0 and residual 0 (median absolute deviation; Rousseeuw & Croux 1993, JASA 88, 1273-1283; k = 3,
+    'very conservative', Leys et al. 2013, J. Exp. Soc. Psychol. 49, 764-766).  Centred on the median and
+    symmetric: DSurfTomo's rule (outside threshold x [q25, q75] of the signed residuals) is neither, and on a
+    synthetic checkerboard with 1 % noise it dropped 12 % of the data, mostly the pattern's own signal.
+
+    groups: the period of each residual.  The rule assumes the residuals share one distribution, but a phase error
+    becomes a travel-time error proportional to the period (t = -(phi - phi0) / omega): on lant's areal synthetic
+    example the robust spread rose from 7 ms at 0.21 s to 19 ms at 0.84 s, and one MAD of all periods took 77 of
+    its 96 rejections from the longest third of the periods.  The median and the MAD are therefore taken per period
+    (robust_centre_scale).  -> (weights, residuals with rejected entries set to 0)."""
+    r = np.asarray(residuals, F).copy()
+    centre, scale = robust_centre_scale(r, groups, min_rows)
+    out = (np.abs(r.astype(np.float64) - centre) > k * scale) & (scale > 0)
+    weights = np.ones(len(r), F)
+    weights[out] = F(0.0)
+    r[out] = F(0.0)
+    return weights, r
+
+
 @njit(cache=True)
 def _dws(cols, values, n):
     norm = np.zeros(n, np.float32)

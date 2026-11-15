@@ -15,10 +15,6 @@ For every pair of the stack:
     it is biased when the group delay changes inside the filter band (the systematic error of Shapiro & Singh 1999
     for group velocities has the same origin).  phi0 = pi/4: far-field phase of the 2-D Green's function (Lin et
     al. 2008 eq. 7);
-  * a frequency is not measured where the amplitude spectrum of the coherent signal (all pairs together; signal
-    window minus the later lags, so that it does not depend on the noise level) at that frequency is below
-    qc.band_edge (0.5 = -6 dB) of its mean over the filter band: the filter then passes mostly energy of other
-    frequencies (the edge of the band the noise sources excite; band_amplitude);
   * cycle count fixed at the lowest frequency of each contiguous band where the path is between lam_c and
     anchor_max reference wavelengths long, then followed upwards on a 48/octave grid with the measured group
     slowness (AFTAN phtovel.f); tracking stops at the first phase slip (> 0.3 cycle);
@@ -217,54 +213,6 @@ def matched_phase(sig, fs, ffine, tg_fine, alpha, phi0, taper_s=1.0):
     return tp[0] if single else tp
 
 
-def excess_spectrum(sym, dist, fs, maxlag, vmin, fmin):
-    """Sum over the pairs of the excess energy spectrum of the symmetric correlations sym [npair, nt] (lags 0 ..
-    maxlag): the spectrum of the signal window (|t| up to the arrival at vmin plus two periods of fmin, the window
-    of the SNR) minus that of the later lags (noise) scaled to the same length.  Incoherent noise, which is the
-    same at every lag, cancels in the mean, so the result does not depend on how much data were stacked."""
-    nt = sym.shape[1]
-    t = np.arange(nt) / fs
-    nfft = int(2 ** np.ceil(np.log2(max(4 * nt, 4096))))
-    E = np.zeros(nfft // 2 + 1)
-    for q in range(len(sym)):
-        t1 = min(dist[q] / vmin + 2.0 / fmin, 0.85 * maxlag)
-        ws = np.where(
-            t <= 0.8 * t1, 1.0, np.where(t < t1, 0.5 + 0.5 * np.cos(np.pi * (t - 0.8 * t1) / (0.2 * t1)), 0.0)
-        )
-        late = t >= t1
-        wn = np.zeros(nt)
-        wn[late] = np.hanning(late.sum())
-        Fs = np.fft.rfft(sym[q] * ws, n=nfft)
-        Fn = np.fft.rfft(sym[q] * wn, n=nfft)
-        # the correlation is even in lag: the two-sided signal window has the real spectrum 2 Re(Fs) - x(0)
-        E += (2 * Fs.real - sym[q, 0]) ** 2 - 2 * np.abs(Fn) ** 2 * (2 * (ws**2).sum() - 1) / (2 * (wn**2).sum())
-    return E
-
-
-def band_amplitude(stack_path, idx, freqs, alpha, vmin, block=500):
-    """Band-edge measure of every frequency, from all the pairs idx of the stack together: the amplitude of the
-    coherent signal (square root of the excess energy spectrum, excess_spectrum) at the frequency (mean over a
-    band a quarter as wide as the measurement filter) relative to its mean over the measurement filter.  Near 1
-    inside the band the noise excites, falling towards 0 beyond its edge."""
-    with h5py.File(stack_path, "r") as h:
-        fs, maxlag = float(h.attrs["fs"]), float(h.attrs["maxlag"])
-        dist = h["dist_km"][:]
-        E = 0.0
-        for i in range(0, len(idx), block):
-            j = idx[i : i + block]
-            pos, neg = S.branches(h["stack"][j].astype(np.float64), fs, maxlag)
-            E = E + excess_spectrum(0.5 * (pos + neg), dist[j], fs, maxlag, vmin, freqs[0])
-    A = np.sqrt(np.clip(E, 0.0, None))
-    f = np.fft.rfftfreq(2 * (len(A) - 1), 1 / fs)
-    out = np.full(len(freqs), np.nan)
-    for k, fc in enumerate(freqs):
-        x = ((f - fc) / fc) ** 2
-        wide, narrow = np.exp(-alpha * x), np.exp(-16 * alpha * x)
-        if narrow.sum() > 0 and (A * wide).sum() > 0:
-            out[k] = (A * narrow).sum() / narrow.sum() / ((A * wide).sum() / wide.sum())
-    return out
-
-
 def track_phase(tp0, dist, ffine, c_ref_f, start, stop, slip=0.3, tg_f=None):
     """Cycle count at `start` from c_ref, then the phase followed upward with the measured group slowness
     (w(k) tp(k) = w(k-1) tp(k-1) + (tg(k) + tg(k-1)) / 2 (w(k) - w(k-1)); AFTAN phtovel.f) until a slip."""
@@ -306,7 +254,6 @@ def process_chunk(task):
         dcount = h["daily_count"][:, idx].astype(np.float64)
     dist = G["dist"][idx]
     npair = len(idx)
-    band_amp = G["band_amp"]
     res = {k: np.full((npair, nf), np.nan, np.float32) for k in DATA_KEYS}
     res["reason"] = np.zeros((npair, nf), np.int32)
     res["ok_c"] = np.zeros((npair, nf), bool)
@@ -345,12 +292,11 @@ def process_chunk(task):
             continue
         vg, side = pick_group(img, u_ref, valid, segs, support)
         snr = at_pick(img, vg)  # the SNR of the picked arrival, not of the strongest one
-        # jackknife groups from this pair's own sub-stacks with data, dealt out in turn
+        # jackknife groups: this pair's own sub-stacks with data, in contiguous time blocks
         with h5py.File(G["stack"], "r") as h:
             daily = h["daily"][:, idx[q]].astype(np.float64)
         total = (daily * dcount[:, q, None]).sum(axis=0)
-        have = np.where(dcount[:, q] > 0)[0]
-        groups = [have[g :: G["njack"]] for g in range(G["njack"])]
+        groups = jackknife_groups(np.where(dcount[:, q] > 0)[0], G["njack"])
         subsets = []
         for g in groups:
             w = tot_w[q] - dcount[g, q].sum()
@@ -431,12 +377,10 @@ def process_chunk(task):
             u_from_c = vc / (1.0 - dlnc)
             ucons = np.abs(u_from_c - vg) / vg <= QC["ucons_c"]
             jk_ok = jk_c <= QC["jk_c_rel"] * vc
-            band_ok = ~(band_amp < G["band_edge"])
-            ok0 = pre & np.isfinite(vc) & jk_ok & ucons & band_ok
+            ok0 = pre & np.isfinite(vc) & jk_ok & ucons
         tracked = pre & np.isfinite(anchor_run)
         reason[tracked & ~np.isfinite(vc)] |= RS["phase_slip"]
         meas = pre & np.isfinite(vc)
-        reason[meas & ~band_ok] |= RS["off_band"]
         reason[meas & ~jk_ok] |= RS["jackknife"]
         reason[meas & ~ucons] |= RS["group_phase"]
         ok_c = S.contiguous(ok0, QC["min_run"])
@@ -444,6 +388,14 @@ def process_chunk(task):
         res["vc"][q], res["jk_c"][q], res["ok_c"][q], res["u_from_c"][q] = vc, jk_c, ok_c, u_from_c
         res["reason"][q] = np.where(ok_c, 0, reason)
     return idx, res
+
+
+def jackknife_groups(have, njack):
+    """The sub-stacks with data (indices in time order) in njack contiguous blocks of nearly equal size (block
+    jackknife, Künsch 1989): each group left out removes one stretch of time, so the spread of the delete-a-group
+    measurements includes what changes with time (the noise sources), as Bensen et al. (2007) estimate the error from
+    stacks over different times.  Groups dealt out in turn would each span the whole record and share those changes."""
+    return np.array_split(np.asarray(have), njack)
 
 
 def auto_njack(stack_path):
@@ -503,7 +455,6 @@ def measure(cfg, stack, reference, out):
             snr_c=q["snr_c"], snr_g=q["snr_g"], jk_c_rel=q["jk_c_rel"], side_c=q["side_c"], min_run=d["qc"]["min_run"]
         ),
         qc_off=qc_off,
-        band_edge=float(q["band_edge"]),
     )
     with h5py.File(stack, "r") as h:
         pairs = np.array([p.decode() for p in h["pairs"][:]])
@@ -513,8 +464,6 @@ def measure(cfg, stack, reference, out):
     init_worker(opt)
     ref = G["ref"]
     freqs = ref["freqs"]
-    # one band-edge measure for the whole array (it must not depend on how the pairs are split among the workers)
-    opt["band_amp"] = band_amplitude(stack, all_idx, freqs, d["alpha"], float(VEL[0]))
     nf = len(freqs)
     zone = np.full(len(pairs), -1, int)
     zp = os.path.join(os.path.dirname(reference), "zones.npz")
@@ -555,7 +504,6 @@ def measure(cfg, stack, reference, out):
         h.create_dataset("ref_support", data=ref["ref_support"])
         h.create_dataset("side_off", data=off_band_mask(freqs, d["side_off_bands"]))
         h.create_dataset("vel_axis", data=VEL)
-        h.create_dataset("band_amp", data=opt["band_amp"])
         h.create_dataset("zone", data=zone)
         h.create_dataset("pairs", data=pairs.astype("S"))
         h.create_dataset("dist_km", data=dist)

@@ -266,7 +266,8 @@ def _confirm(cfg, step, exclude_candidates=False, reason=None, invocation=None):
 def confirm(cfg, step, exclude_candidates=False, reason=None, invocation=None):
     """Serialize configuration changes and bind decisions to current results."""
     from . import artifacts, records
-    from .delivery import append_note, write_report
+    from .delivery import append_note
+    from .run_report import write_report
 
     with artifacts.writing(cfg, "confirm"):
         entry, rerun = _confirm(cfg, step, exclude_candidates, reason, invocation)

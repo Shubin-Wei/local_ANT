@@ -276,15 +276,6 @@ DOC = {
         "accepted samples need a path of this many of their own wavelengths (Bensen "
         "et al. 2007 use 3; Luo et al. 2015 show 1 can be enough)",
     ),
-    "dispersion.qc.band_edge": (
-        "choice",
-        "a frequency is not measured where the amplitude spectrum of the "
-        "coherent signal (all pairs together; signal window minus the later lags, so "
-        "that the noise level does not matter) is below this fraction of its mean "
-        "over the filter band (0.5 = -6 dB, the usual definition of a band edge): "
-        "beyond the band the noise excites, the filter passes only energy of other "
-        "frequencies (0 = not applied)",
-    ),
     "dispersion.qc.min_run": ("empirical", "accepted samples must form runs of at least this many frequencies"),
     "dispersion.qc.snr_g": ("empirical", "first gate: the largest SNR of a frequency must reach this"),
     # ------------------------------------------------------------------ export
@@ -310,11 +301,9 @@ DOC = {
     "inversion.fine_zmax_km": ("choice", "see fine_step_km"),
     "inversion.grid_spacing_deg": (
         "rule",
-        "grid spacing [lat, lon] of the coarse grid; auto (set by the inversion step): the final cell is the median "
-        "measured wavelength c T / 3 km in both directions (user's rule; the lateral resolution is about a "
-        "wavelength), times grid_refine",
+        "grid spacing [lat, lon]; auto (set by the inversion step): the median measured wavelength c T / 3 km in both "
+        "directions (user's rule; the lateral resolution is about a wavelength)",
     ),
-    "inversion.grid_refine": ("empirical", "every grid interval is divided by this once the extent is fixed"),
     "inversion.line_strip_cells": ("empirical", "lines: cells kept on each side of the stations across the line"),
     "inversion.start_model.source": ("choice", "invert: 1-D model from this array's average curve; file: depth Vs"),
     "inversion.start_model.file": ("choice", "the starting model of your own (two columns: depth km, Vs km/s)"),
@@ -324,35 +313,40 @@ DOC = {
     "inversion.start_model.minthk": ("technical", "1-D forward: sublayers per node interval"),
     "inversion.weight": (
         "empirical",
-        "DSurfTomo smoothing weight (Fang et al. 2015), fixed; default 1, calibrated with damp 0.1 on lant's areal "
-        "and line synthetic examples (smallest rms error against the true model, methods.md 8.4); checks inherit it",
+        "smoothing weight of lant's regularization (methods.md 8.4): the Laplacian of the model itself, as a mean "
+        "over the parameters, against the mean squared travel-time residual, so that it does not change with the "
+        "number of travel times or nodes (units s per km/s); default 1, calibrated on the areal waveform synthetic used to develop 2.0.1 "
+        "(smallest error of the model against the true one; lines not calibrated)",
     ),
-    "inversion.damp": (
-        "empirical",
-        "DSurfTomo damping, fixed: it limits the size of the model update of each iteration (LSMR damping); default "
-        "0.1 (the DSurfTomo manual's example), calibrated on lant's synthetic examples: 1 held the updates to a few "
-        "hundredths of a km/s, below 0.1 little changes (methods.md 8.4)",
-    ),
-    "inversion.sublayers": ("literature", "DSurfTomo: sublayers between depth nodes for the kernels (its manual: 2-5)"),
     "inversion.vmin": ("rule", "lower Vs bound; auto: 0.6 x the slowest Vs of the starting model"),
     "inversion.vmax": ("rule", "upper Vs bound; auto: 1.4 x the fastest"),
-    "inversion.iterations": ("empirical", "DSurfTomo iterations"),
-    "inversion.sparsity": (
-        "rule",
-        "DSurfTomo: fraction of its matrix reserved for nonzero entries; auto: twice the "
-        "filling estimated from the paths and the grid, at least 0.05 (too little makes "
-        "DSurfTomo stop with a segmentation fault; more only costs memory)",
-    ),
-    "inversion.threshold": (
+    "inversion.iterations": (
         "empirical",
-        "DSurfTomo: keep signed residuals within threshold x [q25, q75]; not IQR fences",
+        "iterations of the 3-D inversion (rays, kernels and the least-squares update each time); 6, the number the "
+        "smoothing weight was calibrated with (methods.md 8.4): with the regularization of the model itself the "
+        "model settles, on the areal synthetic example the residual changed by less than 1 % after the third",
+    ),
+    "inversion.per_octave": (
+        "rule",
+        "periods per octave in the 3-D inversion: the measured periods on this coarser grid (through 1 Hz, every "
+        "dispersion.per_octave / this-th one).  The Gaussian filter of the measurement (dispersion.alpha) averages "
+        "over a band of about an octave: two filters 1/12 octave apart share exp(-alpha x^2 / 2) = 99 % of their "
+        "energy (x = 2^(1/12) - 1, alpha = 5), 1/4 octave apart still 92 %, so the left-out periods add little that "
+        "is independent while the travel times and kernels cost in proportion to the number of periods",
+    ),
+    "inversion.outlier_mad": (
+        "literature",
+        "travel times whose residual is further than this x 1.4826 MAD from the median residual of their period get no "
+        "weight in the iteration (median absolute deviation, Rousseeuw & Croux 1993; 3 = 'very conservative', Leys et "
+        "al. 2013; per period because the travel-time error grows with the period)",
     ),
     "inversion.noise": (
         "rule",
-        "Gaussian noise added to the synthetic travel times of the checkerboards, a fraction of "
-        "each time; auto: the relative rms of the residuals of the final main model that "
-        "DSurfTomo's rejection rule keeps, so that the synthetic data are as noisy as the real "
-        "data fit (Rawlinson & Spakman 2016); the checkerboards then run after the main project",
+        "Gaussian noise added to the synthetic travel times of the checkerboards: a number is a fraction of each "
+        "time (DSurfTomo's noiselevel), a list [[period s, standard deviation s], ...] the noise of each period; auto: "
+        "per period, 1.4826 MAD of the residuals of the final main model in seconds, so that the synthetic data are as "
+        "noisy as the real data fit (Rawlinson & Spakman 2016; per period because a phase error grows with the "
+        "period, not with the path); the checkerboards then run after the main project",
     ),
     # ------------------------------------------------------------------ checks
     "checks.checkerboards": (
@@ -373,16 +367,12 @@ DOC = {
     "checks.controls": (
         "empirical",
         "control inversions: reg_x<f> the smoothing weight times f (stability of the model under the choice of the "
-        "weight), reg_w<w>_d<d> given weight and damping, start_grad<f> other starting model",
+        "weight), reg_w<w> a given weight, start_grad<f> other starting model",
     ),
     "checks.precheck.min_kept": (
         "empirical",
-        "a project is invalid when DSurfTomo's rejection rule would keep less "
-        "than this fraction of the data in the first iteration",
-    ),
-    "checks.precheck.max_median_iqr": (
-        "empirical",
-        "... or when the median residual is beyond this many interquartile ranges",
+        "a project is invalid when the rejection (inversion.outlier_mad) would keep less than this fraction of its "
+        "data in the first iteration",
     ),
     "checks.iteration_residuals": ("choice", "also evaluate the model of every iteration (one forward run each)"),
     # ------------------------------------------------------------------ plots

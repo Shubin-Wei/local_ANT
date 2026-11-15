@@ -95,6 +95,23 @@ def day_files(cfg):
     return have
 
 
+CHUNK_BYTES = 64 * 2**20  # the largest HDF5 chunk of the sub-stacks: older HDF5 libraries refuse chunks of 4 GiB
+
+
+def daily_chunks(npair, nt):
+    """Chunks of the sub-stack dataset [block, pair, lag]: one block, whole correlations, as many pairs as fit into
+    CHUNK_BYTES.  Above the 1 MiB chunk cache a pair is read straight from its chunk, as from one chunk of every
+    pair before (the reads of disp and station_qc take pairs across all blocks)."""
+    return (1, int(max(1, min(npair, CHUNK_BYTES // (4 * nt)))), nt)
+
+
+def memory_estimate(npair, nt, nblk, nday):
+    """Peak bytes of build_stack: the sum of every hour (float64), the sub-stacks of one day and their quotient
+    (float32), one hour of a day file read and selected (float32, twice), the counts per sub-stack (int32), and an
+    empirical 400 MB for Python and the libraries.  A scheduling estimate, not an RSS bound."""
+    return 400e6 + 8.0 * npair * nt + 8.0 * nblk * npair * nt + 8.0 * npair * nt + 4.0 * nday * npair
+
+
 def build_stack(cfg, out, exclude_hours=None, block_hours=None):
     """Stack the hourly files -> out.  exclude_hours: {(day, hour): set(stations)} removed before stacking."""
     stations = D.used_stations(cfg)
@@ -119,7 +136,9 @@ def build_stack(cfg, out, exclude_hours=None, block_hours=None):
 
     from . import resources
 
-    threads = resources.plan(cfg, 1, None, "stack: pairs of an hour, in parallel")["threads_each"]
+    threads = resources.plan(cfg, 1, memory_estimate(npair, nt, nblk, nday), "stack: pairs of an hour, in parallel")[
+        "threads_each"
+    ]
     previous = numba.get_num_threads()
     numba.set_num_threads(max(1, min(threads, numba.config.NUMBA_NUM_THREADS)))
     total = np.zeros((npair, nt), np.float64)
@@ -128,7 +147,7 @@ def build_stack(cfg, out, exclude_hours=None, block_hours=None):
     days = []
     tmp = out + ".tmp"
     ho = h5py.File(tmp, "w")
-    dset = ho.create_dataset("daily", (nday, npair, nt), np.float32, chunks=(1, npair, nt))
+    dset = ho.create_dataset("daily", (nday, npair, nt), np.float32, chunks=daily_chunks(npair, nt))
     for fi, f in enumerate(files):
         daily = np.zeros((nblk, npair, nt), np.float32)  # the sub-stacks of this day only: written, then freed
         day = os.path.basename(f)[4:11]
@@ -206,7 +225,7 @@ def exclude_station_days(stack_path, bad_list, out):
                     cnt[k, i] = 0
         npair, nlag = h["stack"].shape
         acc = np.zeros((npair, nlag), np.float64)
-        dd = o.create_dataset("daily", (len(days), npair, nlag), np.float32, chunks=(1, npair, nlag))
+        dd = o.create_dataset("daily", (len(days), npair, nlag), np.float32, chunks=daily_chunks(npair, nlag))
         for k in range(len(days)):
             x = h["daily"][k]
             x[cnt[k] == 0] = 0
@@ -245,12 +264,14 @@ def expand_days(entries, days):
 
 def all_hours_key(cfg):
     """Fingerprint of everything the stack of every hour depends on: the day files (path, size, times), the stations
-    and their coordinates, the pair distance limit, the sub-stack length and ALL_HOURS_VERSION."""
+    and their coordinates, the pair distance limit, the sub-stack length, ALL_HOURS_VERSION and the code of the step."""
     from .record_index import file_signature
+    from .runtime_identity import code_digest
 
     stations = D.used_stations(cfg)
     what = [
         ALL_HOURS_VERSION,
+        code_digest("stack"),
         [[f, file_signature(f)] for f in day_files(cfg)],
         [[n, stations[n]["lon"], stations[n]["lat"]] for n in sorted(stations)],
         cfg["correlation"]["max_distance_km"],

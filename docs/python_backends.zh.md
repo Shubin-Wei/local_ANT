@@ -2,7 +2,7 @@
 
 中文 | [English](python_backends.md)
 
-lant 的三维反演是 DSurfTomo `a651faf`（Fang et al. 2015）逐句移植的 Python/Numba 版：主程序（`main.f90`）和 CalSurfG 的正演部分，针对基阶 Rayleigh 相速度。它按 DSurfTomo 自己的文件名和格式读写文件，因此一个工程目录仍可当作 DSurfTomo 工程来读。2.0 以前 lant 调用 Fortran 程序；移植版与原生程序的检验见下文。
+lant 的三维反演是 DSurfTomo `a651faf`（Fang et al. 2015）的 Python/Numba 移植：主程序（`main.f90`）和 CalSurfG 的正演部分，针对基阶 Rayleigh 相速度。它按 DSurfTomo 自己的文件名和格式读写文件，因此一个工程目录仍可当作 DSurfTomo 工程来读。正演部分（快速行进、射线、相速度）和 LSMR 求解器逐句移植。从 2.0.1 起，反演方法有意与 DSurfTomo 不同，每处改动都有依据：正则化、剔除规则、LSMR 的条件数上限，以及深度核的求导方式（见下文"2.0.1 的改动"）。2.0.0 的移植与原生 DSurfTomo 逐字节相同，那次对比保留在下文。
 
 ## lant 怎样运行它
 
@@ -31,13 +31,26 @@ CalSurfG 中写死的设置保持不变（`gdx=gdz=8`、`sgdl=8`、`sgs=8`、地
 | 模块 | 对应 `main.f90` 的内容 |
 |---|---|
 | `dsurf_main` | 主程序：读入、合成数据、迭代循环、更新、输出（模块说明逐步列出每一步及其行号） |
-| `dsurf_system` | 残差、`getpercentile` 与四分位剔除、DWS、平滑行、残差统计 |
-| `dsurf_lsmr` | `dp = kind 4` 的 `lsmrModule.f90`、`aprod.f90`、`lsmrblas.f90` |
+| `dsurf_system` | 残差、DWS、残差统计；lant 的 MAD 剔除（DSurfTomo 的四分位剔除和平滑行留作参照） |
+| `model_regularization` | lant 的正则化（DSurfTomo 没有） |
+| `dsurf_lsmr` | `dp = kind 4` 的 `lsmrModule.f90`、`aprod.f90`、`lsmrblas.f90`（留作参照；2.0.1 起迭代用 `least_squares` 求解） |
+| `least_squares` | lant 的求解：列归一化后的双精度 LSMR（DSurfTomo 没有） |
 | `dsurf_format` | gfortran 的表控输出与 `Fw.d` 输出 |
 
-一切按 Fortran 的做法重现，包括其特殊之处：`main.f90` 声明为 REAL 的地方（残差、剔除、矩阵、LSMR、更新）都用 REAL 运算；LSMR 为单精度，`atol = btol = 1e-6`、`conlim = 100`、`itnlim = 400`，并对最近 10 个向量做局部再正交化（`scipy.sparse.linalg.lsmr` 为双精度且没有局部再正交化，因此不用它）；残差 `obst(i) - dsyn(i)` 按下标相减，前者为文件顺序、后者为 CalSurfG 顺序；剔除 `threshold x [q25, q75]` 之外的残差，四分位数带符号，被剔除的行保留为零行；参数盒子表面上的平滑行只有对角元；速度改变量截断在 ±0.5 km/s，模型截断在速度上下限内；第 *k* 次迭代记录的残差属于第 *k* 次更新之前的模型；合成数据与 CalSurfG 的 `synthetic` 一样在 5 × 5 而不是 8 × 8 加密的传播网格上计算；`velmap2dRc.dat` 沿用 Fortran 错开一格的下标。`spfra` 只决定数组大小：非零元超出时与原生程序一样停止。没有重现的：`noiselevel > 0` 时 gfortran 的随机数序列（改用替代的 Marsaglia 抽样，零噪声消除了随机序列差异，但频散核仍可能使合成观测不同）、屏幕上的射线贴边警告、群速度和 Love 波数据。
+按 Fortran 的做法重现的（下面 2.0.1 的改动除外）：`main.f90` 声明为 REAL 的地方（残差、矩阵、更新）都用 REAL 运算；`dsurf_lsmr` 中 LSMR 为单精度，`atol = btol = 1e-6`、`itnlim = 400`，并对最近 10 个向量做局部再正交化；残差 `obst(i) - dsyn(i)` 按下标相减，前者为文件顺序、后者为 CalSurfG 顺序，被剔除的行保留为零行；速度改变量截断在 ±0.5 km/s，模型截断在速度上下限内；第 *k* 次迭代记录的残差属于第 *k* 次更新之前的模型；合成数据与 CalSurfG 的 `synthetic` 一样在 5 × 5 而不是 8 × 8 加密的传播网格上计算；`velmap2dRc.dat` 沿用 Fortran 错开一格的下标。没有重现的：`noiselevel > 0` 时 gfortran 的随机数序列（改用替代的 Marsaglia 抽样）、屏幕上的射线贴边警告、群速度和 Love 波数据。
 
-节点核照 DSurfTomo 自己的频散代码、按它自己的精度计算：分层模型、地球扁平化和存下的相速度用 REAL，频散函数和求根用双精度，REAL 常数在双精度表达式里保留单精度值，整数次幂按 gfortran 的展开顺序相乘。相速度和 Vs、Vp、密度偏导与原生 depthkernel 逐位相同（以一份存下的原生输出作测试）。`dsurf_kernels` 对相同的列只算一次，只在 CalSurfG 读取的地方计算偏导（内部各列、最后一个深度以上的节点）。未重现：原生 depthkernel 的各 OpenMP 线程共用 getsol 的 SAVE 变量；这里每次调用各用自己的（即单线程运行时的值）。
+## 2.0.1 的改动
+
+| | DSurfTomo | lant 2.0.1 | 依据 |
+|---|---|---|---|
+| 正则化 | 平滑（Laplacian，参数盒子表面——包括最浅一层——只有对角元 2 × 权重）和 LSMR 阻尼都作用于每轮的改变量；数据行原样 | 平滑作用于模型本身（m + dv − m0，jumping），整个盒子的 Laplacian，每个节点用它实有的邻点，不用阻尼；数据项按保留的数据条数、模型项按参数个数取均值（`model_regularization`） | Shaw & Orcutt (1985)；Constable et al. (1987)；Aster et al. (2013)；[methods.zh.md](methods.zh.md) 第 8.4 节 |
+| 剔除 | 带符号残差在 `threshold × [q25, q75]` 之外 | 偏离残差中位数超过 `outlier_mad` × 1.4826 MAD，二者都按周期算（`dsurf_system.reject_mad`） | Rousseeuw & Croux (1993)；Leys et al. (2013)；走时误差随周期增大（methods.md 8.3） |
+| 最小二乘求解 | 单精度 LSMR，`atol = btol = 1e-6`、`itnlim = 400`、`conlim = 100`：容差接近 REAL 的分辨率，很少达到（面阵合成例 6 次迭代中有 4 次停在 400 次），条件数估计超过 100 也停止；两种提前停止都相当于第二种正则化，强弱随问题大小变化 | 每列归一化到单位长度后的双精度 LSMR，用原作者的容差（`atol = btol = 1e-6`、`conlim = 1e8`）和迭代上限 min(m, n)（`least_squares`） | Fong & Saunders (2011)；Paige & Saunders (1982)；Hansen (1998) |
+| 深度核 | Vs、Vp、密度逐个扰动（每个节点 6 次频散计算），再用 Brocher 关系的 dVp/dVs、dρ/dVs 合成 | 沿 Brocher 关系求导（节点的 Vp、ρ 随其 Vs 变化）：每个节点 2 次计算，按链式法则与上面的合成相同，差别在有限差分误差以内（在存下的原生输出上与原生合成相差不超过 0.03 %；耗时约为三分之一），并且只算射线经过的网格柱（`dsurf_kernels.LazyKernels`；G 逐位不变；面阵合成例上 62 % 的节点没有数据） | 链式法则；没有射线经过的柱在 G 中没有元素 |
+| 合成噪声 | `noiselevel` × 高斯数 × 走时 | 工程里有 `noise_seconds.txt` 时：高斯数 × 该行周期的标准差（秒），抽样相同（`dsurf_main.synthetic_data`） | 相位误差随周期增大，不随路径增长（methods.md 第 9 节） |
+| 稀疏预留 | `spfra` 决定数组大小；太小则停止 | 按数据分配数组；读入该行但不使用 | — |
+
+深度核用 DSurfTomo 自己的频散代码、按它自己的精度计算：分层模型、地球扁平化和存下的相速度用 REAL，频散函数和求根用双精度，REAL 常数在双精度表达式里保留单精度值，整数次幂按 gfortran 的展开顺序相乘。相速度与原生 depthkernel 逐位相同（以一份存下的原生输出作测试）。`dsurf_kernels` 对相同的列只算一次，只在 CalSurfG 读取的地方求导（内部各列、最后一个深度以上的节点）。未重现：原生 depthkernel 的各 OpenMP 线程共用 getsol 的 SAVE 变量；这里每次调用各用自己的（即单线程运行时的值）。
 
 ## 与原版一致（2.0.0）
 
@@ -53,7 +66,7 @@ CalSurfG 中写死的设置保持不变（`gdx=gdz=8`、`sgdl=8`、`sgs=8`、地
 
 ## 与原生程序的对比
 
-上一阶段对比使用与 README 首图相同类型的正弦棋盘格：Vs 扰动 ±6 %、格子 3 km、16 个台站、32 个周期共 2884 个走时，33 × 35 × 11 网格，六次迭代。两个程序读取同一份 `DSurfTomo.in`、`MOD`、`MOD.true`、`surfdata.dat` 的副本。合成观测分别由各自的正演计算，均不加噪声。对比固定平滑权重 = 阻尼 = 1、8 线程；这些是基准设置，不替代 lant 自动选择资源和正则化的默认行为。
+上一阶段对比使用正弦棋盘格：Vs 扰动 ±6 %、格子 3 km、16 个台站、32 个周期共 2884 个走时，33 × 35 × 11 网格，六次迭代。两个程序读取同一份 `DSurfTomo.in`、`MOD`、`MOD.true`、`surfdata.dat` 的副本。合成观测分别由各自的正演计算，均不加噪声。对比固定平滑权重 = 阻尼 = 1、8 线程；这些是基准设置，不替代 lant 自动选择资源和正则化的默认行为。
 
 ![棋盘格：真模型、原生、Python 和差值](assets/solver_checkerboard.png)
 
@@ -80,8 +93,13 @@ CalSurfG 中写死的设置保持不变（`gdx=gdz=8`、`sgdl=8`、`sgs=8`、地
 
 ## 来源与许可
 
+- Shaw & Orcutt (1985), *Geophys. J. R. astr. Soc.* 82, 375–414; Constable, Parker & Constable (1987), *Geophysics* 52, 289–300, doi:10.1190/1.1442303：约束模型本身的正则化（jumping）。
+- Aster, Borchers & Thurber (2013), *Parameter Estimation and Inverse Problems*, 2nd ed.，Academic Press：有限差分粗糙度矩阵、按数据个数平均的拟合差。
+- Rousseeuw & Croux (1993), *J. Am. Stat. Assoc.* 88, 1273–1283, doi:10.1080/01621459.1993.10476408; Leys et al. (2013), *J. Exp. Soc. Psychol.* 49, 764–766, doi:10.1016/j.jesp.2013.03.013：MAD 及其换算系数 1.4826，k = 3。
 - [DSurfTomo](https://github.com/HongjianFang/DSurfTomo)，固定 `a651faf92758c1b4c5eb494a4865ef797b9a4b1c`，MIT；Fang et al. (2015)，doi:10.1093/gji/ggv080。被移植的程序。
 - Herrmann (2013)，*Seismol. Res. Lett.* 84(6)，1081–1088，doi:10.1785/0220110096：Computer Programs in Seismology，DSurfTomo 的 surfdisp96.f 由其中的 surf96 修改而来。
 - LSMR：Fong & Saunders (2011)，doi:10.1137/10079687X，与 DSurfTomo 的 `lsmrModule.f90` 相同。
+- Paige, C. C., & Saunders, M. A. (1982). LSQR: an algorithm for sparse linear equations and sparse least squares. *ACM Transactions on Mathematical Software*, 8, 43–71. doi:10.1145/355984.355989
+- Hansen, P. C. (1998). *Rank-Deficient and Discrete Ill-Posed Problems*. SIAM. doi:10.1137/1.9780898719697
 - 对比指标沿用 pDSurfTomo（Zhu et al. 2026，arXiv:2604.11920）。
 - [PyGMT](https://www.pygmt.org/)，BSD-3-Clause，调用 GMT（LGPL），用于 `plots.backend: pygmt`。

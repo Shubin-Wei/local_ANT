@@ -2,7 +2,7 @@
 
 中文 | [English](forward_validation.md)
 
-lant 里层状模型的相速度都由 DSurfTomo 自己的频散代码计算：起始模型及其拟合、核示意图、合成算例，以及三维反演逐列的深度核。`lant.inversion.dsurf_disp96` 把 DSurfTomo `a651faf` 的 `surfdisp96.f`（Rayleigh 相速度、球面地球、基阶）以及 `CalSurfG.f90` 中的 Brocher 换算和 `refineGrid2LayerMdl` 逐句移植，并保持 Fortran 原有的精度。相速度和深度核与原生 `depthkernel` 逐位相同（一份存下的原生输出是测试的一部分），三维反演在四个检验算例上与原生 DSurfTomo 逐字节相同（[python_backends.zh.md](python_backends.zh.md)）。
+lant 里层状模型的相速度都由 DSurfTomo 自己的频散代码计算：起始模型及其拟合、核示意图、合成算例，以及三维反演逐列的深度核。`lant.inversion.dsurf_disp96` 把 DSurfTomo `a651faf` 的 `surfdisp96.f`（Rayleigh 相速度、球面地球、基阶）以及 `CalSurfG.f90` 中的 Brocher 换算和 `refineGrid2LayerMdl` 逐句移植，并保持 Fortran 原有的精度。相速度与原生 `depthkernel` 逐位相同（一份存下的原生输出是测试的一部分）。从 2.0.1 起，深度核改为沿 Brocher 关系求导（每个节点 2 次频散计算，原为 6 次），与原生 Vs、Vp、密度三项偏导的合成相差不超过 0.03 %（[python_backends.zh.md](python_backends.zh.md)）。
 
 2.0 之前，一维计算先是 fwd1d（包装 surfdisp96 的小 Fortran 程序），后来是 disba 0.7.0（双精度的 surf96）；disba 的相速度与 surfdisp96 最多差 5e-6 km/s，足以把个别数据推过 DSurfTomo 的剔除界。
 

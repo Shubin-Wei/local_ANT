@@ -26,5 +26,5 @@ labels: bug
 ```
 ```
 
-Please do not attach data you may not share; a synthetic example that shows the problem (`lant demo`, `python -m lant.synthetic`) is the most useful.
-请不要附上不能公开的数据；能复现问题的合成算例最有用。
+Please do not attach data you may not share; a small example that shows the problem is the most useful.
+请不要附上不能公开的数据；能复现问题的小算例最有用。

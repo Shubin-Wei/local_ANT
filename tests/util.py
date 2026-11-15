@@ -85,9 +85,7 @@ def solver_project(folder, layout="area", velocity=None, iterations=2):
     info = project.write_surfdata(recs, folder / "surfdata.dat")
     grid = project.grid(points, (0.01, 0.01), strip_cells=2 if layout == "line" else None)
     inv = copy.deepcopy(config.DEFAULTS["inversion"])
-    need = project.sparsity_needed(recs, grid, len(z))
-    inv.update(iterations=iterations, vmin=1.2, vmax=5.0, weight=1.0, damp=1.0,
-               sparsity=float(min(1.0, max(0.05, round(2 * need + 0.005, 2)))))  # fmt: skip
+    inv.update(iterations=iterations, vmin=1.2, vmax=5.0)
     project.write_in(folder / "DSurfTomo.in", grid, len(z), info["nsrc"], inv, ts)
     project.write_mod(folder / "MOD", z, vs, grid)
     return folder

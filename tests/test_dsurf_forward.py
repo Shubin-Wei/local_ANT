@@ -79,3 +79,21 @@ def test_rejects_other_wave_types(tmp_path):
     (folder / "surfdata.dat").write_text(text)
     with pytest.raises(NotImplementedError, match="Rayleigh phase"):
         dsurf_input.read_project(folder)
+
+
+def test_partials_only_where_rays_go_give_the_same_matrix(tmp_path, monkeypatch):
+    from lant.inversion import dsurf_kernels
+
+    project = dsurf_input.read_project(write_project(tmp_path / "p"))
+    c = project.control
+    full = dsurf_kernels.depth_kernels(project.depths, project.vs, c.periods_rc, c.minthk)
+    lazy = dsurf_kernels.LazyKernels(project.depths, project.vs, c.periods_rc, c.minthk)
+    monkeypatch.setattr(forward, "FIELD_BLOCK_BYTES", 1.0)  # one source per block: partials asked for block by block
+    a = forward.forward(project, kernels=full)
+    b = forward.forward(project, kernels=lazy)
+    assert np.array_equal(a.times, b.times) and np.array_equal(full.phase, lazy.phase)
+    assert (a.jacobian != b.jacobian).nnz == 0 and a.jacobian.nnz == b.jacobian.nnz
+    interior = np.zeros(lazy.done.shape, bool)
+    interior[1:-1, 1:-1] = True
+    assert lazy.done.any() and not lazy.done[~interior].any()
+    assert np.array_equal(lazy.vs[:, lazy.done], full.vs[:, lazy.done])

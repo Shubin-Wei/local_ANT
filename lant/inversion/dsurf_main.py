@@ -1,8 +1,9 @@
 """DSurfTomo's main program in Python: the iterative inversion around the compatible forward.
 
-Ports main.f90 of DSurfTomo a651faf (MIT; Fang et al. 2015) for Rayleigh phase
-velocities, statement by statement and in the same precision (REAL where the
-Fortran declares REAL, real*8 periods). Steps, with their main.f90 lines:
+Follows main.f90 of DSurfTomo a651faf (MIT; Fang et al. 2015) for Rayleigh phase
+velocities, in the same precision (REAL where the Fortran declares REAL, real*8
+periods), except where lant 2.0.1 changes the method on purpose: steps 4, 6, 7a,
+7c, 7f and 7g below (marked "lant").  Steps, with their main.f90 lines:
 
 1. Banner on the screen (111-117); input file from the first argument, else
    asked for on stdin with DSurfTomo.in as default (120-132).
@@ -13,9 +14,9 @@ Fortran declares REAL, real*8 periods). Steps, with their main.f90 lines:
 3. Measurements (217-285): grouping by period block, colatitude/longitude in
    REAL radians, REAL delsph distance and obst = dist / velocity, file order
    (``dsurf_input.read_measurements``).
-4. Allocation (286-309): maxnar = spfra x dall x nx x ny x nz in REAL,
-   truncated; it only sizes the arrays and stops the run when the nonzeros
-   exceed it (467); it does not change any number. maxvp = (nx-2)(ny-2)(nz-1).
+4. Allocation (286-309): maxvp = (nx-2)(ny-2)(nz-1).  lant: no sparse
+   reserve (maxnar = spfra x ...): the arrays are sized from the data; the
+   spfra line of DSurfTomo.in is read and not used.
 5. MOD (314-323): nz depths, then nz x ny records of nx Vs.
 6. Synthetic test, ifsyn = 1 (326-343 and CalSurfG.f90 ``synthetic``):
    MOD.true without depth record; phase velocities of the true model
@@ -26,19 +27,30 @@ Fortran declares REAL, real*8 periods). Steps, with their main.f90 lines:
    obst in CalSurfG order: obst = t + t * gaussian() * noiselevel. gaussian()
    draws from gfortran's random_number; that stream is NOT reproduced here
    (a Marsaglia polar draw from numpy's generator with seed 0 is used), so only
-   noiselevel = 0 gives native's data.
+   noiselevel = 0 gives native's data.  lant: with a file NOISE_FILE in the
+   project (period s, standard deviation s per line) the noise is that
+   standard deviation of the row's period instead, obst = t + gaussian() x
+   sigma(period), the same draws (``synthetic_data``).
 7. Iterations 1..maxiter (348-546):
    a. CalSurfG (355-359): depth kernels of the current model, receiver times
-      dsyn (CalSurfG order) and the rows of G (``dsurf_forward.forward``);
+      dsyn (CalSurfG order) and the rows of G (``dsurf_forward.forward``); lant:
+      the kernels as the derivative along the Brocher relation, and only for
+      the columns the rays touch (``dsurf_kernels.LazyKernels``; the same G);
    b. cbst = obst - dsyn index by index (361-363);
-   c. getpercentile q25, q75 and rejection outside threshold0 x [q25, q75]:
-      weight 0, residual 0, row multiplied by the weight (365-380);
+   c. lant: rejection of residuals further than threshold0 x 1.4826 MAD from
+      their median, both per period (``dsurf_system.reject_mad``; DSurfTomo: outside threshold0 x
+      [q25, q75] of the signed residuals): weight 0, residual 0, row multiplied
+      by the weight (365-380);
    d. DWS maximum and average to the log (382-393);
    e. residualFirst.dat (iteration 1) and residualLast.dat (last iteration):
       dist, dsyn, obst, dsyn*w, obst*w, w, list-directed (396-411);
-   f. smoothing rows after the data rows (414-462), m = dall + maxvp;
-   g. LSMR(m, n, ..., cbst, damp, atol = btol = 1e-6, conlim = 100,
-      itnlim = 400, localSize = 10) in REAL (469-489; ``dsurf_lsmr``);
+   f. lant: data rows divided by sqrt(kept rows); smoothing rows (Laplacian of
+      the whole box, faces included) of the model itself, m + dv - m0, as a mean
+      over the parameters; no damping (the damp of DSurfTomo.in is read, not used) (``model_regularization``; DSurfTomo: smoothing
+      of dv, faces only 2 x weight on the diagonal, 414-462);
+   g. lant: LSMR in double precision on the column-scaled matrix, the tolerances and iteration limit of its
+      authors, no damping (``least_squares``; DSurfTomo: LSMR in REAL, damp, atol = btol = 1e-6, conlim = 100,
+      itnlim = 400, localSize = 10, 469-489, ported in ``dsurf_lsmr``);
    h. mean, std and rms of the weighted residuals of this iteration's
       starting model, screen and log (491-516), min/max of dv (513-516);
    i. dv clipped to +/-0.5 km/s, added to the interior Vs above the last
@@ -72,18 +84,16 @@ import numpy as np
 from . import dsurf_format as fmt
 from . import dsurf_input, dsurf_kernels, dsurf_system
 from .dsurf_forward import SYNTHETIC_DICING, forward
-from .dsurf_lsmr import Matrix, lsmr
+from .least_squares import solve
+from .model_regularization import Regularization
 
 F = np.float32
-# main.f90 lines 474-485: LSMR controls.
-ATOL = BTOL = 1e-6
-CONLIM = 100
-ITNLIM = 400
-LOCAL_SIZE = 10
 # main.f90 lines 521-526: largest velocity change per iteration, km/s.
 MAX_STEP = F(0.5)
 # Seed of the stand-in noise generator (step 6); not gfortran's stream.
 NOISE_SEED = 0
+# lant: noise of the synthetic travel times per period, in seconds (lines "period_s sigma_s"); see synthetic_data.
+NOISE_FILE = "noise_seconds.txt"
 
 
 class Output:
@@ -167,13 +177,6 @@ def _residual_file(path, dist, dsyn, obst, weight):
     _write_lines(path, (fmt.list_record(*r) for r in rows))
 
 
-def _maxnar(c, dall):
-    value = F(c.spfra) * F(dall) * F(c.nx) * F(c.ny) * F(c.nz)
-    if not value < 2.0**31:
-        raise SystemExit("number overflow, decrease your sparsefrac")
-    return int(value)
-
-
 def _gaussian(rng):
     """gaussian.f90's Marsaglia polar method in REAL (stand-in for gfortran's random_number)."""
     w = F(2.0)
@@ -198,11 +201,27 @@ def _velmap(path, c, phase):
     _write_lines(path, lines)
 
 
-def synthetic_data(project, true_vs, workers, directory, kernels=None):
+def read_noise(path, periods):
+    """NOISE_FILE -> standard deviation (s) for each period of DSurfTomo.in (the nearest listed period within 0.1 %)."""
+    a = np.atleast_2d(np.loadtxt(path, comments="#"))
+    out = np.zeros(len(periods))
+    for k, t in enumerate(periods):
+        i = int(np.argmin(np.abs(a[:, 0] - t)))
+        if abs(a[i, 0] - t) > 1e-3 * t:
+            raise ValueError("%s has no noise for the period %g s" % (path, t))
+        out[k] = a[i, 1]
+    return out
+
+
+def synthetic_data(project, true_vs, workers, directory, kernels=None, noise_file=None):
     """CalSurfG.f90 ``synthetic``: obst of every CalSurfG row from the true model (noise as step 6).
 
     kernels: the function of ``run``; its phase velocities replace caldespersion's (caldespersion and
     depthkernel compute them identically).  directory None: velmap2dRc.dat is not written.
+    noise_file: lant's noise per period in seconds (NOISE_FILE) in place of noiselevel x the travel time.  The
+    measurement error of a travel time is a phase error, which grows with the period and not with the path: on
+    lant's areal synthetic example the residuals of the longer third of the paths of a period were half those of the
+    shorter third, while DSurfTomo's noise (a fraction of the travel time) would make them 2.2 times larger.
     """
     c = project.control
     if kernels is None:
@@ -215,8 +234,13 @@ def synthetic_data(project, true_vs, workers, directory, kernels=None):
     kernels = dsurf_kernels.Kernels(phase, None, None, None)
     times = forward(truth, workers=workers, kernels=kernels, derivatives=False, dicing=SYNTHETIC_DICING).times
     obst = project.measurements.observed.copy()
-    noise = F(c.noiselevel)
     rng = np.random.default_rng(NOISE_SEED)
+    if noise_file is not None:
+        sigma = read_noise(noise_file, c.periods_rc).astype(F)[project.measurements.row_periods() - 1]
+        for i, t in enumerate(times):
+            obst[i] = t + _gaussian(rng) * sigma[i]
+        return obst
+    noise = F(c.noiselevel)
     for i, t in enumerate(times):
         obst[i] = t + t * _gaussian(rng) * noise
     return obst
@@ -231,6 +255,8 @@ def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen
 
     kernels: optional function (depths, vs) -> dsurf_kernels.Kernels used instead of dsurf_kernels.
     dws_file: also write the DWS of every node in the last iteration to this file of ``directory``.
+    The regularization is lant's (model_regularization: smoothing of the model itself, the data and model terms as
+    means); the rejection is lant's (dsurf_system.reject_mad).
     """
     directory = Path(directory)
     _set_threads(workers)
@@ -248,7 +274,6 @@ def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen
             raise NotImplementedError("only Rayleigh phase velocities (kmaxRg = kmaxLc = kmaxLg = 0) are supported")
         m = dsurf_input.read_measurements(directory / c.datafile, c)
         dall = len(m.observed)
-        maxnar = _maxnar(c, dall)
         maxvp = (c.nx - 2) * (c.ny - 2) * (c.nz - 1)
         out.say(" Number of all measurements" + fmt.integer(dall, 7))
         depths, vs = dsurf_input.read_model(directory / "MOD", c.nx, c.ny, c.nz)
@@ -259,9 +284,11 @@ def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen
         if c.ifsyn == 1:
             out.say(" Synthetic Test Begin")
             true_vs = dsurf_input.read_true_model(directory / "MOD.true", c.nx, c.ny, c.nz)
-            obst = synthetic_data(project, true_vs, workers, directory, kernels)
-        timings = [_iteration(out, directory, inputfile, project, obst, maxnar, maxvp, it, workers, kernels,
-                              dws_file if it == c.maxiter else None)
+            noise_file = directory / NOISE_FILE if (directory / NOISE_FILE).exists() else None
+            obst = synthetic_data(project, true_vs, workers, directory, kernels, noise_file)
+        reg = Regularization(c.nx - 2, c.ny - 2, c.nz - 1, project.vs[:-1, 1:-1, 1:-1].copy(), c.weight)
+        timings = [_iteration(out, directory, inputfile, project, obst, maxvp, it, workers, kernels,
+                              dws_file if it == c.maxiter else None, reg)
                    for it in range(1, c.maxiter + 1)]  # fmt: skip
         _finish(out, directory, inputfile, project, true_vs)
     finally:
@@ -269,25 +296,25 @@ def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen
     return timings
 
 
-def _iteration(out, directory, inputfile, project, obst, maxnar, maxvp, it, workers, kernels, dws_file=None):
+def _iteration(out, directory, inputfile, project, obst, maxvp, it, workers, kernels, dws_file, reg):
     c, m = project.control, project.measurements
     dall = len(obst)
     seconds = {}
     out.say(" computing sensitivity matrix...", " Rayleigh wave phase velocity depth kernel")
     start = time.perf_counter()
-    if kernels is None:
-        k = dsurf_kernels.depth_kernels(project.depths, project.vs, c.periods_rc, c.minthk, workers)
+    if kernels is None:  # partials only of the columns the rays touch (the same G)
+        k = dsurf_kernels.LazyKernels(project.depths, project.vs, c.periods_rc, c.minthk, workers)
     else:
         k = kernels(project.depths, project.vs)
     seconds["senk"] = time.perf_counter() - start
     result = forward(project, workers=workers, kernels=k)
+    seconds["senk"] += getattr(k, "seconds", 0.0)
     seconds["traveltime"] = result.seconds["fields_and_rays"] + result.seconds["rows"]
     start = time.perf_counter()
     dsyn = np.zeros(dall, F)  # rows CalSurfG does not visit (a repeated period block) stay 0
     dsyn[: len(result.times)] = result.times
     cbst = obst - dsyn
-    q25, q75 = dsurf_system.percentiles(cbst)
-    weight, cbst = dsurf_system.reject(cbst, q25, q75, c.threshold)
+    weight, cbst = dsurf_system.reject_mad(cbst, c.threshold, m.row_periods())  # the threshold line holds k
     g = result.jacobian
     rows = np.repeat(np.arange(g.shape[0]), np.diff(g.indptr))
     values = g.data.astype(F) * weight[rows]
@@ -300,20 +327,22 @@ def _iteration(out, directory, inputfile, project, obst, maxnar, maxvp, it, work
         _residual_file(directory / "residualFirst.dat", m.distance, dsyn, obst, weight)
     if it == c.maxiter:
         _residual_file(directory / "residualLast.dat", m.distance, dsyn, obst, weight)
-    s_rows, s_cols, s_values = dsurf_system.smoothing(c.nx, c.ny, c.nz, c.weight, dall)
-    if len(values) + len(s_values) > maxnar:
-        raise SystemExit("increase sparsity fraction(spfra)")
-    matrix = Matrix(np.r_[rows, s_rows], np.r_[cols, s_cols], np.r_[values, s_values], dall + maxvp, maxvp)
-    rhs = np.r_[cbst, np.zeros(maxvp, F)]
+    # data rows per datum (1/sqrt(N) of the kept rows), smoothing of the model itself (model_regularization)
+    scale = F(1.0 / math.sqrt(max(1, int((weight > 0).sum()))))
+    r_rows, r_cols, r_values, r_rhs = reg.rows(project.vs[:-1, 1:-1, 1:-1], dall)
+    rhs = np.r_[cbst * scale, r_rhs]
     seconds["assembly"] = time.perf_counter() - start
     start = time.perf_counter()
-    solution = lsmr(matrix, rhs, c.damp, ATOL, BTOL, CONLIM, ITNLIM, LOCAL_SIZE)
+    solution = solve(np.r_[rows, r_rows], np.r_[cols, r_cols], np.r_[values * scale, r_values],
+                     dall + reg.row_count(), maxvp, rhs)  # fmt: skip
     seconds["lsmr"] = time.perf_counter() - start
     seconds["lsmr_iterations"] = solution.itn
+    seconds["lsmr_istop"] = int(solution.istop)
+    seconds["rejected"] = int((weight == 0).sum())
     start = time.perf_counter()
     mean, std, rms = dsurf_system.residual_statistics(cbst)
     numbers = fmt.fixed(mean * F(1000), 8, 1) + "ms " + fmt.fixed(F(1000) * std, 8, 2) + "ms " + fmt.fixed(rms, 8, 3)
-    dv = solution.x
+    dv = solution.x.astype(F)
     variation = fmt.fixed(dv.min(), 7, 4) + fmt.fixed(dv.max(), 7, 4)
     out.say(fmt.integer(it, 2) + "th iteration...", " mean,std_devs and rms of residual after weighting: " + numbers)
     out.write(fmt.integer(it, 2) + "th iteration...", "mean,std_devs and rms of residual: " + numbers)

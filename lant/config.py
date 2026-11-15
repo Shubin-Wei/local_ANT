@@ -17,6 +17,7 @@ defaults before the user's file is read.
 """
 
 import copy
+import datetime
 import math
 import os
 import re
@@ -158,8 +159,6 @@ DEFAULTS = {
             "dev_pre": 0.30,
             "lam_c": 2.0,
             "min_run": 6,
-            "band_edge": 0.5,  # amplitude spectrum at the frequency at least this fraction of its mean over
-            # the filter band (0.5 = -6 dB; 0 = not applied)
             "snr_g": 4.0,  # first gate: the largest SNR of the frequency must reach this
         },
     },
@@ -177,8 +176,7 @@ DEFAULTS = {
         # of the depth, down past half the longest wavelength
         "fine_step_km": 0.0,  # extra depth nodes every fine_step_km down to fine_zmax_km (0 = none)
         "fine_zmax_km": 0.0,
-        "grid_spacing_deg": "auto",  # auto: refined spacing ~ half the median nearest-station distance
-        "grid_refine": 2,  # every grid interval divided by this after the extent is fixed
+        "grid_spacing_deg": "auto",  # auto: the median measured wavelength / 3 (set by the inversion step)
         "line_strip_cells": None,  # lines: cells kept on each side of the stations across the line
         "start_model": {
             "source": "invert",  # invert: from this array's median curve | file: two columns depth Vs
@@ -188,15 +186,13 @@ DEFAULTS = {
             "iterations": 14,
             "minthk": 3,  # smooth: curvature of the model (jumping)
         },
-        "weight": 1.0,  # smoothing weight, fixed (calibrated on the synthetic examples, docs/methods.md 8.4)
-        "damp": 0.1,  # damping, fixed (calibrated on the synthetic examples, docs/methods.md 8.4)
-        "sublayers": 3,
+        "weight": 1.0,  # smoothing weight: rms misfit (s) per rms roughness (km/s); calibrated, methods.md 8.4
         "vmin": "auto",  # auto: 0.6 x the slowest Vs of the starting model
         "vmax": "auto",  # auto: 1.4 x the fastest
-        "iterations": 10,
-        "sparsity": "auto",  # auto: twice the estimated filling of DSurfTomo's matrix, at least 0.05
-        "threshold": 3.0,
-        "noise": "auto",  # checkerboard noise; auto: relative rms of the kept residuals of the main model
+        "iterations": 6,  # as in the calibration of the weight (methods.md 8.4)
+        "per_octave": 4,  # periods per octave of the 3-D inversion (a subset of the measured ones)
+        "outlier_mad": 3.0,  # travel times further than this x 1.4826 MAD from the median residual of their period are not used
+        "noise": "auto",  # checkerboard noise; auto: per period, the robust spread (s) of the main model's residuals
     },
     "checks": {
         # horizontal checkerboards: cell size (half wavelength) north-south and east-west in km
@@ -206,13 +202,11 @@ DEFAULTS = {
         # auto: one test, the same cell, one sign reversal at the median measured wavelength / 3
         "vertical": "auto",
         "amplitude": 0.10,  # checkerboard perturbation, a fraction of the 1-D Vs of each depth (+-10 %)
-        # reg_x<f>: the smoothing weight of the main project times f (the damping as there); reg_w<w>_d<d>: given
-        # weight and damping; start_grad<f>: starting model x(1 + f) at the surface to x(1 - f) at the deepest
-        # updatable node, centred on the data (start_x<f>, a uniform factor, fails with DSurfTomo's rejection rule:
-        # the precheck marks it invalid).  Add reg_x0.5 and reg_x2 to see how much the model depends on the weight
+        # reg_x<f>: the smoothing weight of the main project times f; reg_w<w>: a given weight; start_grad<f>: starting model x(1 + f) at the surface to x(1 - f) at the deepest
+        # updatable node, centred on the data (start_x<f>: a uniform factor).  Add reg_x0.5 and reg_x2 to see how much the model depends on the weight
         # (two more inversions: not run by default, user's decision 2026-11-13)
         "controls": ["start_grad0.05"],
-        "precheck": {"min_kept": 0.5, "max_median_iqr": 1.0},  # a project is invalid below / beyond these
+        "precheck": {"min_kept": 0.5},  # a project is invalid when less of its data survive the rejection
         "iteration_residuals": False,  # evaluate also the model of every iteration (one forward run each)
     },
     "plots": {
@@ -240,7 +234,7 @@ LINE_OVERRIDES = {
     "data": {"min_trace_length_s": 600.0},
     "reference": {"fj_mode": "track_fundamental"},
     "dispersion": {"njack": "auto"},
-    "inversion": {"median_min_pairs": 20, "grid_refine": 1, "line_strip_cells": 1.0},
+    "inversion": {"median_min_pairs": 20, "line_strip_cells": 1.0},
 }
 
 REQUIRED = [("project", "output_dir"), ("data", "raw_dir"), ("data", "station_file")]
@@ -286,6 +280,17 @@ REMOVED = {  # keys of earlier versions: what to do instead
     "data.instrument": "removed in 1.3: give the response files in data.response (they are then removed), or "
     "nothing when every station has the same instrument model; delete the key",
     "dispersion.qc.width_g": "removed in 1.2 (it was never applied); delete the key",
+    "inversion.damp": "removed in 2.0.1 (the regularization smooths the model itself; damping it towards the starting "
+    "model made the synthetic example worse); delete the key",
+    "inversion.grid_refine": "removed in 2.0.1 (the grid spacing is the median wavelength / 3); delete the key",
+    "inversion.sublayers": "removed in 2.0.1 (fixed at 3, DSurfTomo's default); delete the key",
+    "inversion.sparsity": "removed in 2.0.1 (lant sizes the matrix from the data); delete the key",
+    "inversion.threshold": "replaced in 2.0.1 by inversion.outlier_mad (travel times further than k x 1.4826 MAD "
+    "from the median residual are not used; DSurfTomo's signed-quartile rule dropped good data)",
+    "checks.precheck.max_median_iqr": "removed in 2.0.1 (it guarded DSurfTomo's signed-quartile rejection, which "
+    "lant no longer uses); delete the key",
+    "dispersion.qc.band_edge": "removed in 2.0.1 (no literature basis; on a measured array the samples it rejected "
+    "agreed with the independent F-J picks as well as the accepted ones); delete the key",
     "dispersion.qc.dev_c": "removed in 1.4 (it changed nothing in the tests with noise and a second arrival, "
     "docs/validation.md); delete the key",
     "dispersion.qc.smooth_c": "removed in 1.4 (it changed nothing in the tests with noise and a second arrival, "
@@ -527,8 +532,7 @@ POSITIVE = [
     ("inversion", "vmin"),
     ("inversion", "vmax"),
     ("inversion", "iterations"),
-    ("inversion", "sublayers"),
-    ("inversion", "grid_refine"),
+    ("inversion", "per_octave"),
     ("checks", "amplitude"),
     ("correlation", "fs_max"),
     ("stack", "block_hours"),
@@ -541,8 +545,7 @@ INTEGERS = [
     ("dispersion", "chunk"),
     ("correlation", "smooth_bins"),
     ("inversion", "iterations"),
-    ("inversion", "sublayers"),
-    ("inversion", "grid_refine"),
+    ("inversion", "per_octave"),
     ("inversion", "median_min_pairs"),
     ("inversion", "start_model", "iterations"),
     ("inversion", "start_model", "minthk"),
@@ -557,26 +560,42 @@ ORDERED = [
 
 
 _NUMBER = r"([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)"
-_CONTROL = re.compile(r"^(?:(reg_x|start_x|start_grad)%s|reg_w%s_d%s)$" % (_NUMBER, _NUMBER, _NUMBER))
+_CONTROL = re.compile(r"^(reg_x|reg_w|start_x|start_grad)%s$" % _NUMBER)
 
 
 def _check_controls(controls):
     """checks.controls before anything runs (lant.inversion.project.build_checks builds them after the main project):
-    reg_x<f> and start_x<f> with f > 0, start_grad<f> with 0 < |f| < 0.5, reg_w<w>_d<d> with w, d > 0, no repeats."""
+    reg_x<f>, reg_w<w> and start_x<f> with f, w > 0, start_grad<f> with 0 < |f| < 0.5, no repeats."""
     if not isinstance(controls, list):
         raise ConfigError("checks.controls must be a list, not %r" % (controls,))
     for name in controls:
         m = _CONTROL.match(str(name))
         if m:
-            kind, values = m.group(1) or "reg_w", [float(x) for x in m.groups()[1:] if x is not None]
+            kind, values = m.group(1), [float(m.group(2))]
             ok = 0 < abs(values[0]) < 0.5 if kind == "start_grad" else all(v > 0 for v in values)
         if not m or not ok:
             raise ConfigError(
-                "checks.controls: %r is not a control: use reg_x<f> or start_x<f> (f > 0), start_grad<f> "
-                "(0 < |f| < 0.5) or reg_w<w>_d<d> (w, d > 0)" % (name,)
+                "checks.controls: %r is not a control: use reg_x<f>, reg_w<w> or start_x<f> (f, w > 0) or "
+                "start_grad<f> (0 < |f| < 0.5)" % (name,)
             )
     if len(set(controls)) != len(controls):
         raise ConfigError("checks.controls: a control is listed twice: %r" % (controls,))
+
+
+def _real(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and np_isfinite(x)
+
+
+def _noise_ok(nz):
+    """inversion.noise: a fraction >= 0 of each travel time, or [[period_s, sigma_s], ...] (what auto resolves to)."""
+    if _real(nz):
+        return nz >= 0
+    return (
+        isinstance(nz, (list, tuple))
+        and len(nz) > 0
+        and all(isinstance(p, (list, tuple)) and len(p) == 2 and _real(p[0]) and _real(p[1]) for p in nz)
+        and all(p[0] > 0 and p[1] >= 0 for p in nz)
+    )
 
 
 def validate(cfg):
@@ -585,6 +604,14 @@ def validate(cfg):
         raise ConfigError("project.ai_assistant must be null, codex, gemini or claude")
     c, d = cfg["correlation"], cfg["dispersion"]
     num = lambda *v: not any(is_auto(x) for x in v)
+    raw, out = cfg["data"]["raw_dir"], cfg["project"]["output_dir"]
+    if isinstance(raw, str) and isinstance(out, str):
+        raw, out = os.path.realpath(raw), os.path.realpath(out)
+        if os.path.commonpath([raw, out]) == raw:  # the raw directory is searched recursively
+            raise ConfigError(
+                "project.output_dir (%s) must not be data.raw_dir or inside it: the raw directory is searched "
+                "recursively, so lant would read its own products as raw records" % out
+            )
     for keys in POSITIVE:
         v = _get(cfg, keys)
         if is_auto(v):
@@ -608,9 +635,10 @@ def validate(cfg):
     ):
         raise ConfigError("data.velocity_range_kms must be [slow, fast] in km/s with 0 < slow < fast, not %r" % (vr,))
     nz = cfg["inversion"]["noise"]
-    if not is_auto(nz) and (isinstance(nz, bool) or not isinstance(nz, (int, float)) or not np_isfinite(nz) or nz < 0):
+    if not is_auto(nz) and not _noise_ok(nz):
         raise ConfigError(
-            "inversion.noise must be auto or a number >= 0 (a fraction of each travel time), not %r" % (nz,)
+            "inversion.noise must be auto, a number >= 0 (a fraction of each travel time) or a list of [period s, "
+            "standard deviation s] pairs, not %r" % (nz,)
         )
     if cfg["correlation"]["remove_1s_comb"] not in ("auto", True, False):
         raise ConfigError("correlation.remove_1s_comb must be auto, true or false")
@@ -640,6 +668,22 @@ def validate(cfg):
             v = cfg["data"][k] = str(v)  # YAML reads an unquoted 2024-05-01 as a date object
         if v is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
             raise ConfigError("data.%s must be YYYY-MM-DD (the date of a processing-day label)" % k)
+        if v is not None:
+            try:
+                datetime.date.fromisoformat(v)
+            except ValueError as exc:
+                raise ConfigError("data.%s: %s is not a date (%s)" % (k, v, exc)) from exc
+    if cfg["data"]["start_date"] and cfg["data"]["end_date"] and cfg["data"]["start_date"] > cfg["data"]["end_date"]:
+        raise ConfigError("data.start_date must not be after data.end_date")
+    mt = cfg["data"]["min_trace_length_s"]
+    if isinstance(mt, bool) or not isinstance(mt, (int, float)) or not np_isfinite(mt) or mt < 0:
+        raise ConfigError("data.min_trace_length_s must be a number of seconds >= 0, not %r" % (mt,))
+    zk = cfg["reference"]["zone_km"]
+    if zk is not None and (isinstance(zk, bool) or not isinstance(zk, (int, float)) or not np_isfinite(zk) or zk <= 0):
+        raise ConfigError("reference.zone_km must be null (one curve) or a positive size in km, not %r" % (zk,))
+    for k in ("seg_len_s", "seg_step_s", "maxlag_s"):  # the seconds become whole numbers of samples
+        if num(c[k], c["fs"]) and round(c[k] * c["fs"]) < 1:
+            raise ConfigError("correlation.%s (%r s) is less than one sample at fs = %r Hz" % (k, c[k], c["fs"]))
     h = cfg["data"]["day_start_utc_hour"]
     if num(h) and not (isinstance(h, int) and 0 <= h < 24):
         raise ConfigError("data.day_start_utc_hour must be 'auto' or an integer 0-23")
@@ -696,19 +740,33 @@ def validate(cfg):
             % cfg["inversion"]["wave"]
         )
     _check_controls(cfg["checks"]["controls"])
-    for k in ("weight", "damp"):
+    for k in ("weight",):
         v = cfg["inversion"][k]
         if is_auto(v):
             raise ConfigError(
-                "inversion.%s: auto was removed in 2.0 (the weight and the damping are fixed defaults calibrated on "
-                "synthetic data, docs/parameters.md): give a positive number or delete the key" % k
+                "inversion.%s: auto was removed (a fixed default calibrated on synthetic data, docs/methods.md 8.4): "
+                "give a number or delete the key" % k
             )
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or not np_isfinite(v) or v <= 0:
-            raise ConfigError("inversion.%s must be a positive number, not %r" % (k, v))
+        if (
+            isinstance(v, bool)
+            or not isinstance(v, (int, float))
+            or not np_isfinite(v)
+            or v < 0
+            or (k == "weight" and v == 0)
+        ):
+            raise ConfigError(
+                "inversion.%s must be a %s number, not %r" % (k, "positive" if k == "weight" else "non-negative", v)
+            )
     n = cfg["resources"]["cores"]
     if n != "auto" and (isinstance(n, bool) or not isinstance(n, int) or n < 1):
         raise ConfigError("resources.cores must be auto or a whole number >= 1, not %r" % (n,))
     seq = cfg["inversion"]["depth_sequence_km"]
+    if num(seq) and (
+        not isinstance(seq, (list, tuple))
+        or len(seq) < 2
+        or any(isinstance(z, bool) or not isinstance(z, (int, float)) or not np_isfinite(z) for z in seq)
+    ):
+        raise ConfigError("inversion.depth_sequence_km must be auto or a list of at least two depths (km)")
     if num(seq) and (seq[0] != 0 or any(round(b, 3) <= round(a, 3) for a, b in zip(seq[:-1], seq[1:]))):
         raise ConfigError(
             "inversion.depth_sequence_km must start at 0 and increase by at least 0.001 km (DSurfTomo's "

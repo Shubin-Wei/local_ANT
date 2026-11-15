@@ -81,3 +81,30 @@ def test_borrowed_curve():
     )
     cb, valid, sup, origin, _ = borrowed_curve(os.path.join(d, "s.npz"), np.array([1.5, 3.0, 3.5]))
     assert list(valid) == [True, True, True] and list(sup) == [True, True, False]
+
+
+def test_borrowed_reference_drops_old_zones(monkeypatch):
+    """Switching to a borrowed curve removes the zone references of an earlier F-J run (disp reads zones.npz
+    whenever it exists, so a stale one would override the new reference)."""
+    import pytest
+
+    from lant import auto, paths, reference
+
+    d = tmp_dir()
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = d
+    cfg["reference"].update(source="file", file=os.path.join(d, "borrowed.txt"))
+    ref = paths.mk(paths.P(cfg, paths.REFERENCE))
+    for name in reference.ZONE_FILES:
+        open(os.path.join(ref, name), "w").write("stale")
+    monkeypatch.setattr(auto, "load", lambda cfg: {"geometry": {"median_nearest_km": 1.0}})
+    monkeypatch.setattr(auto, "reset", lambda cfg, keys: None)
+    monkeypatch.setattr(auto, "restore", lambda cfg, keys: cfg)
+
+    def stop(cfg, path):
+        raise RuntimeError("stop after the zones are handled")
+
+    monkeypatch.setattr(reference, "from_file", stop)
+    with pytest.raises(RuntimeError, match="stop after"):
+        reference.run(cfg)
+    assert not any(os.path.exists(os.path.join(ref, name)) for name in reference.ZONE_FILES)

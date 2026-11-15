@@ -6,7 +6,9 @@ period and source gridder, the refined-source fast marching, srtimes and rpaths
 of every receiver, and the row assembly. Rows come in CalSurfG's order (period
 block, source, receiver). The 2-D kernels are in dsurf_bspline, dsurf_fmm,
 dsurf_source, dsurf_rays and dsurf_rows. Phase velocities and node kernels come
-from ``dsurf_kernels`` (DSurfTomo's depthkernel, the native numbers bit for bit) unless supplied.
+from ``dsurf_kernels`` unless supplied; a ``dsurf_kernels.LazyKernels`` is asked
+for the partials of the columns each block's rays touch just before its rows
+are assembled.
 
 ``real=np.float32`` reproduces the Fortran REAL arithmetic of the 2-D part;
 ``np.float64`` runs the same algorithm in double from the same REAL inputs.
@@ -25,7 +27,7 @@ from .dsurf_bspline import gridder
 from .dsurf_input import PI32
 from .dsurf_kernels import Kernels  # noqa: F401  (re-exported for callers)
 from .dsurf_rays import rpaths
-from .dsurf_rows import assemble
+from .dsurf_rows import FTOL, assemble
 from .dsurf_source import source_fields, srtimes
 
 # Fixed in CalSurfG: grid dicing, source-grid dicing and extent, Earth radius (km).
@@ -230,6 +232,8 @@ def forward(project, real=np.float32, workers=1, kernels=None, derivatives=True,
                     % (k[i] + 1, s[i] + 1, "source" if status[i] == 1 else "receiver", status[i])
                 )
             if derivatives:
+                if hasattr(kernels, "ensure"):  # dsurf_kernels.LazyKernels: partials of the columns these rays touch
+                    kernels.ensure((np.abs(fdm) >= real(FTOL)).any(axis=0))
                 start = time.perf_counter()
                 pieces.append(assemble(fdm, kk[r0:r1], project.vs, kernels.vs, kernels.vp, kernels.rho, deep, real))
                 seconds["rows"] += time.perf_counter() - start

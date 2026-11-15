@@ -80,3 +80,16 @@ def test_rerun_after_confirming_exclusions_reuses_the_stack_of_every_hour(tmp_pa
     cfg["stack"]["exclude_candidates"] = False  # the product is no longer the stack of every hour: built again
     S.run(cfg)
     assert len(built) == 2
+
+
+def test_sub_stack_chunks_stay_small_and_memory_is_planned():
+    """1000 stations at 50 Hz and 30 s lag: one chunk of every pair would be 6 GB (older HDF5 refuses 4 GiB); the
+    chunks hold whole correlations of as many pairs as fit into 64 MiB.  The estimate grows with the sub-stacks."""
+    from lant import stack
+
+    npair, nt = 499500, 3001
+    c = stack.daily_chunks(npair, nt)
+    assert c[0] == 1 and c[2] == nt and 4 * c[1] * nt <= stack.CHUNK_BYTES and c[1] > 1000
+    assert stack.daily_chunks(10, 101) == (1, 10, 101)
+    one, many = stack.memory_estimate(npair, nt, 1, 30), stack.memory_estimate(npair, nt, 24, 720)
+    assert 2.4e10 < one < many

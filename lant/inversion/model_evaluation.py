@@ -147,28 +147,20 @@ def _prediction(cfg, project, model="start", synthetic=False, threads=None):
 
 
 def precheck(cfg, project, threads=None):
-    """Before a project runs: all its data against its starting model, by DSurfTomo's own first iteration
-    (checkerboards: against their synthetic data).  DSurfTomo's rejection rule (residual < threshold x q25 or >
-    threshold x q75, on the signed quartiles; not changed) drops nearly every datum when the residuals all have
-    one sign, e.g. a starting model that is too fast or too slow overall; such a project would 'finish' without
-    using any data.  It is invalid when fewer than checks.precheck.min_kept of the data survive the rule, or when
-    the median residual is further from 0 than checks.precheck.max_median_iqr x the interquartile range.
-    Writes <project>/precheck.json; -> dict(valid, reasons, stats)."""
+    """Before a project runs: all its data against its starting model, as the first iteration sees them
+    (checkerboards: against their synthetic data).  It is invalid when fewer than checks.precheck.min_kept of the
+    data survive the rejection (inversion.outlier_mad), e.g. when the data and the model do not belong together;
+    such a project would 'finish' without using its data.  Writes <project>/precheck.json; -> dict(valid, reasons,
+    stats)."""
 
     pc = cfg["checks"]["precheck"]
     _, R, _ = _prediction(cfg, project, synthetic=os.path.exists(os.path.join(project, "MOD.true")), threads=threads)
     st = residual_stats(R)
-    iqr = st["q75_ms"] - st["q25_ms"]
     reasons = []
     if st["kept_fraction"] < pc["min_kept"]:
         reasons.append(
-            "only %.1f %% of the %d travel times survive DSurfTomo's rejection rule (checks.precheck.min_kept "
+            "only %.1f %% of the %d travel times survive the rejection (inversion.outlier_mad; checks.precheck.min_kept "
             "%.0f %%)" % (100 * st["kept_fraction"], st["n"], 100 * pc["min_kept"])
-        )
-    if abs(st["median_ms"]) > pc["max_median_iqr"] * iqr:
-        reasons.append(
-            "median residual %.2f ms is beyond %.1f x the interquartile range %.2f ms: the starting model is "
-            "too fast or too slow overall" % (st["median_ms"], pc["max_median_iqr"], iqr)
         )
     out = dict(valid=not reasons, reasons=reasons, stats=st)
     json.dump(out, open(os.path.join(project, "precheck.json"), "w"), indent=1)
@@ -176,10 +168,9 @@ def precheck(cfg, project, threads=None):
 
 
 def residual_stats(R):
-    """Residual (observed - predicted travel time) of all data, and how many DSurfTomo's rejection rule drops.
-    The rule (residual < q25 x threshold or > q75 x threshold, on the signed quartiles) is DSurfTomo's own and is
-    not changed; it is centred on the median only when the residuals are: median and quartiles are given so that a
-    model that is too fast or too slow overall (all residuals of one sign) shows."""
+    """Residual (observed - predicted travel time) of all data, and how many the rejection drops (further than
+    inversion.outlier_mad x 1.4826 MAD from the median of their period); median and quartiles show a model that is too fast or too
+    slow overall."""
     r = R[:, 2] - R[:, 1]
     q25, q50, q75 = np.percentile(r, [25, 50, 75])
     kept = R[:, 5] != 0

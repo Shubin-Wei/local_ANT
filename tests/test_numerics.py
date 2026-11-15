@@ -190,6 +190,48 @@ def test_failed_hourly_write_keeps_published_file(monkeypatch, tmp_path):
     assert path.read_bytes() == b"previous complete day" and not (tmp_path / "day_2024001.h5.tmp").exists()
 
 
+def test_day_with_read_failures_is_read_again(monkeypatch, tmp_path):
+    """A station that failed to read is kept in the day file: the next run computes the day again (and recovers the
+    station when it reads now) instead of reusing the file as complete."""
+    from lant import cc
+
+    calls = []
+
+    def fake(by_station, t0, opt, nbin=24, failures=None, out=None):
+        calls.append(1)
+        if len(calls) == 1:
+            failures.append("XX.C: transient read error")
+        names = ["XX.A", "XX.B", "XX.C"][: 2 if len(calls) == 1 else 3]
+        out(names, (24, 3, 3))[:] = 0
+        return names, None, np.zeros((24, 3), np.int32), np.zeros(24, int), np.zeros(24, int)
+
+    monkeypatch.setattr(cc, "day_ccf", fake)
+    monkeypatch.setattr(cc, "settings_of", lambda opt: {})
+    task = ("2024001", 0.0, {}, dict(out_dir=str(tmp_path)))
+    assert cc.process_day(task)[2] == ["XX.C: transient read error"]
+    day, msg, failures = cc.process_day(task)
+    assert len(calls) == 2 and failures == [] and "failed to read last time" in msg
+    assert cc.process_day(task)[1] == "exists (3 stations)" and len(calls) == 2
+
+
+def test_jackknife_groups_are_contiguous_time_blocks():
+    """Contiguous blocks of nearly equal size, in time order; a slow drift over the record shows in their
+    delete-a-group spread, while groups dealt out in turn share it and hide it."""
+    from lant.disp import jackknife_groups
+
+    groups = jackknife_groups(np.arange(10), 3)
+    assert [g.tolist() for g in groups] == [[0, 1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    assert [g.tolist() for g in jackknife_groups(np.array([0, 2, 3, 5, 9]), 5)] == [[0], [2], [3], [5], [9]]
+    drift = np.linspace(0.0, 1.0, 40)  # a quantity that changes slowly with time (the noise sources)
+
+    def spread(groups):
+        m = np.array([np.delete(drift, g).mean() for g in groups])
+        return np.sqrt((len(m) - 1) / len(m) * np.sum((m - m.mean()) ** 2))
+
+    interleaved = [np.arange(40)[g::5] for g in range(5)]
+    assert spread(jackknife_groups(np.arange(40), 5)) > 5 * spread(interleaved)  # 8 times here
+
+
 def test_distance_on_the_ellipsoid():
     """geodesic_km against ObsPy (WGS84) at several latitudes and azimuths; the sphere differs by up to 0.6 %."""
     from obspy.geodetics import gps2dist_azimuth

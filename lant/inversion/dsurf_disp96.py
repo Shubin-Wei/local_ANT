@@ -14,6 +14,10 @@ Differences, both outside normal use: where the root search fails ("improper ini
 DSurfTomo writes a message and phase velocity 0 for the remaining periods; here the period is returned as 0 as well
 and the caller stops.  getsol keeps del1st in a SAVE variable that the OpenMP threads of depthkernel share; here it is
 local to the call (the value of a serial run).
+
+One deliberate change (lant 2.0.1): column_kernel takes the derivative along the Brocher relation (two dispersion
+calculations per node) instead of depthkernel's three separate partials (six), a third of the work; the phase
+velocities are unchanged and the kernels agree with depthkernel's combination to the finite-difference error.
 """
 
 import math
@@ -510,8 +514,15 @@ def column_phase(dep, vs, minthk, t):
 
 @njit(cache=True, nogil=True)
 def column_kernel(dep, vsz, minthk, t, nodes, sen_vs, sen_vp, sen_rho):
-    """depthkernel for one column: phase velocities (returned) and the partials of the first `nodes` nodes, written
-    into sen_*[period, node] (double).  nodes = nz gives DSurfTomo's full loop; CalSurfG reads nz - 1."""
+    """Phase velocities (returned) of one column and dc/dVs of its first `nodes` nodes, written into sen_vs[period,
+    node] (double); sen_vp and sen_rho are set to 0.
+
+    lant computes the derivative along the Brocher (2005) relation the model is built with: Vs of node i is perturbed
+    by +-0.5 % and Vp, density of that node follow it, two dispersion calculations per node (central difference of
+    DSurfTomo's step 0.01 Vs).  DSurfTomo perturbs Vs, Vp and density one at a time (six calculations) and combines
+    dc/dVs + dc/dVp dVp/dVs + dc/drho drho/dVs with the derivative of the same relation (CalSurfG, shallow branch):
+    the directional derivative is that sum (chain rule), to the second-order error of the finite difference, at a
+    third of the work (the phase velocities are unchanged)."""
     vpz, rhoz = brocher(vsz)
     cg = np.zeros(t.size, F8)
     rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpz, vsz, rhoz)
@@ -519,38 +530,21 @@ def column_kernel(dep, vsz, minthk, t, nodes, sen_vs, sen_vp, sen_rho):
     vsm = vsz.copy()
     vpm = vpz.copy()
     rhom = rhoz.copy()
+    one = np.empty(1, F4)
     cg1 = np.zeros(t.size, F8)
     cg2 = np.zeros(t.size, F8)
     hv = _HALF * _0P01  # 0.5*dlnVs, REAL
     for i in range(nodes):
-        vsm[i] = vsz[i] - hv * vsz[i]
-        rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
-        surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg1)
-        vsm[i] = vsz[i] + hv * vsz[i]
-        rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
-        surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg2)
-        vsm[i] = vsz[i]
+        for sign in range(2):
+            one[0] = vsz[i] - hv * vsz[i] if sign == 0 else vsz[i] + hv * vsz[i]
+            p, r = brocher(one)
+            vsm[i], vpm[i], rhom[i] = one[0], p[0], r[0]
+            rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
+            surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg1 if sign == 0 else cg2)
+        vsm[i], vpm[i], rhom[i] = vsz[i], vpz[i], rhoz[i]
         den = F8(_0P01 * vsz[i])
         for nn in range(t.size):
             sen_vs[nn, i] = (cg2[nn] - cg1[nn]) / den
-        vpm[i] = vpz[i] - hv * vpz[i]
-        rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
-        surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg1)
-        vpm[i] = vpz[i] + hv * vpz[i]
-        rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
-        surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg2)
-        vpm[i] = vpz[i]
-        den = F8(_0P01 * vpz[i])
-        for nn in range(t.size):
-            sen_vp[nn, i] = (cg2[nn] - cg1[nn]) / den
-        rhom[i] = rhoz[i] - hv * rhoz[i]
-        rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
-        surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg1)
-        rhom[i] = rhoz[i] + hv * rhoz[i]
-        rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
-        surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg2)
-        rhom[i] = rhoz[i]
-        den = F8(_0P01 * rhoz[i])
-        for nn in range(t.size):
-            sen_rho[nn, i] = (cg2[nn] - cg1[nn]) / den
+            sen_vp[nn, i] = 0.0
+            sen_rho[nn, i] = 0.0
     return cg

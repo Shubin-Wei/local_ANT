@@ -7,7 +7,7 @@ and the peak resident memory.  lant counts a project as finished only with that 
 It also writes DWS.dat, the DWS of every node in the last iteration (> 0 for nonzero post-rejection Jacobian column support).
 
 evaluate() is DSurfTomo's first iteration without the inversion, in this process: the predicted travel time of every
-datum for a given model, the observed time and the weight of DSurfTomo's rejection rule (the columns of
+datum for a given model, the observed time and the weight of the rejection (inversion.outlier_mad) (the columns of
 residualFirst.dat).
 """
 
@@ -39,12 +39,13 @@ def identity():
         dsurf_forward,
         dsurf_input,
         dsurf_kernels,
-        dsurf_lsmr,
         dsurf_main,
         dsurf_rays,
         dsurf_rows,
         dsurf_source,
         dsurf_system,
+        least_squares,
+        model_regularization,
     )
 
     packages = {}
@@ -54,19 +55,21 @@ def identity():
         except PackageNotFoundError:
             packages[p] = "missing"
     modules = (dsurf_bspline, dsurf_disp96, dsurf_fmm, dsurf_format, dsurf_forward, dsurf_input, dsurf_kernels,
-               dsurf_lsmr, dsurf_main, dsurf_rays, dsurf_rows, dsurf_source, dsurf_system)  # fmt: skip
+               dsurf_main, dsurf_rays, dsurf_rows, dsurf_source, dsurf_system, least_squares,
+               model_regularization)  # fmt: skip
     sources = {m.__name__: hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest() for m in modules}
     # A fixed name: run as `python -m lant.inversion.solver` this module is __main__.
     sources["lant.inversion.solver"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    return dict(implementation="Python port of DSurfTomo a651faf (lant.inversion.dsurf_main)", packages=packages,
+    return dict(implementation="lant 3-D inversion: DSurfTomo a651faf forward in Python, lant regularization (lant.inversion.dsurf_main)", packages=packages,
                 sources=sources)  # fmt: skip
 
 
 def memory_estimate(project):
     """Estimated peak memory (bytes) of one solver process: the receiver-time derivative fields of one block of
     sources (rows x nx x ny REAL, at most dsurf_forward.FIELD_BLOCK_BYTES plus one source), the sensitivity matrix in
-    CSR and its copy for LSMR (about 48 bytes per nonzero; nonzeros counted as in
-    lant.inversion.project.sparsity_needed) and BASE_BYTES."""
+    CSR and the arrays of the least-squares solve (about 72 bytes per nonzero: index pairs in int64, values in
+    REAL and in double for the scaled matrix, its column order; nonzeros of a straight path: 2 x cells crossed + 4 corners
+    per updated depth, plus 7 per parameter for the smoothing) and BASE_BYTES."""
     from .dsurf_forward import FIELD_BLOCK_BYTES
     from .run import read_data, read_in
 
@@ -79,7 +82,7 @@ def memory_estimate(project):
     row_bytes = 4.0 * nx * ny
     receivers = len(np.unique(data[:, 2:4], axis=0))  # a source has at most this many rows: one block overshoots
     fields = row_bytes * min(len(data), FIELD_BLOCK_BYTES / row_bytes + receivers)  # the limit by less than this
-    return BASE_BYTES + fields + 48.0 * nonzeros
+    return BASE_BYTES + fields + 72.0 * nonzeros
 
 
 def evaluate(project, depths, vs, synthetic=False, threads=1):
@@ -96,14 +99,14 @@ def evaluate(project, depths, vs, synthetic=False, threads=1):
     obst = m.observed
     if synthetic:
         true_vs = dsurf_input.read_true_model(d / "MOD.true", c.nx, c.ny, c.nz)
-        obst = dsurf_main.synthetic_data(model, true_vs, threads, None)
+        noise = d / dsurf_main.NOISE_FILE
+        obst = dsurf_main.synthetic_data(model, true_vs, threads, None, noise_file=noise if noise.exists() else None)
     phase = dsurf_kernels.phase_velocities(model.depths, model.vs, c.periods_rc, c.minthk, threads)
     kernels = dsurf_kernels.Kernels(phase, None, None, None)
     result = forward(model, workers=threads, kernels=kernels, derivatives=False)
     dsyn = np.zeros(len(obst), F)
     dsyn[: len(result.times)] = result.times
-    q25, q75 = dsurf_system.percentiles(obst - dsyn)
-    weight, _ = dsurf_system.reject(obst - dsyn, q25, q75, c.threshold)
+    weight, _ = dsurf_system.reject_mad(obst - dsyn, c.threshold, m.row_periods())
     return np.c_[m.distance, dsyn, obst, dsyn * weight, obst * weight, weight].astype(float)
 
 

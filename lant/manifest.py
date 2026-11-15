@@ -146,6 +146,10 @@ def confirmed(cfg, step, rec):
 def numerical_dependencies(cfg, step):
     """Only dependencies actually used by a selected numerical implementation."""
     out = {}
+    from .runtime_identity import STEP_SOURCES, code_digest
+
+    if step in STEP_SOURCES:
+        out["code"] = code_digest(step)
     if step in ("inversion", "figures"):
         from .inversion.start import forward_identity
 
@@ -182,6 +186,12 @@ def status(cfg, check_inputs=True):
     order = _steps()
     out = {}
     broken = None  # the first earlier step that does not stand
+    if check_inputs:
+        from .artifacts import modified
+
+        edited = modified(cfg)  # products changed after lant wrote them
+    else:
+        edited = []
     for s in order:
         r = steps.get(s)
         if r is None:
@@ -210,9 +220,12 @@ def status(cfg, check_inputs=True):
             if not (r.get("cache_cleaned") and is_cache(p, ["archive", "cc"]))
             and not os.path.exists(os.path.join(cfg["project"]["output_dir"], p))
         ]
+        touched = [p for p in r.get("outputs", []) if any(m == p or m.startswith(p.rstrip("/") + "/") for m in edited)]
         why = None
         if missing:
             why = "required products missing: " + ", ".join(missing)
+        elif touched:
+            why = "products changed after the step wrote them: " + ", ".join(touched[:5])
         elif changed:
             why = "parameters changed since it ran: %s%s" % (", ".join(changed[:8]), " ..." if len(changed) > 8 else "")
         elif r.get("numerics", {}) != numerical_dependencies(cfg, s):

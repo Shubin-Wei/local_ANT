@@ -6,7 +6,7 @@ All results are written under `project.output_dir` of the configuration; the raw
 
 ## Overview
 
-Open `REPORT.md` first: the state and the time of every step and the next command, key numbers (including the smoothing weight and damping), the items left for you to judge, the main figures, and links to the retained results with the run each comes from. `README.md` explains the directories and the operating rules. `notes.md` holds your notes and decisions (`lant note`).
+Open `REPORT.md` first: the state and the time of every step and the next command, key numbers (including the smoothing weight), the items left for you to judge, the main figures, and links to the retained results with the run each comes from. `README.md` explains the directories and the operating rules. `notes.md` holds your notes and decisions (`lant note`).
 
 | File | Content |
 |---|---|
@@ -25,11 +25,12 @@ Each completed step rewrites `results/parameters.yaml`: the configuration with e
 
 | File | Content |
 |---|---|
-| ★ `model/vs_model.csv` | the 3-D model: `longitude_deg`, `latitude_deg` (WGS84), `depth_km`, `vs_km_s`, sorted by depth, latitude, longitude; the values exactly as DSurfTomo wrote them. Nodes far from the ray paths keep the starting model: read it with the checkerboards |
+| ★ `model/vs_model.csv` | the 3-D model: `longitude_deg`, `latitude_deg` (WGS84), `depth_km`, `vs_km_s`, `dws` (summed data sensitivity at the node in the last iteration: 0 where no ray passes, empty where the node is not updated), sorted by depth, latitude, longitude; the values exactly as the solver wrote them. Nodes far from the ray paths keep the starting model: read it with the checkerboards |
 | ★ `dispersion/curves.csv` | every pair and measurement frequency: measured values, `accepted_qc`, `used_in_inversion` and the values given to DSurfTomo |
 | `parameters.yaml` | every value resolved, with the confirmation record; written by the latest completed step (some auto values resolve only in later steps) |
 | `figures/` | result figures (below) |
 | `validation/evaluation.json` | residual statistics of the starting and final model, checkerboard recovery per depth, control inversions |
+| `validation/checkerboard_recovery.csv` | per checkerboard and depth: recovered fraction of the anomaly (slope), pattern correlation r, nodes |
 | `validation/residuals_start.csv`, `residuals_final.csv` | travel time observed and predicted per pair and period, kept or rejected by DSurfTomo's rule |
 
 To rerun or redraw, everything is in `work/` (nothing has to be computed again): the solver files of the main model are in `work/06_inversion/main/` (`DSurfTomo.in`, `surfdata.dat`, `MOD`, final model `DSurfTomo.inMeasure.dat`), the starting model and average curve in `work/06_inversion/`, the station table in `work/01_clean/stations.csv`. All measurements with their rejection reasons and diagnostics (`disp.h5`, `median_vs_reference.txt`) and the per-pair diagnostic figures stay in `work/05_dispersion/` (no copy in `results/`); the checkerboard and control projects with their recovered models stay in `work/06_inversion/`. Checkerboard figures are drawn for the check projects of the present configuration (`work/06_inversion/checks.json`), the same ones the evaluation uses; a project directory left from an earlier configuration is kept in `work/` but not drawn.
@@ -97,12 +98,12 @@ The figures of clean (data coverage), stack (station diagnosis) and reference (F
 
 | File | Content |
 |---|---|
-| `disp.h5` | per pair and measured frequency: phase velocity `vc`, group velocity `vg`, signal-to-noise ratio, jackknife error, number of cycles, accepted `ok_c`, bit mask of rejection reasons `reason`; band-edge ratios `band_amp` |
+| `disp.h5` | per pair and measured frequency: phase velocity `vc`, group velocity `vg`, signal-to-noise ratio, jackknife error, number of cycles, accepted `ok_c`, bit mask of rejection reasons `reason` |
 | ★ `median_vs_reference.txt` | per frequency, median of the accepted points minus the reference; a systematic offset points to a problem with the reference curve or the number of cycles |
 | `curves.csv` | every pair and measurement frequency: measured values, QC and inversion flags, and the values given to DSurfTomo (periods to six decimals, velocities to five, as before) |
 | `pair_figures/` | single-pair figures (`export.curve_figures` pairs spread evenly over distance, plus the pairs with most rejected points and with the largest departure from the median): velocity–frequency image, picks, rejection reasons |
 
-Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group velocity off the reference, 16 path too short, 32 side lobe, 64 number of cycles undetermined, 128 cycle skip, 512 jackknife error, 4096 group and phase velocities inconsistent, 8192 run too short, 16384 wavelength rule, 32768 no reference curve, 65536 band edge.
+Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group velocity off the reference, 16 path too short, 32 side lobe, 64 number of cycles undetermined, 128 cycle skip, 512 jackknife error, 4096 group and phase velocities inconsistent, 8192 run too short, 16384 wavelength rule, 32768 no reference curve (65536, band edge, was removed in 2.0.1).
 
 ## work/06_inversion/: inversion projects
 
@@ -111,9 +112,9 @@ Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group
 | `average_curve.txt` | average curve of the array (median and number of pairs per period) |
 | `vs1d.txt`, `vs1d_fit.txt` | 1-D starting model and its fit to the average curve |
 | `kernels.txt` | depth sensitivity kernels per period |
-| `main/` | main project: `surfdata.dat`, `DSurfTomo.in`, `MOD`, `project.json` (grid, periods, sparse reserve, weight and damping), `precheck.json`, `run.log`, `solver.json` (implementation, threads, seconds per module and iteration, peak memory), `DWS.dat` (DWS of every node, last iteration), final model `DSurfTomo.inMeasure.dat`, models of each iteration `*.iterNNN` |
+| `main/` | main project: `surfdata.dat`, `DSurfTomo.in`, `MOD`, `project.json` (grid and the reason of its spacing, periods and their number per octave, weight), `precheck.json`, `run.log`, `solver.json` (implementation, threads, seconds per module, LSMR stop code and rejected travel times per iteration, peak memory), `DWS.dat` (DWS of every node, last iteration), final model `DSurfTomo.inMeasure.dat`, models of each iteration `*.iterNNN` |
 | `checkerboards/<name>/` | checkerboard projects: inputs, `MOD.true`, true and recovered model (`Vs_model.real`, `DSurfTomo.inSyn.dat`), logs. After the evaluation the DSurfTomo files lant does not read (`*.iterNNN`, `residualFirst.dat`, `residualLast.dat`, `velmap2dRc.dat`) are deleted here and in `controls/`, only when lant wrote them and they are unchanged; `main/` keeps them |
-| `checkerboard_noise.json` | the noise of the checkerboard travel times (`inversion.noise: auto`): value and how it was obtained |
+| `checkerboard_noise.json` | the noise of the checkerboard travel times (`inversion.noise: auto`): standard deviation in seconds per period and how it was obtained; each checkerboard project holds it as `noise_seconds.txt` |
 | `controls/<name>/` | control projects (starting model, regularisation) |
 | `evaluation/evaluation.json` | residuals, checkerboard recovery (correlation and slope per depth), differences between controls and the main model |
 | `evaluation/residuals_final.csv` | every travel time: station coordinates, period, distance, observed and predicted time, kept by the rejection rule or not |
@@ -142,7 +143,7 @@ Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group
 | `6_residuals` | all-observation residual histogram in ms, relative RMS by period; mean, population standard deviation and RMS are listed separately, with kept/all counts; actual iteration curves only when already evaluated | all |
 
 A figure that cannot be drawn is listed in the figures report with the reason (e.g. a band without measurements, or no relief available offline).
-Workflow figures are PNG only (`plots.formats: [png]`). The figure groups use the README overview style; maps of input and recovered anomalies share colour limits.
+Workflow figures are PNG only (`plots.formats: [png]`). The figures use one journal style (serif type, ticks inside, slow red and fast blue); maps of input and recovered anomalies share colour limits.
 
 Recovery heatmaps support a single depth, check aligned increasing depths, and retain negative correlations and amplitude overshoots. Cells display node samples rather than resolved depth intervals. Section anomalies are explicitly relative to the 1-D reference, which need not be a heterogeneous initial model.
 

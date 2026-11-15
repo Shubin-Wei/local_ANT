@@ -11,7 +11,7 @@
 - `lant status -c CONFIG --json`，以及失败步骤的报告（`OUT/.lant/steps/<步骤>.md`）；
 - `OUT/.lant/lant.log` 的末尾。
 
-不要附上不能公开的原始记录或台站坐标；能复现问题的合成算例（`lant demo`、`python -m lant.synthetic`）最有用。
+不要附上不能公开的原始记录或台站坐标；能复现问题的小算例最有用。
 
 ## 修改代码
 
@@ -21,10 +21,10 @@
 
 ```bash
 pip install -e ".[dev]"
-ruff check lant tests tools examples
-ruff format --check lant tests tools examples
+ruff check lant tests tools
+ruff format --check lant tests tools
 python -m pytest tests
-python tools/run_synthetic.py --dir DIR      # 改了某一步时，先 python -m lant.synthetic --quick --out DIR
+python tests/smoke_records.py make --out DIR && python tests/smoke_records.py run --dir DIR   # 流程能跑通
 ```
 
 改动计算时，要对确定性产物（叠加、测量、求解器输入）与上一版本做同输入比较，并在 `docs/history.zh.md` 中记录。

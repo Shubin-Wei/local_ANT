@@ -145,25 +145,34 @@ def test_relief_tiles_and_limits(tmp_path):
 
 
 def test_checkerboard_noise_from_the_main_fit(tmp_path, monkeypatch):
-    """inversion.noise auto: the relative rms of the residuals that DSurfTomo's rejection rule keeps; computed again
+    """inversion.noise auto: per period, 1.4826 MAD of the residuals of the main model in seconds; computed again
     through the dependency-checked forward evaluator (never by model mtime)."""
+    from types import SimpleNamespace
+
     from lant import pipeline
+    from lant.inversion import dsurf_input
 
     cfg = config.defaults()
     cfg["project"]["output_dir"] = str(tmp_path)
     main = tmp_path / "work" / "06_inversion" / "main"
     main.mkdir(parents=True)
     (main / "DSurfTomo.inMeasure.dat").write_text("model")
-    obs = np.array([1.0, 2.0, 1.0, 4.0])
-    pred = np.array([0.98, 2.04, 1.5, 4.0])
-    R = np.c_[np.zeros(4), pred, obs, np.zeros(4), np.zeros(4), [1, 1, 0, 1]]  # the third datum rejected
+    rng = np.random.default_rng(0)
+    res = np.r_[rng.normal(0, 0.01, 40), rng.normal(0, 0.04, 40)]  # the longer period twice as noisy and more
+    pred = np.full(80, 2.0)
+    R = np.c_[np.zeros(80), pred, pred + res, np.zeros(80), np.zeros(80), np.ones(80)]
+    periods = np.r_[np.full(40, 1), np.full(40, 2)]
+    monkeypatch.setattr(dsurf_input, "read_control", lambda p: SimpleNamespace(periods_rc=[0.5, 1.0], datafile="d"))
+    monkeypatch.setattr(dsurf_input, "read_measurements", lambda p, c: SimpleNamespace(row_periods=lambda: periods))
     calls = []
     monkeypatch.setattr(pipeline.RUN, "evaluate", lambda cfg, d: calls.append(d) or (None, R, None))
     nz = pipeline.checkerboard_noise(cfg, str(main))
-    assert abs(nz["value"] - np.sqrt((0.02**2 + 0.02**2 + 0) / 3)) < 1e-12 and nz["n_kept"] == 3 and nz["n"] == 4
-    assert (
-        pipeline.checkerboard_noise(cfg, str(main))["value"] == nz["value"] and len(calls) == 2
-    )  # evaluator owns exact reuse
+    (t1, s1), (t2, s2) = nz["value"]
+    assert (t1, t2) == (0.5, 1.0) and nz["n"] == 80
+    for s, r in ((s1, res[:40]), (s2, res[40:])):
+        assert abs(s - 1.4826 * np.median(np.abs(r - np.median(r)))) < 1e-6
+    config.validate(dict(cfg, inversion=dict(cfg["inversion"], noise=nz["value"])))  # a valid inversion.noise
+    assert pipeline.checkerboard_noise(cfg, str(main))["value"] == nz["value"] and len(calls) == 2
     os.utime(main / "DSurfTomo.inMeasure.dat", (1e9, 1e9))
     pipeline.checkerboard_noise(cfg, str(main))
     assert len(calls) == 3  # mtime alone no longer decides whether the forward result stands
@@ -232,6 +241,7 @@ def test_parallel_failure_keeps_previous_group_and_other_completed_outputs(tmp_p
     assert old.read_bytes() == b"previous complete moveout"
     assert result["drawn"]["stations"] == [str(complete)]
     assert result["not_drawn"]["2_ccf_moveout_1-2Hz"] == "renderer failed"
+    assert result["failed"] == ["2_ccf_moveout_1-2Hz: renderer failed"]  # the step is then incomplete
     assert result["figure_seconds"] == {"stations": 1.0}
 
 

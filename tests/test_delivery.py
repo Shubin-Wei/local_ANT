@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lant import assistant_rules, config, delivery, inspect, paths
+from lant import assistant_rules, config, delivery, inspect, paths, run_report
 
 
 def project(tmp_path):
@@ -58,7 +58,10 @@ def test_results_hold_readable_products_without_solver_projects(tmp_path, monkey
         "99.97642,30.10929,0.50000,2.48578\n"
     )
     assert sorted(p.name for p in (root / "results/model").iterdir()) == ["vs_model.csv"]
-    assert sorted(p.name for p in (root / "results/validation").iterdir()) == ["evaluation.json"]
+    assert sorted(p.name for p in (root / "results/validation").iterdir()) == [
+        "checkerboard_recovery.csv",
+        "evaluation.json",
+    ]
     assert not (root / "results/reproduce").exists()  # the solver files stay in work/06_inversion/main
     assert "vs_model.csv" in (root / "README.md").read_text()
     assert json.loads((root / ".lant/layout.json").read_text())["version"] == delivery.LAYOUT_VERSION
@@ -105,7 +108,7 @@ def test_step_products_are_available_before_inversion_and_keep_their_origins(tmp
     state = {s: dict(state="done", run=1, time="t") for s in delivery.STEP_FIGURES}
     state["reference"]["run"] = 2  # the retained spectrum is from the previous reference run
     monkeypatch.setattr(manifest, "status", lambda *a, **k: state)
-    delivery.write_report(cfg)
+    run_report.write_report(cfg)
     report = (root / "REPORT.md").read_text()
     assert "results/parameters.yaml" in report
     assert "![3_fj_phase_velocity](results/figures/3_fj_phase_velocity.png)" in report
@@ -231,7 +234,7 @@ def test_report_names_the_run_of_each_retained_tree(tmp_path, monkeypatch):
     assert marks["results/model"]["step"] == "evaluate" and marks["results/model"]["run"] == 1
     # evaluate has run again since (run 2) without being published
     monkeypatch.setattr(manifest, "status", lambda *a, **k: {"evaluate": dict(state="done", run=2, time="t")})
-    delivery.write_report(cfg)
+    run_report.write_report(cfg)
     text = (root / "REPORT.md").read_text()
     assert "results/model/" in text and "OLDER than the latest run" in text
 
@@ -294,7 +297,7 @@ def test_report_says_when_a_retained_result_is_no_longer_current(tmp_path, monke
 
     cfg, inv, _ = _evaluated_project(tmp_path, monkeypatch)
     monkeypatch.setattr(manifest, "status", lambda *a, **k: {"evaluate": dict(state="out of date", run=1, time="t")})
-    delivery.write_report(cfg)
+    run_report.write_report(cfg)
     text = (Path(cfg["project"]["output_dir"]) / "REPORT.md").read_text()
     assert "that step is now out of date" in text and "OLDER" not in text
 
@@ -316,7 +319,7 @@ def test_report_opens_with_state_numbers_judgements_and_figures(tmp_path, monkey
     }
     monkeypatch.setattr(manifest, "status", lambda *a, **k: state)
     manifest._save(cfg, {"steps": {"stack": {"to_confirm": ["remove the 3 candidate sub-stacks?"]}}})
-    delivery.write_report(cfg)
+    run_report.write_report(cfg)
     text = (root / "REPORT.md").read_text()
     order = [text.index(h) for h in ("## Key numbers", "## For you to judge", "## Main figures", "## Steps")]
     assert order == sorted(order)
@@ -438,23 +441,25 @@ def test_main_preview_is_retired_by_the_evaluated_model_unless_changed(tmp_path,
     assert "results/main_preview" not in json.loads((root / ".lant/published.json").read_text())
 
 
-def test_step_times_come_from_the_latest_completed_run(tmp_path):
-    """The steps table of REPORT.md shows the wall time of the latest completed run of each step."""
+def test_model_table_carries_dws_and_recovery_table(tmp_path):
+    """vs_model.csv gets the solver's DWS per updated node (empty where not updated); the recovery table lists slope
+    and r per checkerboard and depth; the best horizontal checkerboard is the one with the highest median slope."""
     import json
 
-    from lant import delivery, records
+    from lant import delivery
 
-    cfg = config.defaults()
-    cfg["project"]["output_dir"] = str(tmp_path)
-    log = Path(records.rec_dir(cfg, create=True)) / "run_log.jsonl"
-    with open(log, "w") as fh:
-        for e in (
-            dict(step="cc", event="done", seconds=50.0),
-            dict(step="cc", event="failed", seconds=3.0),
-            dict(step="cc", event="done", seconds=136.0),
-            dict(step="run", event="done", seconds=1256.2),
-        ):
-            fh.write(json.dumps(e) + "\n")
-        fh.write("not json\n")
-    assert delivery.step_seconds(cfg) == {"cc": 136.0, "run": 1256.2}
-    assert [delivery._duration(s) for s in (None, 52.0, 1256.2, 9000.0)] == ["", "52 s", "21 min", "2.5 h"]
+    (tmp_path / "m.dat").write_text(" 100.0 30.0 0.0 2.1\n 100.0 30.0 0.5 2.6\n")
+    (tmp_path / "DWS.dat").write_text("# lon lat depth_km DWS\n 100.00000 30.00000 0.00000 1.250000e+01\n")
+    delivery.write_model_table(tmp_path / "m.dat", tmp_path / "vs.csv", tmp_path / "DWS.dat")
+    assert (tmp_path / "vs.csv").read_text().splitlines() == [
+        "longitude_deg,latitude_deg,depth_km,vs_km_s,dws",
+        "100.0,30.0,0.0,2.1,12.5",
+        "100.0,30.0,0.5,2.6,",
+    ]
+    rows = lambda s: [dict(depth_km=0.1, slope=s, r=0.5, n=10), dict(depth_km=0.3, slope=s / 2, r=0.4, n=10)]  # noqa: E731
+    ev = dict(checkerboards={"cb_1km": rows(0.2), "cb_2km": rows(0.6), "cb_vertical": rows(0.9)})
+    (tmp_path / "evaluation.json").write_text(json.dumps(ev))
+    assert run_report.best_checkerboard(tmp_path / "evaluation.json")[0] == "cb_2km"
+    delivery.write_recovery_table(tmp_path / "evaluation.json", tmp_path / "rec.csv")
+    lines = (tmp_path / "rec.csv").read_text().splitlines()
+    assert lines[0] == "test,depth_km,slope,r,nodes" and "cb_2km,0.1,0.600,0.500,10" in lines and len(lines) == 7

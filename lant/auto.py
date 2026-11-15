@@ -9,7 +9,7 @@ Clean step, from the station geometry and the records (infer):
   data.day_start_utc_hour        the UTC hour at which most records longer than 12 h start (0 when they are spread)
   stack.block_hours              the longest of 24, 12, 8, 6, 4, 3, 2, 1 h giving the median station >= 8 sub-stacks
   inversion.grid_spacing_deg     set by the inversion step (lant.inversion.project.grid_spacing): the median
-                                 measured wavelength / 3, times grid_refine for the coarse grid
+                                 measured wavelength / 3
   checks.checkerboards           set by the inversion step (lant.inversion.checker_design): cells of 1, 2 and 3
   checks.vertical                median measured wavelengths; one depth-varying test
   plots.sections                 areal: two sections through the centre of the stations along the principal axes
@@ -202,8 +202,7 @@ def infer(cfg, stations, traces):
     put(
         ("inversion", "grid_spacing_deg"),
         "auto",
-        "set by the inversion step: the median measured wavelength / 3 (x grid_refine %d for the coarse grid)"
-        % cfg["inversion"]["grid_refine"],
+        "set by the inversion step: the median measured wavelength / 3",
     )
     put(
         ("checks", "checkerboards"),

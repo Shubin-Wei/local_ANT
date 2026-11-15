@@ -2,7 +2,7 @@
 
 [中文](python_backends.zh.md) | English
 
-lant's 3-D inversion is a statement-by-statement Python/Numba port of DSurfTomo `a651faf` (Fang et al. 2015): its main program (`main.f90`) and the forward part of CalSurfG, for fundamental Rayleigh phase velocities. It reads and writes DSurfTomo's own files under their names and formats, so a project directory can be read as a DSurfTomo project. Before 2.0 lant called the Fortran program; the port is checked against it with the comparisons below.
+lant's 3-D inversion is a Python/Numba port of DSurfTomo `a651faf` (Fang et al. 2015): its main program (`main.f90`) and the forward part of CalSurfG, for fundamental Rayleigh phase velocities. It reads and writes DSurfTomo's own files under their names and formats, so a project directory can be read as a DSurfTomo project. The forward part (fast marching, rays, phase velocities) and the LSMR solver are ported statement by statement. Since 2.0.1 the inversion method differs from DSurfTomo's on purpose, each change with its basis: the regularization, the rejection, LSMR's condition limit and the way the depth kernels are differentiated ("2.0.1 changes" below). The 2.0.0 port was byte-identical to native DSurfTomo; that comparison is kept below.
 
 ## How lant runs it
 
@@ -31,13 +31,26 @@ The fixed CalSurfG settings are kept (`gdx=gdz=8`, `sgdl=8`, `sgs=8`, Earth radi
 | Module | What of `main.f90` it follows |
 |---|---|
 | `dsurf_main` | the program: reading, synthetic data, iteration loop, update, output (the module docstring lists every step with its line numbers) |
-| `dsurf_system` | residuals, `getpercentile` and the quartile rejection, DWS, smoothing rows, residual statistics |
-| `dsurf_lsmr` | `lsmrModule.f90` with `dp = kind 4`, `aprod.f90`, `lsmrblas.f90` |
+| `dsurf_system` | residuals, DWS, residual statistics; lant's MAD rejection (DSurfTomo's quartile rejection and smoothing rows are kept for reference) |
+| `model_regularization` | lant's regularization (not in DSurfTomo) |
+| `dsurf_lsmr` | `lsmrModule.f90` with `dp = kind 4`, `aprod.f90`, `lsmrblas.f90` (kept for reference; since 2.0.1 the iterations solve with `least_squares`) |
+| `least_squares` | lant's solve: LSMR in double precision on the column-scaled matrix (not in DSurfTomo) |
 | `dsurf_format` | gfortran list-directed and `Fw.d` output |
 
-Everything is reproduced as the Fortran does it, quirks included: REAL arithmetic wherever `main.f90` declares REAL (residuals, rejection, matrix, LSMR, update); LSMR in single precision with `atol = btol = 1e-6`, `conlim = 100`, `itnlim = 400` and local reorthogonalization over 10 vectors (`scipy.sparse.linalg.lsmr` is double precision without local reorthogonalization, so it is not used); the residual `obst(i) - dsyn(i)` index by index between file order and CalSurfG order; rejection outside `threshold x [q25, q75]` on the signed quartiles, with rejected rows kept as zero rows; the smoothing rows only on the diagonal at the faces of the parameter box; the velocity change clipped to ±0.5 km/s and the model to the velocity bounds; the logged residual of iteration *k* belongs to the model before update *k*; the synthetic data computed on a propagation grid diced 5 × 5 instead of 8 × 8, as CalSurfG's `synthetic`; `velmap2dRc.dat` labelled with the Fortran's offset index. `spfra` only sizes arrays: the run stops when the nonzeros exceed it, as native. Not reproduced: gfortran's random stream for `noiselevel > 0` (a stand-in Marsaglia draw is used, zero added noise removes the random-stream difference, while dispersion kernels can still produce different synthetic observations), the boundary-ray warning on the screen, group and Love data.
+Reproduced as the Fortran does it (apart from the 2.0.1 changes below): REAL arithmetic wherever `main.f90` declares REAL (residuals, matrix, update); in `dsurf_lsmr`, LSMR in single precision with `atol = btol = 1e-6`, `itnlim = 400` and local reorthogonalization over 10 vectors; the residual `obst(i) - dsyn(i)` index by index between file order and CalSurfG order, rejected rows kept as zero rows; the velocity change clipped to ±0.5 km/s and the model to the velocity bounds; the logged residual of iteration *k* belongs to the model before update *k*; the synthetic data computed on a propagation grid diced 5 × 5 instead of 8 × 8, as CalSurfG's `synthetic`; `velmap2dRc.dat` labelled with the Fortran's offset index. Not reproduced: gfortran's random stream for `noiselevel > 0` (a stand-in Marsaglia draw is used), the boundary-ray warning on the screen, group and Love data.
 
-The depth kernels follow DSurfTomo's own dispersion code in its own precision: the layer model, the earth flattening and the stored phase velocity are REAL, the dispersion function and the root search double, REAL constants keep their single-precision value in double expressions, and integer powers are multiplied as gfortran expands them. Their phase velocities and Vs, Vp and density partials equal the native depthkernel bit for bit (a stored native output is a test). `dsurf_kernels` solves identical columns once and computes partials only where CalSurfG reads them (interior columns, nodes above the last depth). Not reproduced: native depthkernel shares getsol's SAVE variable between its OpenMP threads; here it is local to each call (the value of a serial run).
+## 2.0.1 changes
+
+| | DSurfTomo | lant 2.0.1 | Basis |
+|---|---|---|---|
+| Regularization | smoothing (Laplacian, only 2 × weight on the diagonal at the faces of the box, the top layer included) and LSMR damping of each update; data rows as they are | smoothing of the model itself (m + dv − m0, jumping), Laplacian of the whole box with the neighbours each node has, no damping; data term per kept datum and model term per parameter (`model_regularization`) | Shaw & Orcutt (1985); Constable et al. (1987); Aster et al. (2013); [methods.md](methods.md) 8.4 |
+| Rejection | outside `threshold × [q25, q75]` of the signed residuals | further than `outlier_mad` × 1.4826 MAD from the median residual, both per period (`dsurf_system.reject_mad`) | Rousseeuw & Croux (1993); Leys et al. (2013); the travel-time error grows with the period (methods.md 8.3) |
+| Least-squares solve | LSMR in single precision, `atol = btol = 1e-6`, `itnlim = 400`, `conlim = 100`: the tolerances are near the resolution of REAL and seldom met (on the areal synthetic example four of six iterations ended at 400 iterations), and the condition limit stops once its estimate passes 100; both early stops act as a second regularization whose strength depends on the size of the problem | LSMR in double precision on the matrix with every column scaled to unit length, the authors' tolerances (`atol = btol = 1e-6`, `conlim = 1e8`) and iteration limit min(m, n) (`least_squares`) | Fong & Saunders (2011); Paige & Saunders (1982); Hansen (1998) |
+| Depth kernels | Vs, Vp and density perturbed one at a time (six dispersion calculations per node), combined with dVp/dVs and dρ/dVs of the Brocher relation | the derivative along the Brocher relation (Vp and ρ of the node follow its Vs): two calculations per node, the same sum by the chain rule to the finite-difference error (within 0.03 % of the native combination on the stored native output; about a third of the time), and only for the grid columns the rays touch (`dsurf_kernels.LazyKernels`; G unchanged bit for bit; on the areal synthetic example 62 % of the nodes had no data) | chain rule; a column no ray touches has no entry in G |
+| Synthetic noise | `noiselevel` × gaussian × travel time | with `noise_seconds.txt` in the project: gaussian × the standard deviation (s) of the row's period, the same draws (`dsurf_main.synthetic_data`) | a phase error grows with the period, not with the path (methods.md 9) |
+| Sparse reserve | `spfra` sizes the arrays; too small stops the run | arrays sized from the data; the line is read and not used | — |
+
+The depth kernels use DSurfTomo's own dispersion code in its own precision: the layer model, the earth flattening and the stored phase velocity are REAL, the dispersion function and the root search double, REAL constants keep their single-precision value in double expressions, and integer powers are multiplied as gfortran expands them. The phase velocities equal the native depthkernel bit for bit (a stored native output is a test). `dsurf_kernels` solves identical columns once and computes derivatives only where CalSurfG reads them (interior columns, nodes above the last depth). Not reproduced: native depthkernel shares getsol's SAVE variable between its OpenMP threads; here it is local to each call (the value of a serial run).
 
 ## Agreement with the original (2.0.0)
 
@@ -53,7 +66,7 @@ The following independently synthesized comparison is historical and does not re
 
 ## Comparison with the original
 
-The earlier comparison uses a sinusoidal checkerboard, following the README overview: ±6 % Vs, 3-km cells, 16 stations, 2884 travel times at 32 periods, a 33 × 35 × 11 grid and six iterations. Both programs read copies of the same `DSurfTomo.in`, `MOD`, `MOD.true` and `surfdata.dat`. Synthetic observations use each solver's own forward calculation with zero added noise. The comparison fixes weight = damping = 1 and uses 8 threads; this benchmark setting does not replace lant's automatic resource or regularization defaults.
+The earlier comparison uses a sinusoidal checkerboard: ±6 % Vs, 3-km cells, 16 stations, 2884 travel times at 32 periods, a 33 × 35 × 11 grid and six iterations. Both programs read copies of the same `DSurfTomo.in`, `MOD`, `MOD.true` and `surfdata.dat`. Synthetic observations use each solver's own forward calculation with zero added noise. The comparison fixes weight = damping = 1 and uses 8 threads; this benchmark setting does not replace lant's automatic resource or regularization defaults.
 
 ![Checkerboard: truth, native, Python and difference](assets/solver_checkerboard.png)
 
@@ -80,8 +93,13 @@ Times are the mean of six iterations after dropping the fastest and slowest. Bot
 
 ## Sources and licences
 
+- Shaw & Orcutt (1985), *Geophys. J. R. astr. Soc.* 82, 375–414; Constable, Parker & Constable (1987), *Geophysics* 52, 289–300, doi:10.1190/1.1442303: regularization of the model itself ("jumping").
+- Aster, Borchers & Thurber (2013), *Parameter Estimation and Inverse Problems*, 2nd ed., Academic Press: finite-difference roughening matrices, misfit per datum.
+- Rousseeuw & Croux (1993), *J. Am. Stat. Assoc.* 88, 1273–1283, doi:10.1080/01621459.1993.10476408; Leys et al. (2013), *J. Exp. Soc. Psychol.* 49, 764–766, doi:10.1016/j.jesp.2013.03.013: the MAD and its scale 1.4826, k = 3.
 - [DSurfTomo](https://github.com/HongjianFang/DSurfTomo), pinned `a651faf92758c1b4c5eb494a4865ef797b9a4b1c`, MIT; Fang et al. (2015), doi:10.1093/gji/ggv080. The ported program.
 - Herrmann (2013), *Seismol. Res. Lett.* 84(6), 1081–1088, doi:10.1785/0220110096: Computer Programs in Seismology, whose surf96 DSurfTomo's surfdisp96.f modifies.
 - LSMR: Fong & Saunders (2011), doi:10.1137/10079687X, as in DSurfTomo's `lsmrModule.f90`.
+- Paige, C. C., & Saunders, M. A. (1982). LSQR: an algorithm for sparse linear equations and sparse least squares. *ACM Transactions on Mathematical Software*, 8, 43–71. doi:10.1145/355984.355989
+- Hansen, P. C. (1998). *Rank-Deficient and Discrete Ill-Posed Problems*. SIAM. doi:10.1137/1.9780898719697
 - The comparison metrics follow pDSurfTomo (Zhu et al. 2026, arXiv:2604.11920).
 - [PyGMT](https://www.pygmt.org/), BSD-3-Clause, wrapping GMT (LGPL), for `plots.backend: pygmt`.

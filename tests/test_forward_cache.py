@@ -170,13 +170,15 @@ def test_stochastic_synthetic_precheck_is_never_reused(tmp_path, monkeypatch):
 
 
 def test_solver_identity_follows_the_source_of_the_port(monkeypatch):
-    from lant.inversion import dsurf_lsmr, solver
+    from lant.inversion import least_squares, solver
 
     original = cache.solver_identity()
-    assert original == solver.identity() and "lant.inversion.dsurf_lsmr" in original["sources"]
+    assert original == solver.identity() and "lant.inversion.least_squares" in original["sources"]
     read = cache.Path.read_bytes
     monkeypatch.setattr(
-        cache.Path, "read_bytes", lambda p: read(p) + (b"#" if p.name == cache.Path(dsurf_lsmr.__file__).name else b"")
+        cache.Path,
+        "read_bytes",
+        lambda p: read(p) + (b"#" if p.name == cache.Path(least_squares.__file__).name else b""),
     )
     assert cache.solver_identity() != original
 

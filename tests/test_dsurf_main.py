@@ -64,9 +64,26 @@ def test_synthetic_branch_writes_true_and_inverted_models(tmp_path):
     assert len((folder / "velmap2dRc.dat").read_text().splitlines()) == 2 * 5 * 6
 
 
-def test_stops_like_native_when_the_sparsity_fraction_is_too_small(tmp_path):
+def test_sparsity_line_is_read_but_not_used(tmp_path):
+    """lant sizes the arrays from the data: a sparsity fraction that would stop native DSurfTomo does not stop it."""
     folder = project(tmp_path)
     text = (folder / "DSurfTomo.in").read_text().replace("0.5                              c: sparsity", "0.001 c")
     (folder / "DSurfTomo.in").write_text(text)
-    with pytest.raises(SystemExit, match="increase sparsity fraction"):
-        dsurf_main.run(folder, "DSurfTomo.in", kernels=fake_kernels(folder), screen=io.StringIO())
+    dsurf_main.run(folder, "DSurfTomo.in", kernels=fake_kernels(folder), screen=io.StringIO())
+    assert "Program finishes successfully" in (folder / "DSurfTomo.in.log").read_text()
+
+
+def test_noise_per_period_in_seconds(tmp_path):
+    """lant's checkerboard noise: the standard deviation of the row's period (NOISE_FILE), not a fraction of t."""
+    d = project(tmp_path)
+    p = dsurf_input.read_project(d)
+    c, k, true_vs = p.control, fake_kernels(d), p.vs.copy()
+    clean = dsurf_main.synthetic_data(p, true_vs, 1, None, k)  # noiselevel 0
+    np.savetxt(d / dsurf_main.NOISE_FILE, np.c_[c.periods_rc, 0.01 * np.arange(1, len(c.periods_rc) + 1)])
+    noisy = dsurf_main.synthetic_data(p, true_vs, 1, None, k, noise_file=d / dsurf_main.NOISE_FILE)
+    rows = p.measurements.row_periods()
+    z = (noisy - clean) / (0.01 * rows)  # standard normal draws, whatever the period
+    assert np.all(np.isfinite(z)) and 0 < np.abs(z).max() < 6
+    np.savetxt(d / dsurf_main.NOISE_FILE, np.c_[[99.0], [0.01]])
+    with pytest.raises(ValueError, match="no noise"):
+        dsurf_main.synthetic_data(p, true_vs, 1, None, k, noise_file=d / dsurf_main.NOISE_FILE)

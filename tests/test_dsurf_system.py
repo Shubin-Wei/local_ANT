@@ -40,3 +40,32 @@ def test_dws_and_statistics_in_single_precision():
     mean, std, rms = S.residual_statistics(np.array([0.1, -0.1, 0.3], np.float32))
     assert mean == np.float32(np.float32(0.3) / 3) or abs(mean - 0.1) < 1e-7
     assert abs(std - np.std([0.1, -0.1, 0.3])) < 1e-6 and abs(rms - np.sqrt(0.11 / 3)) < 1e-6
+
+
+def test_mad_rejection_is_centred_and_symmetric():
+    r = np.r_[np.linspace(-1, 1, 41), 10.0, -10.0].astype(np.float32)
+    weights, kept = S.reject_mad(r, 3.0)
+    assert weights[-2:].tolist() == [0, 0] and weights[:-2].all()
+    assert kept[-2:].tolist() == [0, 0]
+
+
+def test_mad_rejection_per_period_does_not_reject_the_noisier_period():
+    rng = np.random.default_rng(1)
+    short, long_ = rng.normal(0, 0.01, 200), rng.normal(0, 0.04, 200)  # spread proportional to the period
+    r = np.r_[short, long_].astype(np.float32)
+    periods = np.r_[np.full(200, 1), np.full(200, 2)]
+    pooled, _ = S.reject_mad(r, 3.0)
+    split, _ = S.reject_mad(r, 3.0, periods)
+    assert (pooled[200:] == 0).sum() > 20  # one MAD for both rejects the long period's ordinary values
+    assert (split == 0).sum() <= 6  # about 0.27 % of normal values lie beyond 3 sigma
+
+
+def test_small_periods_borrow_their_nearest_neighbours():
+    r = np.r_[np.zeros(30), [0.0, 1.0]].astype(np.float32) + np.r_[np.linspace(-0.1, 0.1, 30), [0, 0]].astype(
+        np.float32
+    )
+    periods = np.r_[np.full(30, 1), [2, 2]]
+    centre, scale = S.robust_centre_scale(r, periods, min_rows=20)
+    assert scale[-1] == scale[0] > 0  # period 2 (2 rows) is pooled with period 1
+    weights, _ = S.reject_mad(r, 3.0, periods, min_rows=20)
+    assert weights[-1] == 0 and weights[-2] == 1

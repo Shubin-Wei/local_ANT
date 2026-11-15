@@ -64,3 +64,24 @@ def test_source_drift_does_not_hide_original_failure(tmp_path, monkeypatch):
         with records.Step(cfg, "run"):
             monkeypatch.setattr(runtime_identity, "source_files", lambda: {})
             raise ValueError("actual failure")
+
+
+def test_code_identity_ignores_docstrings_and_comments_only():
+    from lant.runtime_identity import _code_only
+
+    a = 'def f(x):\n    """Twice x."""\n    return 2 * x  # double\n'
+    b = 'def f(x):\n    """Two times x, reworded."""\n\n    # a comment\n    return 2 * x\n'
+    c = 'def f(x):\n    """Twice x."""\n    return 3 * x\n'
+    assert _code_only(a) == _code_only(b) != _code_only(c)
+
+
+def test_step_record_carries_the_code_of_its_step(monkeypatch):
+    """A processing step recorded by other code (another lant version) is out of date: its numerics differ."""
+    from lant import config, manifest, runtime_identity
+
+    cfg = config.defaults()
+    for step in runtime_identity.STEP_SOURCES:
+        assert manifest.numerical_dependencies(cfg, step)["code"] == runtime_identity.code_digest(step)
+    before = manifest.numerical_dependencies(cfg, "disp")
+    monkeypatch.setitem(runtime_identity._CODE, "disp", "0" * 16)
+    assert manifest.numerical_dependencies(cfg, "disp") != before

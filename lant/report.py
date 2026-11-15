@@ -32,7 +32,6 @@ STEP_KEYS = {
         "dispersion.fmax_hz",
         "stack.block_hours",
         "inversion.grid_spacing_deg",
-        "inversion.grid_refine",
     ],
     "cc": ["correlation"],
     "stack": ["stack"],
@@ -52,6 +51,22 @@ STEP_KEYS = {
     "evaluate": ["checks"],
     "figures": ["plots"],
 }
+
+# Small input files named in the configuration: their content, not only their path, belongs to the step's
+# parameters, so that a file rewritten in place makes the step out of date (the raw records, station table and
+# responses are checked by lant.manifest.raw_inputs).
+CONTENT_KEYS = ("reference.file", "inversion.start_model.file")
+
+
+def content_digest(path):
+    import hashlib
+
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except OSError as exc:
+        return "unreadable: %s" % exc.strerror
+
 
 # The parameters one usually changes after looking at a step, and what they do.
 TUNE = {
@@ -81,11 +96,11 @@ TUNE = {
     "disp": [("export.tmin_s / tmax_s", "periods passed on")],
     "inversion": [
         ("inversion.depth_sequence_km", "depth nodes"),
-        ("inversion.weight / damp", "regularisation"),
+        ("inversion.weight", "regularisation"),
         ("inversion.start_model", "a starting model of your own"),
         ("checks.*", "checkerboards and controls"),
     ],
-    "run": [("inversion.weight / damp", "regularisation (then from the inversion step)")],
+    "run": [("inversion.weight", "regularisation (then from the inversion step)")],
     "evaluate": [("checks.iteration_residuals", "residuals of every iteration (one forward run each)")],
     "figures": [("plots.*", "colour range, slice depths, sections, topography, font size")],
 }
@@ -158,6 +173,9 @@ def used_params(cfg, step):
     for k, setting in auto.DERIVED_LATER.get(step, {}).items():
         if k in out:
             out[k] = setting(cfg)
+    for k in CONTENT_KEYS:
+        if isinstance(out.get(k), str):
+            out[k + ".sha256"] = content_digest(out[k])
     root = cfg["project"]["output_dir"]
 
     def portable(value):

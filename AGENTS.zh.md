@@ -2,7 +2,7 @@
 
 中文 | [English](AGENTS.md)
 
-本仓库是密集台阵高频背景噪声面波成像的完整流程（原始记录 → 清洗 → 逐小时互相干 → 叠加与台站诊断 → 参考曲线 → 两台法相速度与质量控制 → DSurfTomo 三维 Vs → 检验和出图），命令行入口是 `lant`。
+本仓库是密集台阵高频背景噪声面波成像的完整流程（原始记录 → 清洗 → 逐小时互相干 → 叠加与台站诊断 → 参考曲线 → 两台法相速度与质量控制 → 由走时直接反演三维 Vs（Fang et al. 2015，DSurfTomo 的方法；lant 的正则化）→ 检验和出图），命令行入口是 `lant`。
 
 ## 使用者让你处理数据时
 
@@ -19,12 +19,12 @@
 
 ## 修改本项目代码时
 
-- 结构：`lant/`（每步一个模块：`clean`（台站日归档由 `clean_archive.py` 处理）`cc` `stack` `reference` `disp` `qc` `export`；`pipeline.py` 串起来；`manifest.py` 记录哪些结果成立；`auto.py` 是规则；`confirm.py` 是判断事项；`report.py` 组装步骤报告；`step_descriptions.py` 描述各步骤已记录结果；`params.py` 是每个键的含义和依据；另有 `response.py`、`stations.py`（台站表）、`station_match.py`（记录对应台站）、`station_qc.py`（叠加步骤的台站诊断）、`pulse.py`（1 s 授时脉冲）、`fj.py`（F-J 谱和脊线）、`inversion/`（`run.py` 调度求解，`model_evaluation.py` 读取及评估模型）、`plotting/`（含 `figure_batch.py`，独立进程绘制主图）；工程基础设施：`record_index.py`（原始文件发现及头段缓存）、`paths.py`（目录布局）、`records.py`（步骤上下文、日志）、`artifacts.py`（文件登记、写锁上下文、缓存清理）、`delivery.py`（成果、REPORT、工程 README）、`assistant_rules.py`（工程里给 AI 助手的规则文件）、`progress.py`、`processes.py`（求解进程组、进程池看门狗）、`resources.py`（内存和磁盘）、`synthetic.py`、`synthetic_checkerboard.py` 与 `demo.py`（已知答案的数据）），`cc_kernel.py`（cc 的编译版台站对求和）、`config/example.yaml`（完整模板，即 `lant init --full` 写出的内容），`docs/`，`examples/synthetic/`（与已知答案的比较），`tests/`（每个模块一个文件，公用函数在 `tests/util.py`）。
+- 结构：`lant/`（每步一个模块：`clean`（台站日归档由 `clean_archive.py` 处理）`cc` `stack` `reference` `disp` `qc` `export`；`pipeline.py` 串起来；`manifest.py` 记录哪些结果成立；`auto.py` 是规则；`confirm.py` 是判断事项；`report.py` 组装步骤报告；`step_descriptions.py` 描述各步骤已记录结果；`params.py` 是每个键的含义和依据；另有 `response.py`、`stations.py`（台站表）、`station_match.py`（记录对应台站）、`station_qc.py`（叠加步骤的台站诊断）、`pulse.py`（1 s 授时脉冲）、`fj.py`（F-J 谱和脊线）、`inversion/`（`run.py` 调度求解，`model_evaluation.py` 读取及评估模型）、`plotting/`（含 `figure_batch.py`，独立进程绘制主图）；工程基础设施：`record_index.py`（原始文件发现及头段缓存）、`paths.py`（目录布局）、`records.py`（步骤上下文、日志）、`artifacts.py`（文件登记、写锁上下文、缓存清理）、`delivery.py`（成果、工程 README）、`run_report.py`（REPORT.md）、`assistant_rules.py`（工程里给 AI 助手的规则文件）、`progress.py`、`processes.py`（求解进程组、进程池看门狗）、`resources.py`（内存和磁盘）），`cc_kernel.py`（cc 的编译版台站对求和）、`config/example.yaml`（完整模板，即 `lant init --full` 写出的内容），`docs/`，`tests/`（每个模块一个文件，公用函数在 `tests/util.py`）。
 - 默认值只放在 `lant/config.py`；每个键都要在 `lant/params.py` 里有说明（有测试检查）。改了默认值或方法，要同步改两种语言的 `docs/parameters`（`python tools/make_parameter_doc.py`）、`docs/tutorial` 和 `docs/methods`，并在 `docs/history` 里记下改动。
 - 代码、配置、图中文字用英文。每份文档都有英文版（`x.md`）和中文版（`x.zh.md`），两版逐节对应。
 - 每个模块一个明确的职责，名字说明它做什么。约 500 行时检查是否混入了几个职责（混入了就拆；默认值表不算）；200 行以内不为凑小文件而拆。
-- 运行 `python -m pytest tests`，并用合成算例跑通改动涉及的步骤。
-- `dsurf_*` 模块逐句对应 DSurfTomo：改动其数值时必须重新与原版对比（docs/python_backends.zh.md）。
+- 运行 `python -m pytest tests` 和流程冒烟测试（`tests/smoke_records.py`，与 CI 相同）；改动方法时还要做 docs/validation.zh.md 中反演层面的合成对比。
+- `dsurf_*` 模块逐句对应 DSurfTomo，2.0.1 起 lant 有意做的改动除外（正则化、剔除、最小二乘求解、深度核求导、合成噪声；列在 docs/python_backends.zh.md “2.0.1 的改动”，模块说明中标为 “lant”）。改动其数值时必须重新与原版对比，再有新的不同也要连同依据加进那张表。
 - 核数由程序定（`resources.cores: auto`）；用户没要求不要设，只汇报每一步用了多少。
 - 方法和默认值要有出处：文献、理论，或明确标为“经验值”。不要自己造门限。
 

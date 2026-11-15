@@ -17,7 +17,7 @@
 
 ## 本地检查
 
-先安装 `pip install -e ".[dev]"`，再运行 `ruff check lant tests tools examples`、`ruff format --check lant tests tools examples` 和 `python -m pytest tests --cov=lant`；lint 规则及忽略项的理由写在 `pyproject.toml`。格式化单独提交。用 `python -m build` 构建两种发行物，再在源码树外验证 wheel。CI 运行 lint 和格式检查、Python 3.11/3.12/3.13 上的测试、快速合成算例（到反演工程）以及安装的 wheel。
+先安装 `pip install -e ".[dev]"`，再运行 `ruff check lant tests tools`、`ruff format --check lant tests tools` 和 `python -m pytest tests --cov=lant`；lint 规则及忽略项的理由写在 `pyproject.toml`。格式化单独提交。用 `python -m build` 构建两种发行物，再在源码树外验证 wheel。CI 运行 lint 和格式检查、Python 3.11/3.12/3.13 上的测试、快速合成算例（到反演工程）以及安装的 wheel。
 
 ## 职责审查，2026-11-13
 

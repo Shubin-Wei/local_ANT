@@ -188,6 +188,17 @@ def zone_references(cfg, stack, d, freqs, c, curve, support):
     )
 
 
+ZONE_FILES = ("zones.npz", "zones.txt", "zones.png")
+
+
+def drop_zones(d):
+    """Remove the zone references of an earlier run: disp uses zones.npz whenever it exists."""
+    for name in ZONE_FILES:
+        path = os.path.join(d, name)
+        if os.path.exists(path):
+            os.remove(path)
+
+
 def run(cfg):
     from . import auto, disp
 
@@ -198,6 +209,7 @@ def run(cfg):
         raise RuntimeError(".lant/auto_parameters.json has no geometry: run `lant run clean` first")
     auto.reset(cfg, auto.REFERENCE_KEYS)
     cfg = auto.restore(cfg, auto.REFERENCE_KEYS)
+    drop_zones(d)  # zones of an earlier run would override this run's reference in disp
     if r["source"] == "file":
         freqs, c, valid, support, origin, note = from_file(cfg, r["file"])
         if valid.sum() < 2:
@@ -342,9 +354,6 @@ def run(cfg):
     )
     fig.savefig(os.path.join(d, "fj.png"), dpi=150)
     plt.close(fig)
-    zp = os.path.join(d, "zones.npz")
-    if os.path.exists(zp):
-        os.remove(zp)
     zsum = zone_references(cfg, stack, d, freqs, c, curve, support) if r["zone_km"] else None
     out = dict(
         source="fj",

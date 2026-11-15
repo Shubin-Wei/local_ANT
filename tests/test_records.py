@@ -203,3 +203,53 @@ def test_solver_project_timing_reports_failed_and_skipped_projects(tmp_path, mon
     assert summary["failed"] == ["bad"]
     assert timings["bad"]["status"] == "failed" and timings["complete"]["status"] == "skipped"
     assert all(event["seconds"] >= 0 for event in timings.values())
+
+
+def test_external_file_rewritten_in_place_changes_the_step_parameters(tmp_path):
+    """reference.file and inversion.start_model.file keep their paths but get new content: the parameters the step
+    is recorded with change (lant.manifest.status then marks it out of date)."""
+    from lant import report
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path / "out")
+    curve, model = tmp_path / "borrowed.txt", tmp_path / "start.txt"
+    curve.write_text("1.0 2.0\n2.0 1.9\n")
+    model.write_text("0 2.0\n1 2.5\n")
+    cfg["reference"].update(source="file", file=str(curve))
+    cfg["inversion"]["start_model"]["file"] = str(model)
+    before = report.used_params(cfg, "reference"), report.used_params(cfg, "inversion")
+    curve.write_text("1.0 3.0\n2.0 2.9\n")
+    model.write_text("0 2.1\n1 2.5\n")
+    after = report.used_params(cfg, "reference"), report.used_params(cfg, "inversion")
+    assert before[0]["reference.file"] == after[0]["reference.file"]
+    assert before[0]["reference.file.sha256"] != after[0]["reference.file.sha256"]
+    assert before[1]["inversion.start_model.file.sha256"] != after[1]["inversion.start_model.file.sha256"]
+
+
+def test_product_changed_after_the_step_makes_it_out_of_date(tmp_path):
+    """A registered product of a step rewritten outside lant (same path, other content): the step and the later
+    ones no longer stand."""
+    from lant import artifacts, manifest, paths, report
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    clean = tmp_path / "work/01_clean"
+    clean.mkdir(parents=True)
+    for name in ("archive_index.json", "stations.csv"):
+        (clean / name).write_text("test")
+    ccf = tmp_path / os.path.relpath(paths.P(cfg, paths.CCF), str(tmp_path))
+    ccf.mkdir(parents=True)
+    (ccf / "day_2024001.h5").write_text("day")
+    stack = tmp_path / os.path.relpath(paths.stack_product(cfg), str(tmp_path))
+    stack.parent.mkdir(parents=True, exist_ok=True)
+    stack.write_text("stack")
+    for step in ("clean", "cc", "stack"):
+        manifest.record(cfg, step, "done", params=report.used_params(cfg, step))
+    artifacts.register(cfg, {})
+    assert manifest.status(cfg)["stack"]["state"] == "done"
+    stack.write_text("another stack")
+    st = manifest.status(cfg)
+    assert st["stack"]["state"] == "out of date" and "changed after the step wrote them" in st["stack"]["reason"]
+    assert st["cc"]["state"] == "done"
+    (ccf / "day_2024001.h5").write_text("another day")
+    assert "work/" in manifest.status(cfg)["cc"]["reason"]

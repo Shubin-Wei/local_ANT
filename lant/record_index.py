@@ -43,10 +43,15 @@ def read_quiet(path, **kw):
     return st, len(w)
 
 
+READ_ERROR = "read error"
+
+
 def _scan_one(args):
     path, fmt = args
     try:
         st, nwarn = read_quiet(path, format=None if fmt == "auto" else fmt, headonly=True)
+    except OSError as exc:  # the file could not be read now (disk, network share): not kept in the header cache
+        return path, None, "%s %s: %s" % (READ_ERROR, type(exc).__name__, str(exc)[:150])
     except Exception as exc:  # not a seismic data file, or corrupt
         return path, None, "%s: %s" % (type(exc).__name__, str(exc)[:150])
     rows = []
@@ -187,7 +192,8 @@ def build_index(cfg):
         if new or set(cache) != set(files):
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             with open(cache_path + ".tmp", "w") as fh:
-                json.dump(dict(format=d["format"], files={r[0]: [sig[r[0]], *r[1:]] for r in res}), fh)
+                kept = (r for r in res if not (r[1] is None and str(r[2]).startswith(READ_ERROR)))  # retried
+                json.dump(dict(format=d["format"], files={r[0]: [sig[r[0]], *r[1:]] for r in kept}), fh)
             os.replace(cache_path + ".tmp", cache_path)
     except OSError:
         pass

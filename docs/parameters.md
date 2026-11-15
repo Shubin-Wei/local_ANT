@@ -134,7 +134,6 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `qc.dev_pre` | `0.3` | empirical | deviation of the group pick allowed from the reference (0 = off) |
 | `qc.lam_c` | `2.0` | literature | accepted samples need a path of this many of their own wavelengths (Bensen et al. 2007 use 3; Luo et al. 2015 show 1 can be enough) |
 | `qc.min_run` | `6` | empirical | accepted samples must form runs of at least this many frequencies |
-| `qc.band_edge` | `0.5` | choice | a frequency is not measured where the amplitude spectrum of the coherent signal (all pairs together; signal window minus the later lags, so that the noise level does not matter) is below this fraction of its mean over the filter band (0.5 = -6 dB, the usual definition of a band edge): beyond the band the noise excites, the filter passes only energy of other frequencies (0 = not applied) |
 | `qc.snr_g` | `4.0` | empirical | first gate: the largest SNR of a frequency must reach this |
 
 ## 9. export: curves passed to the inversion (`05_dispersion/curves.csv`)
@@ -155,8 +154,7 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `depth_sequence_km` | `auto` | rule | depth nodes; auto: steps of max(shortest wavelength / 4, depth / 4) down to half the longest wavelength (rule of thumb, Foti et al. 2018) |
 | `fine_step_km` | `0.0` | choice | extra depth nodes every this many km down to fine_zmax_km (0 = none) |
 | `fine_zmax_km` | `0.0` | choice | see fine_step_km |
-| `grid_spacing_deg` | `auto` | rule | grid spacing [lat, lon] of the coarse grid; auto (set by the inversion step): the final cell is the median measured wavelength c T / 3 km in both directions (user's rule; the lateral resolution is about a wavelength), times grid_refine |
-| `grid_refine` | `2` | empirical | every grid interval is divided by this once the extent is fixed |
+| `grid_spacing_deg` | `auto` | rule | grid spacing [lat, lon]; auto (set by the inversion step): the median measured wavelength c T / 3 km in both directions (user's rule; the lateral resolution is about a wavelength) |
 | `line_strip_cells` | `null` | empirical | lines: cells kept on each side of the stations across the line |
 | `start_model.source` | `invert` | choice | invert: 1-D model from this array's average curve; file: depth Vs |
 | `start_model.file` | `null` | choice | the starting model of your own (two columns: depth km, Vs km/s) |
@@ -164,15 +162,13 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `start_model.damp` | `0.05` | empirical | 1-D inversion: damping |
 | `start_model.iterations` | `14` | empirical | 1-D inversion: iterations |
 | `start_model.minthk` | `3` | technical | 1-D forward: sublayers per node interval |
-| `weight` | `1.0` | empirical | DSurfTomo smoothing weight (Fang et al. 2015), fixed; default 1, calibrated with damp 0.1 on lant's areal and line synthetic examples (smallest rms error against the true model, methods.md 8.4); checks inherit it |
-| `damp` | `0.1` | empirical | DSurfTomo damping, fixed: it limits the size of the model update of each iteration (LSMR damping); default 0.1 (the DSurfTomo manual's example), calibrated on lant's synthetic examples: 1 held the updates to a few hundredths of a km/s, below 0.1 little changes (methods.md 8.4) |
-| `sublayers` | `3` | literature | DSurfTomo: sublayers between depth nodes for the kernels (its manual: 2-5) |
+| `weight` | `1.0` | empirical | smoothing weight of lant's regularization (methods.md 8.4): the Laplacian of the model itself, as a mean over the parameters, against the mean squared travel-time residual, so that it does not change with the number of travel times or nodes (units s per km/s); default 1, calibrated on the areal waveform synthetic used to develop 2.0.1 (smallest error of the model against the true one; lines not calibrated) |
 | `vmin` | `auto` | rule | lower Vs bound; auto: 0.6 x the slowest Vs of the starting model |
 | `vmax` | `auto` | rule | upper Vs bound; auto: 1.4 x the fastest |
-| `iterations` | `10` | empirical | DSurfTomo iterations |
-| `sparsity` | `auto` | rule | DSurfTomo: fraction of its matrix reserved for nonzero entries; auto: twice the filling estimated from the paths and the grid, at least 0.05 (too little makes DSurfTomo stop with a segmentation fault; more only costs memory) |
-| `threshold` | `3.0` | empirical | DSurfTomo: keep signed residuals within threshold x [q25, q75]; not IQR fences |
-| `noise` | `auto` | rule | Gaussian noise added to the synthetic travel times of the checkerboards, a fraction of each time; auto: the relative rms of the residuals of the final main model that DSurfTomo's rejection rule keeps, so that the synthetic data are as noisy as the real data fit (Rawlinson & Spakman 2016); the checkerboards then run after the main project |
+| `iterations` | `6` | empirical | iterations of the 3-D inversion (rays, kernels and the least-squares update each time); 6, the number the smoothing weight was calibrated with (methods.md 8.4): with the regularization of the model itself the model settles, on the areal synthetic example the residual changed by less than 1 % after the third |
+| `per_octave` | `4` | rule | periods per octave in the 3-D inversion: the measured periods on this coarser grid (through 1 Hz, every dispersion.per_octave / this-th one).  The Gaussian filter of the measurement (dispersion.alpha) averages over a band of about an octave: two filters 1/12 octave apart share exp(-alpha x^2 / 2) = 99 % of their energy (x = 2^(1/12) - 1, alpha = 5), 1/4 octave apart still 92 %, so the left-out periods add little that is independent while the travel times and kernels cost in proportion to the number of periods |
+| `outlier_mad` | `3.0` | literature | travel times whose residual is further than this x 1.4826 MAD from the median residual of their period get no weight in the iteration (median absolute deviation, Rousseeuw & Croux 1993; 3 = 'very conservative', Leys et al. 2013; per period because the travel-time error grows with the period) |
+| `noise` | `auto` | rule | Gaussian noise added to the synthetic travel times of the checkerboards: a number is a fraction of each time (DSurfTomo's noiselevel), a list [[period s, standard deviation s], ...] the noise of each period; auto: per period, 1.4826 MAD of the residuals of the final main model in seconds, so that the synthetic data are as noisy as the real data fit (Rawlinson & Spakman 2016; per period because a phase error grows with the period, not with the path); the checkerboards then run after the main project |
 
 ## 11. checks: checkerboards, controls, precheck
 
@@ -181,9 +177,8 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `checkerboards` | `auto` | rule | horizontal checkerboards [{name, cell_km}], each a full inversion; cell_km is half the period of the pattern; auto (set by the inversion step): three tests, cells of 1, 2 and 3 median measured wavelengths c T (the lateral resolution is limited by the predominant wavelength, Yao et al. 2006; tests at several scales, Rawlinson & Spakman 2016; the factors 1, 2, 3 are the user's choice); lines: along the line |
 | `vertical` | `auto` | rule | depth-varying checkerboards [{name, cell_km, reversal_depths_km}]; auto (set by the inversion step): one test, cell 2 median wavelengths, one sign reversal at the median wavelength / 3 (depth of the largest sensitivity of the Rayleigh phase velocity, rule of thumb of Fang et al. 2015); none when no updated depth node lies on both sides of it |
 | `amplitude` | `0.1` | empirical | checkerboard perturbation, a fraction of the 1-D Vs of each depth |
-| `controls` | `[start_grad0.05]` | empirical | control inversions: reg_x<f> the smoothing weight times f (stability of the model under the choice of the weight), reg_w<w>_d<d> given weight and damping, start_grad<f> other starting model |
-| `precheck.min_kept` | `0.5` | empirical | a project is invalid when DSurfTomo's rejection rule would keep less than this fraction of the data in the first iteration |
-| `precheck.max_median_iqr` | `1.0` | empirical | ... or when the median residual is beyond this many interquartile ranges |
+| `controls` | `[start_grad0.05]` | empirical | control inversions: reg_x<f> the smoothing weight times f (stability of the model under the choice of the weight), reg_w<w> a given weight, start_grad<f> other starting model |
+| `precheck.min_kept` | `0.5` | empirical | a project is invalid when the rejection (inversion.outlier_mad) would keep less than this fraction of its data in the first iteration |
 | `iteration_residuals` | `false` | choice | also evaluate the model of every iteration (one forward run each) |
 
 ## 12. plots: figures
@@ -218,7 +213,6 @@ A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
 - `reference.fj_mode`: `track_fundamental`
 - `dispersion.njack`: `auto`
 - `inversion.median_min_pairs`: `20`
-- `inversion.grid_refine`: `1`
 - `inversion.line_strip_cells`: `1.0`
 
 ## References

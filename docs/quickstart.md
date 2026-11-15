@@ -2,7 +2,7 @@
 
 [中文](quickstart.zh.md) | English
 
-This guide covers installation, a first run on synthetic data with a known answer, and the setup of a project with your own data; allow about half an hour. Details of every step are in the [tutorial](tutorial.md), the principles in [methods](methods.md).
+This guide covers installation, the setup of a project with your own data and the points where the chain stops for your judgement. Details of every step are in the [tutorial](tutorial.md), the principles in [methods](methods.md).
 
 ## 1. Installation (about 10 minutes)
 
@@ -18,49 +18,7 @@ lant check                                                   # every line should
 
 The inversion is the Python port of DSurfTomo in this same environment; no separate solver installation is needed. Its comparison with the original is in [python_backends.md](python_backends.md).
 
-## 2. Verify the installation with the demo (about 5 minutes)
-
-```bash
-lant demo --out ~/lant_demo
-```
-
-The demo generates a small synthetic array (a known 1-D background with a ±6 % checkerboard), runs the whole chain and prints the location of the report, `~/lant_demo/output/REPORT.md`. It confirms the judgement points itself, which is legitimate only because it generated the data; it refuses to run in a directory it did not create.
-
-## 3. A run step by step
-
-To see where the chain stops for the user, generate the same data and run them yourself:
-
-```bash
-python -m lant.synthetic --quick --out ~/lant_quick          # 16 stations, 6 hours, about 1 minute
-lant run all -c ~/lant_quick/synthetic.yaml
-```
-
-The chain stops where a scientific judgement is needed and prints the files to look at and the command that continues. With synthetic data the answer is known; **with real data, each decision is yours, made after looking at the figures**.
-
-| Step | Question | Evidence | Answer for the synthetic data |
-|---|---|---|---|
-| `clean` | Without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` | Yes |
-| `stack` (when candidates are listed) | Remove the listed station sub-stacks? | `results/figures/2_station_qc.png` | No faulty stations: keep them |
-| `reference` | Do the F-J picks follow the fundamental-mode ridge? | `results/figures/3_fj_phase_velocity.png` | Yes |
-| `inversion` | Are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` | Yes |
-
-Record each decision and run the chain again; it continues where it stopped:
-
-```bash
-lant confirm reference -c ~/lant_quick/synthetic.yaml --reason "synthetic data with a known answer"
-lant run all -c ~/lant_quick/synthetic.yaml
-lant status -c ~/lant_quick/synthetic.yaml                     # state of every step and the next command
-```
-
-When the chain has finished, compare the result with the truth:
-
-```bash
-python examples/synthetic/compare_truth.py --dir ~/lant_quick
-```
-
-It draws input and recovered checkerboard maps, phase curves and Vs profiles in the README style. It prints deviations from the background curve and 3-D model errors against the saved truth; background-curve deviations are not path-velocity errors. Six hours of records give rougher numbers than the full example (16 stations, 3 days, about 300 MB and an hour of processing; leave out `--quick`); see [validation](validation.md).
-
-## 4. Your own data
+## 2. Your data
 
 Two inputs are needed:
 
@@ -80,15 +38,34 @@ Two settings deserve attention:
 - `data.velocity_range_kms`: the approximate range of surface-wave phase velocities in the area. The default 0.1–5 km/s covers soft soil to hard rock; the lag window is inversely proportional to the slowest velocity, so a range wider than necessary costs computing time and disk. Narrow it only on independent knowledge of the area.
 - `data.response`: instrument response files, if available; without them all stations must be of one instrument model.
 
-Then start the chain; the stops are those of section 3:
+`lant run all --raw /data/raw --stations /data/stations.csv --out /data/result` writes the same configuration and starts at once.
+
+## 3. Where the chain stops for you
 
 ```bash
 lant run all -c /data/result/config.yaml
 ```
 
-`lant run all --raw /data/raw --stations /data/stations.csv --out /data/result` writes the same configuration and starts at once. Problems on the way are covered in [troubleshooting](troubleshooting.md).
+The chain stops where a scientific judgement is needed and prints the files to look at and the command that continues. **Each decision is yours, made after looking at the figures.**
 
-## 5. After a run
+| Step | Question | Evidence |
+|---|---|---|
+| `clean` | Without response files: are all stations of the same instrument model? | `work/01_clean/report.txt` |
+| `stack` (when candidates are listed) | Remove the listed station sub-stacks? | `results/figures/2_station_qc.png` |
+| `reference` | Do the F-J picks follow the fundamental-mode ridge? | `results/figures/3_fj_phase_velocity.png` |
+| `inversion` | Are the 1-D starting model and its fit to the average curve reasonable? | `results/figures/4_start_model.png` |
+
+Record each decision with its evidence and run the chain again; it continues where it stopped:
+
+```bash
+lant confirm reference -c /data/result/config.yaml --reason "picks follow the fundamental ridge in 3_fj_phase_velocity.png"
+lant run all -c /data/result/config.yaml
+lant status -c /data/result/config.yaml        # state of every step and the next command
+```
+
+Problems on the way are covered in [troubleshooting](troubleshooting.md).
+
+## 4. After a run
 
 Start with `REPORT.md` in the output directory: the state of every step, key numbers, the items left for you and the main figures, with links to the results. Then check:
 

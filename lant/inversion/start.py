@@ -101,7 +101,7 @@ def check_layers(nz, sublayers):
     if n > MAX_LAYERS:
         raise RuntimeError(
             "%d depth nodes with %d sublayers make %d layers with the half-space; DSurfTomo allows %d: use "
-            "at most %d depth nodes (inversion.depth_sequence_km, fine_step_km) or fewer inversion.sublayers"
+            "at most %d depth nodes (inversion.depth_sequence_km, fine_step_km)"
             % (nz, sublayers, n, MAX_LAYERS, (MAX_LAYERS - 1) // (sublayers + 1) + 1)
         )
 
@@ -195,7 +195,7 @@ def _check_period_count(cfg, curve_dir, tmax_used):
     from .project import records_from_curves
 
     curves = EXPORT.read_curves(curve_dir, "C", cfg["export"]["tmin_s"], tmax_used)
-    records_from_curves(curves, PROJECT_MAX_PERIODS)
+    records_from_curves(curves, PROJECT_MAX_PERIODS, (cfg["dispersion"]["per_octave"], cfg["inversion"]["per_octave"]))
 
 
 def build(cfg, curve_dir, out_dir, log=print):
