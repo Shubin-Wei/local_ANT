@@ -1,0 +1,79 @@
+{
+  "cell_km": 3.0,
+  "amplitude": 0.06,
+  "depths_km": [
+    0.24,
+    0.48,
+    0.75
+  ],
+  "display_mask": "same station convex hull on all main panels; full-domain companion is unmasked",
+  "resolution_note": "The station hull and nonzero DWS alone do not establish resolution.",
+  "outside_lant_diagnostics": [
+    {
+      "depth_km": 0.24,
+      "outside_nodes": 509,
+      "outside_zero_dws": 317,
+      "outside_anomaly_percent": [
+        -4.5768921095008075,
+        9.018921095008059
+      ]
+    },
+    {
+      "depth_km": 0.48,
+      "outside_nodes": 509,
+      "outside_zero_dws": 324,
+      "outside_anomaly_percent": [
+        -4.398658718330861,
+        8.236214605067072
+      ]
+    },
+    {
+      "depth_km": 0.75,
+      "outside_nodes": 509,
+      "outside_zero_dws": 330,
+      "outside_anomaly_percent": [
+        -4.087108013937268,
+        7.725435540069703
+      ]
+    }
+  ],
+  "benchmarked_lant_version": "2.0.1",
+  "titles": [
+    "True",
+    "lant",
+    "DSurfTomo"
+  ],
+  "difference_panels": false,
+  "calculation": "existing inversion-level synthetic results; no solver rerun or model editing",
+  "source_sha256": {
+    "inv_areal/true_checkerboard.json": "7164d74680feb1a823fa71558d19ba26d75935be28a6c6c24da16e96b19d3c09",
+    "inv_areal/true_model.txt": "c5202be406c841510451df39c680415420cd4b94490dd18b644f82a1a31b474f",
+    "inv_areal/synthetic.json": "63686f1df03653589a6bc8b67c688b9bf26492925935350ecf0427e7e1172838",
+    "results_inv_areal.json": "c93980e84647e230538d08acc3159abb81e5b9a4f61a629a76733270411de1bb",
+    "results_inv_line.json": "95ebec7c5f734f0ac812e1b00745f4aa7f29fa8d5ea7750b616360a1ba3fa76c",
+    "line_stations.json": "54b8e597ee296b9baaf9f0c1ee2006b1793c496108c493a1ac27b6b4355e4a10",
+    "cases_inv_areal/main/inputs/DSurfTomo.in": "c93fe859dc70fde4dd80c18756b3c0193ec0e271f214fdc5df5c5158c253e088",
+    "cases_inv_areal/main/inputs/MOD": "4f54db52cf2351e34fc4bebaaeaf079091a53a771c36ac3a1b29d35f3eb8f7a1",
+    "cases_inv_areal/main/inputs/surfdata.dat": "c821b2ee824b2283bc2ee0c0d47fd5fcbc2da17bdf4e98e65b64f603415947bd",
+    "cases_inv_areal/main/lant/DSurfTomo.inMeasure.dat": "fd12ba000291ad0fb1d6d7ce31ed3f6fd9b9492def2650287ba844c9c43cd59f",
+    "cases_inv_areal/main/lant/DSurfTomo.in": "c93fe859dc70fde4dd80c18756b3c0193ec0e271f214fdc5df5c5158c253e088",
+    "cases_inv_areal/main/lant/MOD": "4f54db52cf2351e34fc4bebaaeaf079091a53a771c36ac3a1b29d35f3eb8f7a1",
+    "cases_inv_areal/main/lant/surfdata.dat": "c821b2ee824b2283bc2ee0c0d47fd5fcbc2da17bdf4e98e65b64f603415947bd",
+    "cases_inv_areal/main/native/DSurfTomo.inMeasure.dat": "1b216d9e73078e09f076b98ced3e246163aa91d8c7909a7b14c065ec386e7ef4",
+    "cases_inv_areal/main/native/DSurfTomo.in": "e5c81efbf6e6036262d1da646e0174e1ad9cfd2ec80dc797439d958dad916753",
+    "cases_inv_areal/main/native/MOD": "4f54db52cf2351e34fc4bebaaeaf079091a53a771c36ac3a1b29d35f3eb8f7a1",
+    "cases_inv_areal/main/native/surfdata.dat": "c821b2ee824b2283bc2ee0c0d47fd5fcbc2da17bdf4e98e65b64f603415947bd",
+    "cases_inv_line/main/inputs/DSurfTomo.in": "09224e0da1d396e0b0fe595c68d4b6b62013fd7b9a5be810ab60116b2ed087ca",
+    "cases_inv_line/main/inputs/MOD": "b45b367215d3c093b5d284a47e8c532f910de9716ff6e52aa4df3d945777982b",
+    "cases_inv_line/main/inputs/surfdata.dat": "e8297ded0d624df13f9112ad8879dd5c384907a2a0dd86d2545a68e1597d66f5",
+    "cases_inv_line/main/lant/DSurfTomo.inMeasure.dat": "07808f62ce59e4168694753901b3da741e47d6e2d94c214c275c967571515282",
+    "cases_inv_line/main/lant/DSurfTomo.in": "09224e0da1d396e0b0fe595c68d4b6b62013fd7b9a5be810ab60116b2ed087ca",
+    "cases_inv_line/main/lant/MOD": "b45b367215d3c093b5d284a47e8c532f910de9716ff6e52aa4df3d945777982b",
+    "cases_inv_line/main/lant/surfdata.dat": "e8297ded0d624df13f9112ad8879dd5c384907a2a0dd86d2545a68e1597d66f5",
+    "cases_inv_line/main/native/DSurfTomo.inMeasure.dat": "09f833107e49986cf03c783b2499c117f30c544bc5926ef039474b1d4cdd72f5",
+    "cases_inv_line/main/native/DSurfTomo.in": "b02cf1307a6b52592434ae8b4216441f69c19e338ec1bd29c535f741666445ab",
+    "cases_inv_line/main/native/MOD": "b45b367215d3c093b5d284a47e8c532f910de9716ff6e52aa4df3d945777982b",
+    "cases_inv_line/main/native/surfdata.dat": "e8297ded0d624df13f9112ad8879dd5c384907a2a0dd86d2545a68e1597d66f5",
+    "cases_inv_areal/main/lant/DWS.dat": "17fcb32dd7de1fb84769b4a62136f7e023c56b38ae7ff03103865aa7022b3c09"
+  }
+}

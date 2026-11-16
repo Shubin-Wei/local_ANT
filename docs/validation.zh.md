@@ -25,19 +25,25 @@ lant 的精度在反演层面检验，即地震层析成像中常规的合成测
 
 ## 2. 面阵
 
+原合成输入、细网格真模型和已保存的反演模型可从 [validation-3km-models.tar.gz](https://github.com/Shubin-Wei/local_ANT/releases/download/v2.0.2/validation-3km-models.tar.gz) 下载，内含逐文件校验和与重画说明。
+
+`True` 是合成试验预先设定的真实模型，不是野外观测模型，也不是反演初始模型。这些图重画的是已保存的 lant 2.0.1 基准；2.0.2 仅改展示，不改变模型值或原 3 km 格宽。主图三列统一使用台站凸包显示掩膜和共同色标，不再绘制差值图；凸包本身不能证明可分辨性。
+
+[未遮蔽的全域对比图](assets/compare_model_full_domain.png)保留真实计算出的凸包外异常，用斜线标出外部，并使用更宽的共同色标。[绘图来源与 DWS 诊断](assets/validation_figures.json)保存算例、格宽和输入哈希。可用 `python tools/plot_validation_comparison.py --root VALIDATION/compare_v201 --out docs/assets` 重画面阵与测线的三列图；命令不运行求解器。
+
 | | 与真值的均方根误差 | 恢复比例 | 相关系数 | 最终残差均方根；保留比例 | 用时（8 CPU） |
 |---|---:|---:|---:|---:|---:|
 | 起始模型 | 88.5 m/s | | | 39.9 ms | |
 | lant 2.0.1 | **31.4 m/s** | 0.82 | 0.94 | 14.8 ms；99.6 % | **76 s** |
 | DSurfTomo | 60.0 m/s | 0.44 | 0.75 | 19.1 ms；88.0 % | 522 s |
 
-![三个深度上的 Vs 异常：真值、lant、DSurfTomo 及二者与真值之差](assets/compare_model.png)
+![三个深度上的 Vs 异常：True、lant、DSurfTomo](assets/compare_model.png)
 
 ![与真值的误差和恢复比例随深度的变化](assets/compare_depth.png)
 
 - lant 的误差从 0.4 km 以浅的 22–24 m/s 增大到 1.5 km 的 47 m/s，恢复比例从 1.0 降到 0.65；DSurfTomo 在 0.12–0.36 km 恢复 0.8–1.0，地表 0.26，0.9 km 以下不到 0.25（它的阻尼把每轮更新量拉向零，参数盒子的表面——包括最浅一层——也不做平滑）。
 - lant 的最终残差（14.8 ms）就是所加噪声的大小（13.4 ms）。DSurfTomo 按带符号四分位数剔除，去掉了 12 % 的数据，而这些数据里并没有异常值。
-- 台阵以外，lant 的模型延续了边缘的异常（那里没有数据，只由平滑决定），DSurfTomo 留在起始模型附近；两者在那里都没有约束。
+- 台站凸包外的数据敏感度稀疏，尚不能证明可分辨性。在 0.24/0.48/0.75 km 深度，每层 509 个凸包外节点中分别有 317/324/330 个节点的残差剔除后 DWS 为 0；其余部分节点虽有非零 DWS，也不等于结构可被分辨。lant 没有向起始模型的阻尼约束，平滑可能把边缘异常延伸到外部；0.24 km 的外部正异常达到 +9.02%，超过真模型的 +6%。这些是外推伪影，不能当作恢复出的结构。本次没有为了去掉这些颜色而修改反演或模型值。
 
 ![起始模型和最终模型的走时残差](assets/compare_residuals.png)
 
@@ -51,7 +57,7 @@ lant 的精度在反演层面检验，即地震层析成像中常规的合成测
 | lant 2.0.1 | **15.3 m/s** | 0.91 | 0.99 | 8.9 ms；99.7 % | **72 s** |
 | DSurfTomo | 65.5 m/s | 0.25 | 0.68 | 15.8 ms；94.2 % | 1522 s |
 
-![沿测线的 Vs 异常：真值、lant、DSurfTomo，及各自与真值之差](assets/line_sections.png)
+![沿测线的 Vs 异常：True、lant、DSurfTomo](assets/line_sections.png)
 
 ![沿测线与真值的误差和恢复比例随深度的变化](assets/line_depth.png)
 

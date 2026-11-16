@@ -95,13 +95,13 @@ A synthetic test at the inversion level ([docs/validation.md](docs/validation.md
 
 The test inverts exact travel times with noise; it does not test the measurement of the dispersion, and real data, with measurement and theory errors, can be expected to recover less.
 
-![Vs anomaly at three depths: truth, lant, DSurfTomo and their differences from the truth](docs/assets/compare_model.png)
+![Vs anomaly at three depths: True, lant, DSurfTomo](docs/assets/compare_model.png)
 
-<sub>Areal array, 64 stations (triangles), 16 223 travel times. Columns: true model, lant, DSurfTomo, lant − truth, DSurfTomo − truth; the dashed line is the convex hull of the stations, inside which the rms errors are taken. Outside the array neither model is constrained by data.</sub>
+<sub>Areal array, 64 stations (triangles), 16 223 travel times. Columns: True, lant, DSurfTomo, using the original 3-km cells. Grey masks the area outside the station hull in all three panels; the hull is the scoring/display boundary, not a resolution guarantee. The unmasked models and outside-hull diagnostics are in [validation](docs/validation.md).</sub>
 
-![Vs anomaly along the line: truth, lant, DSurfTomo and each minus the truth](docs/assets/line_sections.png)
+![Vs anomaly along the line: True, lant, DSurfTomo](docs/assets/line_sections.png)
 
-<sub>Line, 24 stations (inverted triangles), 3 143 travel times: Vs anomaly along the line and each model minus the truth, between the end stations.</sub>
+<sub>Line, 24 stations (inverted triangles), 3 143 travel times: Vs anomaly along the line between its end stations, in True / lant / DSurfTomo order.</sub>
 
 ![Time per iteration and in total on the same 8 CPUs](docs/assets/compare_runtime.png)
 

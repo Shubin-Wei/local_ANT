@@ -3,7 +3,11 @@
 [中文](history.zh.md) | English
 
 
-## Unreleased: user experience and parameter provenance
+## 2.0.2 (2026-11-16): traceable settings and clearer synthetic comparisons
+
+- Publish the accumulated workflow improvements as a GitHub Release and synchronise package/citation metadata.
+- Redraw saved synthetic models as True / lant / DSurfTomo, without difference panels. Keep the original 3-km case and all calculation values; show the same station-hull mask in the main maps and retain an unmasked full-domain companion with DWS diagnostics and source hashes.
+- Add a reproducible benchmark figure script and distinguish historical solver-port comparisons from the current inversion-method benchmark.
 
 - Review fixes: freeze input settings across every step in one run command, keep old figures when redraw inputs are missing, and draw wavelength gates from the saved measurement settings. Normalise result-query paths. Add a read-only check for generated parameter references and the full configuration template.
 - Save local reference curves with zoned measurements and use them for single-pair figures; older zoned files without the reference snapshot require remeasurement for these figures. No measurement or inversion formulas changed.

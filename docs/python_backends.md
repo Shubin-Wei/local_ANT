@@ -56,11 +56,11 @@ The depth kernels use DSurfTomo's own dispersion code in its own precision: the 
 
 On the inputs of four earlier native runs - the synthetic areal (16 stations) and line (24 stations) projects of the repository's generator, pDSurfTomo's `example_syn` at five periods (synthetic flag 1), and an unpublished 55-station line - the port's outputs of ten iterations are byte-identical to native DSurfTomo `a651faf`: every `.iterNNN` model, the final model, `residualFirst.dat`, `residualLast.dat` and, for the synthetic case, `DSurfTomo.inSyn.dat`, `velmap2dRc.dat` and `Vs_model.real`. The log differs in its third line only, the banner that names this port. Before 2.0.0 the kernels came from disba (close to surfdisp96, not bitwise equal); the comparisons below are of that version.
 
-## Current shared-observation comparison
+## Historical shared-observation comparison
 
-The current comparison uses identical observations, initial model, grid and controls for six checkerboard iterations in measured-data mode. Input bytes and float32 observed times were checked for equality. Final model maximum/RMS differences are 0.440/0.0506 m/s; with nine threads each, native/Python wall times are 524.07/154.57 s. Recovery remains weak; implementation agreement does not establish resolution. For the real-data ten-iteration comparison, native is complete and Python is running; no real-data difference is reported yet.
+This historical solver-port comparison uses identical observations, initial model, grid and controls for six checkerboard iterations in measured-data mode. Input bytes and float32 observed times were checked for equality. Final model maximum/RMS differences are 0.440/0.0506 m/s; with nine threads each, native/Python wall times are 524.07/154.57 s. Recovery remains weak; implementation agreement does not establish resolution. These are earlier port-validation results, not the current inversion-method benchmark; see [validation](validation.md) for the current known-model test.
 
-![Shared-observation checkerboard](assets/solver_common_checkerboard.png)
+![Historical synthetic truth, lant and DSurfTomo](assets/solver_common_checkerboard.png)
 
 The following independently synthesized comparison is historical and does not replace the shared-observation comparison above.
 
@@ -68,9 +68,9 @@ The following independently synthesized comparison is historical and does not re
 
 The earlier comparison uses a sinusoidal checkerboard: ±6 % Vs, 3-km cells, 16 stations, 2884 travel times at 32 periods, a 33 × 35 × 11 grid and six iterations. Both programs read copies of the same `DSurfTomo.in`, `MOD`, `MOD.true` and `surfdata.dat`. Synthetic observations use each solver's own forward calculation with zero added noise. The comparison fixes weight = damping = 1 and uses 8 threads; this benchmark setting does not replace lant's automatic resource or regularization defaults.
 
-![Checkerboard: truth, native, Python and difference](assets/solver_checkerboard.png)
+![Historical synthetic truth, lant and DSurfTomo](assets/solver_checkerboard.png)
 
-At 0.60 km depth, input, native and Python use the same ±6 % colour limits. The difference panel has its own scale in m/s. The recovered amplitude is weak at this cell size and fixed regularization; agreement between implementations does not establish resolution. The map shows the station area, while the error numbers below include every output node and depth.
+At 0.60 km depth, True, lant and DSurfTomo use the same ±6 % colour limits. True is the prescribed synthetic model; there is no difference panel. The numerical difference statistics remain below. The recovered amplitude is weak at this cell size and fixed regularization; agreement between implementations does not establish resolution. The map shows the station area, while the error numbers below include every output node and depth.
 
 | Final model difference, Python − native | km/s |
 |---|---:|

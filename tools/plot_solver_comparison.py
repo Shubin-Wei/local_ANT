@@ -41,7 +41,7 @@ def station_pairs(path):
 
 
 def line_figure(fields, axes, stations, out, iterations):
-    """Initial/native/Python Vs and their difference on the central longitude column of a north-south strip."""
+    """Initial model and the two solvers on the central longitude column; no difference panel."""
     lon, lat, dep = axes
     centre_lat, centre_lon = np.mean(stations[:, 1]), np.mean(stations[:, 0])
     j = int(np.argmin(abs(lon - centre_lon)))
@@ -49,42 +49,24 @@ def line_figure(fields, axes, stations, out, iterations):
     _, sy = local_xy_km(stations[:, 0], stations[:, 1], centre_lat, centre_lon)
     origin = sy.min()
     y, sy = y - origin, sy - origin
-    sections = [v[j].T for v in fields]
-    difference = 1000 * (sections[2] - sections[1])
-    low = min(float(v.min()) for v in sections)
-    high = max(float(v.max()) for v in sections)
-    limit = max(0.01, float(abs(difference).max()))
-    fig, axs = style.plt.subplots(2, 2, figsize=(12.2, 6.8), sharex=True, sharey=True)
-    fig.subplots_adjust(left=0.075, right=0.87, bottom=0.14, top=0.93, hspace=0.35, wspace=0.20)
-    titles = ["Initial model", "Native DSurfTomo", "Python", "Python − native"]
-    for i, (ax, title) in enumerate(zip(axs.flat, titles)):
-        values = sections[i] if i < 3 else difference
-        image = ax.pcolormesh(
-            y,
-            dep,
-            values,
-            shading="nearest",
-            cmap=style.SEIS,
-            vmin=low if i < 3 else -limit,
-            vmax=high if i < 3 else limit,
-        )
+    sections = [fields[i][j].T for i in (0, 2, 1)]
+    low, high = min(float(v.min()) for v in sections), max(float(v.max()) for v in sections)
+    fig, axs = style.plt.subplots(1, 3, figsize=(13, 4.2), sharex=True, sharey=True)
+    fig.subplots_adjust(left=0.07, right=0.89, bottom=0.23, top=0.88, wspace=0.12)
+    for ax, title, values in zip(axs, ("Initial", "lant", "DSurfTomo"), sections):
+        image = ax.pcolormesh(y, dep, values, shading="nearest", cmap=style.PERTURBATION, vmin=low, vmax=high)
         ax.plot(sy, np.zeros(len(sy)), "v", ms=4, mfc="white", mec="black", mew=0.5, zorder=5)
-        ax.set_ylim(dep[-1], -0.025)
-        ax.set_xlim(y.min(), y.max())
-        ax.set_title("(%s) %s" % ("abcd"[i], title), fontsize=13)
-        if i % 2 == 0:
-            ax.set_ylabel("Depth (km)")
-        if i >= 2:
-            ax.set_xlabel("North from southernmost station (km)")
-        if i in (1, 3):
-            box = ax.get_position()
-            cax = fig.add_axes([0.90, box.y0, 0.014, box.height])
-            fig.colorbar(image, cax=cax, label="Vs (km/s)" if i == 1 else "Difference (m/s)")
+        ax.set(
+            ylim=(dep[-1], -0.025), xlim=(y.min(), y.max()), title=title, xlabel="North from southernmost station (km)"
+        )
+    axs[0].set_ylabel("Depth (km)")
+    cax = fig.add_axes([0.92, 0.25, 0.015, 0.58])
+    fig.colorbar(image, cax=cax, label="Vs (km/s)")
     fig.text(
-        0.075,
-        0.025,
-        "Common observations; %d stations; %d iterations. Central longitude %.5f°. "
-        "Initial/native/Python share a Vs scale; difference uses m/s." % (len(stations), iterations, lon[j]),
+        0.07,
+        0.04,
+        "Common observations; %d stations; %d iterations. Central longitude %.5f°."
+        % (len(stations), iterations, lon[j]),
         fontsize=9,
     )
     fig.savefig(out / "section.png", dpi=180)
@@ -142,37 +124,33 @@ def main():
     style.apply()
     plot_metadata = {}
     if truth.exists():
-        fig, axs = style.plt.subplots(2, 2, figsize=(10.4, 8.6))
-        fig.subplots_adjust(left=0.09, right=0.86, bottom=0.11, top=0.94, hspace=0.30, wspace=0.25)
-        titles = ["Input checkerboard", "Native DSurfTomo", "Python", "Python − native"]
+        fig, axs = style.plt.subplots(1, 3, figsize=(13.2, 4.9))
+        fig.subplots_adjust(left=0.07, right=0.89, bottom=0.22, top=0.88, wspace=0.17)
         amplitude = 100 * description["amplitude"]
-        diff_limit = max(0.01, float(np.max(abs(delta[:, :, k]))) * 1000)
-        for i, (ax, title) in enumerate(zip(axs.flat, titles)):
-            values = 100 * (fields[i][:, :, k] / base - 1) if i < 3 else delta[:, :, k] * 1000
-            limit = amplitude if i < 3 else diff_limit
-            image = ax.pcolormesh(X, Y, values, shading="gouraud", cmap=style.SEIS, vmin=-limit, vmax=limit)
+        for i, (ax, title, index) in enumerate(zip(axs, ("True", "lant", "DSurfTomo"), (0, 2, 1))):
+            values = 100 * (fields[index][:, :, k] / base - 1)
+            image = ax.pcolormesh(
+                X, Y, values, shading="gouraud", cmap=style.PERTURBATION, vmin=-amplitude, vmax=amplitude
+            )
+            ax.plot(sx, sy, "^", ms=4.5, mfc="white", mec="black", mew=0.6, zorder=5)
+            ax.set(
+                xlim=(sx.min() - 0.75, sx.max() + 0.75),
+                ylim=(sy.min() - 0.75, sy.max() + 0.75),
+                aspect="equal",
+                xlabel="East (km)",
+                title=title,
+            )
             if i == 0:
-                for x, y in zip(px, py):
-                    ax.plot(x, y, color="0.15", alpha=0.25, lw=0.25)
-            ax.plot(sx, sy, "^", ms=6.5, mfc="white", mec="black", mew=0.8, zorder=5)
-            ax.set_xlim(sx.min() - 0.75, sx.max() + 0.75)
-            ax.set_ylim(sy.min() - 0.75, sy.max() + 0.75)
-            ax.set_aspect("equal")
-            ax.set_xlabel("East (km)")
-            if i % 2 == 0:
                 ax.set_ylabel("North (km)")
-            ax.set_title(title, fontsize=13)
-            ax.text(-0.02, 1.02, "(%s)" % "abcd"[i], transform=ax.transAxes, ha="right", va="bottom", fontweight="bold")
-            if i in (1, 3):
-                box = ax.get_position()
-                cax = fig.add_axes([0.89, box.y0, 0.018, box.height])
-                fig.colorbar(image, cax=cax, label="Vs anomaly (%)" if i == 1 else "Difference (m/s)")
+        cax = fig.add_axes([0.92, 0.27, 0.014, 0.53])
+        fig.colorbar(image, cax=cax, label="Vs anomaly (%)")
         fig.text(
-            0.09,
-            0.03,
-            "%.2f km depth; %d stations; %d iterations. Input/native/Python share ±%g%%. Difference uses its own scale."
+            0.07,
+            0.06,
+            "%.2f km depth; %d stations; %d iterations. Shared ±%g%% scale.\n"
+            "Historical solver-port comparison; same saved models, no solver rerun or difference panels."
             % (dep[k], len(stations), control.maxiter, amplitude),
-            fontsize=10,
+            fontsize=9,
         )
         fig.savefig(out / "checkerboard.png", dpi=180)
         style.plt.close(fig)

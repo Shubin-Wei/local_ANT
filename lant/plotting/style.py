@@ -30,6 +30,7 @@ _SEIS = [
     (0, 22.5, 219.06),
 ]
 SEIS = LinearSegmentedColormap.from_list("seis", [tuple(v / 255 for v in c) for c in _SEIS])
+PERTURBATION = LinearSegmentedColormap.from_list("vs_anomaly", ["#c50000", "#ffffff", "#0032cc"], N=257)
 
 
 def apply(scale=1.0):

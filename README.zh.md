@@ -95,13 +95,13 @@ lant run all -c /data/result/config.yaml       # 从第一个不成立的步骤�
 
 该测试反演的是加了噪声的精确走时，不检验频散测量；实际数据含测量误差和理论近似误差，可以预期恢复得更少。
 
-![三个深度上的 Vs 异常：真值、lant、DSurfTomo 及二者与真值之差](docs/assets/compare_model.png)
+![三个深度上的 Vs 异常：True、lant、DSurfTomo](docs/assets/compare_model.png)
 
-<sub>面阵，64 个台站（三角形），16 223 条走时。各列：真实模型、lant、DSurfTomo、lant − 真值、DSurfTomo − 真值；虚线为台站凸包，均方根误差在凸包内统计。台阵以外两个模型都没有数据约束。</sub>
+<sub>面阵，64 个台站（三角形），16 223 条走时。各列：True、lant、DSurfTomo，沿用原 3 km 格宽。三列的灰色区域统一遮蔽台站凸包外；凸包是评分与展示边界，不是分辨率保证。未遮蔽全域模型及外部诊断见[合成验证](docs/validation.zh.md)。</sub>
 
-![沿测线的 Vs 异常：真值、lant、DSurfTomo 及各自与真值之差](docs/assets/line_sections.png)
+![沿测线的 Vs 异常：True、lant、DSurfTomo](docs/assets/line_sections.png)
 
-<sub>测线，24 个台站（倒三角），3 143 条走时：两端台站之间沿线的 Vs 异常及各模型与真值之差。</sub>
+<sub>测线，24 个台站（倒三角），3 143 条走时：两端台站之间沿线的 Vs 异常，按 True、lant、DSurfTomo 三列比较。</sub>
 
 ![同样 8 个 CPU 上每次迭代和总用时](docs/assets/compare_runtime.png)
 

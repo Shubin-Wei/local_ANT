@@ -25,19 +25,25 @@ lant's accuracy is tested at the inversion level, the usual synthetic test of se
 
 ## 2. Areal array
 
+The original synthetic inputs, fine-grid true models and saved recovered models are available as [validation-3km-models.tar.gz](https://github.com/Shubin-Wei/local_ANT/releases/download/v2.0.2/validation-3km-models.tar.gz), including per-file checksums and redraw instructions.
+
+`True` is the prescribed synthetic true model, not an observed field model or an inversion starting model. These figures redraw the saved lant 2.0.1 benchmark; release 2.0.2 changes their presentation, not the model values or the 3-km cells. All main maps use the same station-hull display mask and shared colour scale, with no difference panels. The hull alone does not establish resolution.
+
+The [unmasked full-domain comparison](assets/compare_model_full_domain.png) keeps the actual outside-hull anomalies visible under hatching, with a wider shared colour scale. [Figure provenance and DWS diagnostics](assets/validation_figures.json) record the case, cell size and input hashes. Reproduce the three-column areal and line figures with `python tools/plot_validation_comparison.py --root VALIDATION/compare_v201 --out docs/assets`; this command runs no solver.
+
 | | rms error vs truth | recovered fraction | correlation | final residual rms; kept | time (8 CPUs) |
 |---|---:|---:|---:|---:|---:|
 | starting model | 88.5 m/s | | | 39.9 ms | |
 | lant 2.0.1 | **31.4 m/s** | 0.82 | 0.94 | 14.8 ms; 99.6 % | **76 s** |
 | DSurfTomo | 60.0 m/s | 0.44 | 0.75 | 19.1 ms; 88.0 % | 522 s |
 
-![Vs anomaly at three depths: truth, lant, DSurfTomo and both differences](assets/compare_model.png)
+![Vs anomaly at three depths: True, lant, DSurfTomo](assets/compare_model.png)
 
 ![Error against the truth and recovered fraction with depth](assets/compare_depth.png)
 
 - lant's error grows from 22–24 m/s above 0.4 km to 47 m/s at 1.5 km, the recovered fraction falls from 1.0 to 0.65; DSurfTomo recovers 0.8–1.0 between 0.12 and 0.36 km, 0.26 at the surface and less than 0.25 below 0.9 km (its damping holds each update towards zero, and the faces of its parameter box, the top layer included, are not smoothed).
 - The final residual of lant (14.8 ms) is that of the added noise (13.4 ms). DSurfTomo's rejection on the signed quartiles drops 12 % of the data, which carry no outliers.
-- Outside the array lant's model continues the anomalies of its edge (no data there; the smoothing alone sets it), DSurfTomo stays near the starting model; neither is constrained there.
+- Outside the station hull, data sensitivity is sparse and resolution is not established. At depths 0.24/0.48/0.75 km, 317/324/330 of the 509 outside-hull nodes have zero post-rejection DWS. Some other nodes have nonzero DWS, which alone does not establish resolution. With no damping towards the starting model, lant's smoothing can extend edge anomalies into this region; at 0.24 km the outside anomaly reaches +9.02%, beyond the true pattern's +6%. These are extrapolation artefacts, not recovered structures. The inversion and model values were not changed to remove them.
 
 ![Travel-time residuals of the starting and final models](assets/compare_residuals.png)
 
@@ -51,7 +57,7 @@ lant's accuracy is tested at the inversion level, the usual synthetic test of se
 | lant 2.0.1 | **15.3 m/s** | 0.91 | 0.99 | 8.9 ms; 99.7 % | **72 s** |
 | DSurfTomo | 65.5 m/s | 0.25 | 0.68 | 15.8 ms; 94.2 % | 1522 s |
 
-![Vs anomaly along the line: truth, lant, DSurfTomo, and each minus the truth](assets/line_sections.png)
+![Vs anomaly along the line: True, lant, DSurfTomo](assets/line_sections.png)
 
 ![Error against the truth and recovered fraction with depth along the line](assets/line_depth.png)
 
