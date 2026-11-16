@@ -257,6 +257,9 @@ def from_velocity(cfg, geom, raw_rates):
     dmax = float(geom["max_distance_km"])
     cap = float(cfg["correlation"]["fs_max"])
     rates = [r for r in common_rates(raw_rates) if 1 <= r <= cap]
+    given_fs = user_value(cfg, ("correlation", "fs"))
+    if given_fs is not None:
+        rates = [float(given_fs)]
     if not rates:
         raise RuntimeError(
             "no whole-number processing rate <= correlation.fs_max %g Hz is reachable from %s Hz" % (cap, raw_rates)
@@ -273,7 +276,12 @@ def from_velocity(cfg, geom, raw_rates):
         "processing rate allows; the QC decides how far the data really reach"
         % (fs, cfg["dispersion"]["alpha"], 0.4 * fs / (1 + dlt), po),
     )
-    f_lo = _grid_up(2 * v_lo / dmax * (1 - 1e-9), po)
+    f_lo = user_value(cfg, ("dispersion", "fmin_hz"))
+    if f_lo is None:
+        f_lo = _grid_up(2 * v_lo / dmax * (1 - 1e-9), po)
+        lower_basis = "the longest pair %.3f km = 2 wavelengths at the slowest velocity %.3g km/s" % (dmax, v_lo)
+    else:
+        lower_basis = "dispersion.fmin_hz explicitly given in the configuration"
     if f_lo >= fmax:
         raise RuntimeError(
             "the longest pair (%.3f km) is shorter than 2 wavelengths at %.3g km/s up to %.3g Hz: raise "
@@ -282,8 +290,8 @@ def from_velocity(cfg, geom, raw_rates):
     put(
         ("correlation", "fmin_hz"),
         round(f_lo * (1 - dlt), 6),
-        "%.4g Hz (the longest pair %.3f km = 2 wavelengths at the slowest velocity %.3g km/s) x (1 - sqrt(ln 2 "
-        "/ alpha)): the Gaussian filter of that frequency at half gain" % (f_lo, dmax, v_lo),
+        "%.4g Hz (%s) x (1 - sqrt(ln 2 / alpha)): the Gaussian filter of that frequency at half gain"
+        % (f_lo, lower_basis),
     )
     put(
         ("correlation", "fmax_hz"),

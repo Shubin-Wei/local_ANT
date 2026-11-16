@@ -162,7 +162,8 @@ def panels(
     n = len(layers)
     ncol = min(ncol, n)
     nrow = (n + ncol - 1) // ncol
-    gapx, gapy, x0, y0 = 0.25 * fs, (0.3 if boxed else 0.75) * fs, 1.6, 2.4
+    # Leave room for longitude labels at the facing edges of adjacent panels.
+    gapx, gapy, x0, y0 = 0.8 * fs, (0.3 if boxed else 0.75) * fs, 1.6, 2.4
     pre = ["gmt makecpt -C%s -T%s -Z %s > %s/v.cpt" % (cpt, rng, "-D" if extend else "-D", tmp)]
     r_pre, relief = G.relief_cmds(cfg, tmp, W, E, S, N)
     pre += r_pre

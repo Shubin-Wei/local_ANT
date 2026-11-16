@@ -15,7 +15,7 @@
 
 ## 修改代码
 
-遵循[开发规范](docs/engineering.zh.md)和 [AGENTS.zh.md](AGENTS.zh.md) 中关于代码的部分：一次提交一件事；默认值只放在 `lant/config.py`，依据写在 `lant/params.py`；每份文档都有中英文；不修改 DSurfTomo 和 pDSurfTomo；方法和门限都要有来源。
+遵循[开发规范](docs/engineering.zh.md)和 [AGENTS.zh.md](AGENTS.zh.md) 中关于代码的部分：一次提交一件事；默认值只放在 `lant/config.py`，依据写在 `lant/params.py`；每份文档都有中英文；正演移植保持与 DSurfTomo 兼容，有意改变的反演方法需记录并对比；方法和门限都要有来源。
 
 提交 pull request 之前：
 
@@ -23,6 +23,7 @@
 pip install -e ".[dev]"
 ruff check lant tests tools
 ruff format --check lant tests tools
+python tools/make_parameter_doc.py --check
 python -m pytest tests
 python tests/smoke_records.py make --out DIR && python tests/smoke_records.py run --dir DIR   # 流程能跑通
 ```

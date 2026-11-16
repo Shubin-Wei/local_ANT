@@ -31,6 +31,8 @@ gmt.history
 
 # Local verification artifacts
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
 .ruff_cache/
+.venv/

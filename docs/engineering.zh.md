@@ -19,6 +19,8 @@
 
 先安装 `pip install -e ".[dev]"`，再运行 `ruff check lant tests tools`、`ruff format --check lant tests tools` 和 `python -m pytest tests --cov=lant`；lint 规则及忽略项的理由写在 `pyproject.toml`。格式化单独提交。用 `python -m build` 构建两种发行物，再在源码树外验证 wheel。CI 运行 lint 和格式检查、Python 3.11/3.12/3.13 上的测试、快速合成算例（到反演工程）以及安装的 wheel。
 
+`python tools/make_parameter_doc.py` 同时生成中英文参数文档和 `config/example.yaml`。加 `--check` 可只读检查是否同步，单元测试也会执行该检查。
+
 ## 职责审查，2026-11-13
 
 500 行规则触发以下职责拆分，与数值／性能改动分别提交：

@@ -185,6 +185,12 @@ class Step:
             print("[lant] step %s started" % self.name, flush=True)
             position = self.cfg.get("_position")  # "6/9" within lant run all
             self.context.enter_context(Progress("[%s] %s" % (position, self.name) if position else self.name))
+            print("[lant] input configuration: %s" % self.cfg.get("_config_file", "Python API"), file=sys.stderr)
+            print(
+                "[lant] output: %s; settings: lant plan %s -c %s"
+                % (self.cfg["project"]["output_dir"], self.name, self.cfg.get("_config_file", "CONFIG")),
+                file=sys.stderr,
+            )
             return self
         except BaseException:
             self.context.close()
@@ -215,6 +221,16 @@ class Step:
             self.context.__exit__(et, ev, tb)  # registers the outputs and releases the lock
         print(
             "[lant] %s %s (%.0fs); details: %s" % (self.name, event, dt, os.path.join(rec_dir(self.cfg), "lant.log")),
+            file=sys.stderr,
+            flush=True,
+        )
+        print(
+            "[lant] results: %s; parameters: lant params %s -c %s"
+            % (
+                os.path.join(self.cfg["project"]["output_dir"], "REPORT.md"),
+                self.name,
+                self.cfg.get("_config_file", "CONFIG"),
+            ),
             file=sys.stderr,
             flush=True,
         )

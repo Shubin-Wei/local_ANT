@@ -52,10 +52,14 @@ lant check                                                   # 列出缺失项�
 处理自己的数据：
 
 ```bash
-lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
+lant init -o /data/result/config.yaml --raw /data/raw --stations /data/stations.csv --out /data/result
+# 先查看并修改 config.yaml 中本次需要的计算和绘图参数。
+lant validate -c /data/result/config.yaml
+lant plan cc -c /data/result/config.yaml
+lant run all -c /data/result/config.yaml
 ```
 
-该命令写出 `/data/result/config.yaml` 并开始运行。需要科学判断时，流程停止并给出应查看的文件和下一条命令：
+配置文件供下一次运行修改，每次执行另行记录实际参数。需要科学判断时，流程停止并给出应查看的文件和下一条命令：
 
 ```bash
 lant status -c /data/result/config.yaml        # 各步骤状态及下一条命令

@@ -10,6 +10,8 @@
 
 每步完成后看 `OUT/REPORT.md`：可找到已有主图及 `results/parameters.yaml`。覆盖、台站诊断和阵列 F-J 谱在反演前就可查看；完整模型成果在评估后保留。缓存仍在 `work/`；文件职责见[输出说明](outputs.zh.md)，选择清理前先查看 `lant clean-work --help` 与清理预览。
 
+每步运行前修改配置后，用 `lant plan STEP -c CONFIG` 检查本步设置及变化；用 `lant params STEP -c CONFIG` 对照已执行参数。计算和单独重画的完整操作见[快速上手第 5 节](quickstart.zh.md#5-每一步改参数结果出来后重画)。
+
 ## 1. 安装
 
 ### 1.1 环境
@@ -151,6 +153,8 @@ lant run all -c CONFIG --from disp     # 改了参数后从某一步重跑
 6. 导出：每个台对只留最长的一段连续曲线，写成 DSurfTomo 的输入。
 
 **看什么**：`results/figures/3_dispersion_curves.png`（全部曲线与参考）、`pair_figures/`（单台对：速度谱、拾取、被拒原因）、`median_vs_reference.txt`。
+
+三个 `results/figures/3_dispersion_pair_<k>.png` 示例图包含对称波形、叠加相速度拾取的相位匹配相干能量背景，以及叠加群到时的包络能量图。相速度颜色表示各候选速度的相位一致性，不表示绝对能量或质控是否通过（methods.zh.md 第 7.3 节）。只重画这些图、不重新测量：`lant plot dispersion_pair -c CONFIG`。
 
 **不要为了多出点放宽质控。** 门限改了要用 `lant note` 记下理由。
 

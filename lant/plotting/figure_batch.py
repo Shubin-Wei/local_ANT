@@ -59,6 +59,7 @@ def _draw(task):
         not_drawn=figure.skipped,
         failed=sorted(figure.failed),
         figure_seconds=figure.seconds,
+        figure_parameters=figure.figure_parameters,
         relief_notes=list(G.RELIEF_NOTES),
     )
 

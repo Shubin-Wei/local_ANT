@@ -6,6 +6,14 @@ from util import REQ, tmp_dir, write_cfg
 from lant import config
 
 
+@pytest.mark.parametrize("text", ["project: [", "project: wrong", "data: []"])
+def test_malformed_configuration_has_a_readable_configuration_error(tmp_path, text):
+    file = tmp_path / "broken.yaml"
+    file.write_text(text)
+    with pytest.raises(config.ConfigError, match="invalid YAML|must be a mapping"):
+        config.load(str(file))
+
+
 @pytest.mark.parametrize("host", [True, 1, "Gemini", "unknown", ["gemini"]])
 def test_invalid_assistant_host_is_reported(tmp_path, host):
     cfg = config.defaults()
@@ -168,8 +176,20 @@ def test_compact_and_full_templates_have_identical_effective_defaults(tmp_path):
     assert {k: v for k, v in a.items() if not k.startswith("_")} == {
         k: v for k, v in b.items() if not k.startswith("_")
     }
-    assert len(compact.read_text().splitlines()) < 25
+    assert len(compact.read_text().splitlines()) < len(full.read_text().splitlines())
+    for section in ("correlation", "stack", "dispersion", "inversion", "plots"):
+        assert section + ":" in compact.read_text()
+    assert a["_user"]["inversion"]["weight"] == config.DEFAULTS["inversion"]["weight"]
     assert a["plots"]["formats"] == ["png"]
+
+
+def test_generated_parameter_references_and_config_template_are_current():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    tool = Path(__file__).parents[1] / "tools/make_parameter_doc.py"
+    subprocess.run([sys.executable, str(tool), "--check"], check=True, capture_output=True, text=True)
 
 
 @pytest.mark.parametrize("formats", ["[pdf]", "[png, pdf]", "[]", "png"])

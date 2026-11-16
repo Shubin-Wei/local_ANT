@@ -2,6 +2,20 @@
 
 [中文](history.zh.md) | English
 
+
+## Unreleased: user experience and parameter provenance
+
+- Review fixes: freeze input settings across every step in one run command, keep old figures when redraw inputs are missing, and draw wavelength gates from the saved measurement settings. Normalise result-query paths. Add a read-only check for generated parameter references and the full configuration template.
+- Save local reference curves with zoned measurements and use them for single-pair figures; older zoned files without the reference snapshot require remeasurement for these figures. No measurement or inversion formulas changed.
+- Keep initial and final wavelength thresholds in separate attributes across QC; use recorded run settings for legacy files when available. Hash configuration files with their original line endings to avoid false edit warnings.
+- Add a signal-derived phase-matched coherence background and its colour scale to single-pair dispersion figures; retain group-envelope energy. Reuse saved measurement settings without changing phase picks or QC.
+- Publish the 1-D starting-model figure during inversion preparation, before its user judgement gate.
+- Add raw-to-archive associations and source-receiver coverage explicitly labelled as straight connections, not bent rays.
+- Expand common settings; `lant plan STEP` shows changes and `lant params STEP_OR_RESULT` queries provenance.
+- Freeze settings at task start and preserve execution records. Failed reruns and partial redraws retain old products with their actual settings. The result index associates files with calculation and display records.
+- Add independent correlation display bands and lag window. Explicit dispersion lower bounds no longer hit an unused automatic-band prerequisite. Scientific default thresholds are unchanged.
+- Add terminal configuration/result entry points and known-work percentages; document step edits and redraws in both languages.
+
 ## 2.0.1 (2026-11-15): lant's own inversion method, a third of the kernel time, clearer results
 
 - Inversion method (python_backends.md "2.0.1 changes", methods.md 8.3-8.4); the forward part (fast marching, rays, phase velocities) is unchanged:

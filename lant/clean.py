@@ -348,6 +348,7 @@ def run(cfg):
         for s, rr in bys.items():
             tasks.append((s, rr, t0, opt))
     stats, new_rows = [], []
+    archive_files = {}
     from . import resources
 
     # One station-day at the highest raw rate, about 6 copies of 8 bytes per sample (the record, its float64 copy,
@@ -360,6 +361,7 @@ def run(cfg):
             stats.append(stat)
             if rr:
                 new_rows.extend(rr)
+                archive_files[(name, stat["day"])] = sorted({r["file"] for r in rr})
         resources.note_workers(w.pid for w in pool._pool)
     # the workers finish in any order: a fixed order makes two runs of the same data write the same files
     new_rows.sort(key=lambda r: (r["station"], r["start"], r["file"]))
@@ -371,6 +373,27 @@ def run(cfg):
             "%d cleaned now" % (reused, len(tasks), len(tasks) - reused)
         )
     errors = [s for s in stats if "error" in s]
+    source_map = os.path.join(out, "archive_sources.csv")
+    with open(source_map, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["station", "day", "source_file", "archive_file", "operation"])
+        for name, rr, t0, task_opt in tasks:
+            day = D.day_label(t0, offset_s=task_opt.get("label_offset", 0.0))
+            source_files = sorted({r["file"] for r in rr})
+            outputs = archive_files.get((name, day), [])
+            for source in source_files:
+                w.writerow(
+                    [
+                        name,
+                        day,
+                        source,
+                        ";".join(os.path.relpath(p, cfg["project"]["output_dir"]) for p in outputs),
+                        ("merge_and_clean" if len(source_files) > 1 else "clean")
+                        if outputs
+                        else "no_output_see_report",
+                    ]
+                )
+    rep.append("  raw files were not modified or deleted; raw-to-archive mapping: work/01_clean/archive_sources.csv")
     for e in errors:
         rep.append("  ERROR %s" % e["error"])
     stats = [s for s in stats if "error" not in s]

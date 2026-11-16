@@ -56,7 +56,8 @@ def _cfg():
     return cfg
 
 
-def test_two_station_phase_velocity(tmp_path):
+@pytest.mark.parametrize("zoned", [False, True])
+def test_two_station_phase_velocity(tmp_path, zoned):
     """Phase velocities of J0 correlations against c(f).  (Between 2 and 3 wavelengths the far-field phase pi/4
     is itself in error by up to about 3 %: the reason for the wavelength limit qc.lam_c.)"""
     from lant import disp, qc, reference
@@ -67,11 +68,22 @@ def test_two_station_phase_velocity(tmp_path):
     f = reference.freq_grid(cfg)
     ref = str(tmp_path / "reference.npz")
     np.savez(ref, freqs=f, c_ref=C_TRUE(f), ref_valid=np.ones(len(f), bool), ref_support=np.ones(len(f), bool))
+    if zoned:
+        np.savez(
+            tmp_path / "zones.npz",
+            zone=np.zeros(len(dist), int),
+            c_ref=[1.01 * C_TRUE(f)],
+            ref_support=[np.ones(len(f), bool)],
+        )
     out = str(tmp_path / "disp.h5")
     s = disp.measure(cfg, stack, ref, out)
     qc.lambda_qc(cfg, out)
     with h5py.File(out, "r") as h:
         ok, vc = h["ok_c"][:], h["vc"][:]
+        assert h.attrs["lam_min"] == cfg["dispersion"]["lam_min"]
+        assert h.attrs["lam_c_final"] == h.attrs["qc_lam_c"] == cfg["dispersion"]["qc"]["lam_c"]
+        if zoned:
+            assert np.array_equal(h["reference_zones/0/c_ref"][:], 1.01 * C_TRUE(f))
     err = vc / C_TRUE(f)[None, :] - 1
     lam = dist[:, None] * f[None, :] / C_TRUE(f)[None, :]  # path length in wavelengths
     assert ok.sum() > 0.25 * s["pairs"] * len(f)

@@ -2,7 +2,7 @@
 
 [中文](parameters.zh.md) | English
 
-Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` writes the same information into the configuration file, and the step reports (`OUT/.lant/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
+Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` expands common settings; `lant init --full` writes every key and its explanation, and the step reports (`OUT/.lant/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
 
 ## 1. How to read the tables
 
@@ -197,6 +197,9 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 | `contour_step` | `auto` | rule | contour interval; auto: about a tenth of the colour range |
 | `font_scale` | `1.0` | choice | font size factor |
 | `pair_example` | `null` | choice | pair(s) of the single-pair figures (stack time, dispersion): a name or a list; default: three pairs at the 20 / 50 / 80 % quantiles of the distances of the pairs with long curves |
+| `ccf_bands_hz` | `[]` | choice | moveout display bands [[low_Hz, high_Hz], ...]; []: default bands. Changes redraw only; bands must lie within the saved correlation band |
+| `ccf_stack_band_hz` | `null` | choice | hourly stack diagnostic display band [low_Hz, high_Hz]; null: measured band of the pair. Changes redraw only |
+| `ccf_maxlag_s` | `null` | choice | maximum displayed absolute lag (s), bounded by the saved lag window; null: fit the arrivals. Changes redraw only |
 
 ## 13. resources: computing resources
 

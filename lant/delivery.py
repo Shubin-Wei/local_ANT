@@ -82,7 +82,7 @@ figures and links to everything below.
 | `results/model/` | `vs_model.csv`: the 3-D shear-velocity model |
 | `results/dispersion/` | `curves.csv` (phase velocities with QC and inversion flags); all measurements with their diagnostics are in `work/05_dispersion/` |
 | `results/figures/` | maps, sections, dispersion, checks |
-| `results/parameters.yaml` | the configuration with every value resolved, and the record of your confirmations (latest completed step) |
+| `results/parameters.yaml` | actual parameters and source execution records of retained data and individual figures; edit config.yaml for the next command |
 | `results/validation/` | `evaluation.json` (residuals, checkerboard recovery, control inversions), travel-time residual tables |
 | `results/main_preview/` | main model, section and parameters available during the run, before checks finish; removed when the evaluated model is published |
 | `work/` | processing files of every step, kept so that nothing has to be computed again; the solver files to rerun the inversion are in `work/06_inversion/main/` (`DSurfTomo.in`, `surfdata.dat`, `MOD`); caches can be removed with `lant clean-work` |
@@ -139,13 +139,9 @@ def _swap(cfg, target, fill):
 
 def _mark(cfg, target, step):
     """Which run of which step a retained tree belongs to (manifest.record gives the run this number next)."""
-    from . import manifest
+    from .lineage import mark
 
-    p = Path(records.rec_dir(cfg)) / "published.json"
-    marks = json.loads(p.read_text()) if p.exists() else {}
-    run = int(manifest.load(cfg)["steps"].get(step, {}).get("run", 0)) + 1
-    marks[target] = dict(step=step, run=run, time=records._now())
-    atomic_text(p, json.dumps(marks, indent=1) + "\n")
+    mark(cfg, target, step)
 
 
 STEP_FIGURES = {
@@ -155,6 +151,7 @@ STEP_FIGURES = {
         (paths.REFERENCE, "fj.png", "3_fj_phase_velocity.png"),
         (paths.REFERENCE, "zones.png", "3_reference_zones.png"),
     ),
+    "inversion": ((paths.INV, "start_model.png", "4_start_model.png"),),
 }
 
 
@@ -175,14 +172,13 @@ def _publish_file(cfg, relative, step, fill):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-    _mark(cfg, relative, step)
+    if relative != "results/parameters.yaml":
+        _mark(cfg, relative, step)
 
 
 def publish(cfg, step):
     """Publish completed step figures and parameters, dispersion after disp, and evaluated model products.
     Rebuilding an inversion keeps the previous evaluated model until a new evaluation is complete."""
-    from . import config
-
     dest = Path(cfg["project"]["output_dir"]) / "results"
     inv = Path(paths.P(cfg, paths.INV))
     if step == "disp":
@@ -205,7 +201,10 @@ def publish(cfg, step):
         source = Path(paths.P(cfg, folder, name))
         if source.is_file():  # moved: the figure is kept once, in results/figures
             _publish_file(cfg, "results/figures/" + target, step, lambda new: os.replace(str(source), new))
-    _publish_file(cfg, "results/parameters.yaml", step, lambda new: config.dump(cfg, new, base=str(dest)))
+    if not cfg.get("_run_record"):  # direct callers without a pipeline record
+        from .lineage import publish_index
+
+        publish_index(cfg)
     _retire(cfg, dest / "parameters")  # per-step copies of earlier versions; each step's values are in the manifest
 
 

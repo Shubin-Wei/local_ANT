@@ -35,6 +35,27 @@ def figure_band(cfg):
     return (float(band[0]), float(band[1])), (float(v1), float(v0))
 
 
+def validate_display(stack_path, band, maxlag=None):
+    """Validate against the saved product, not a possibly edited configuration."""
+    with h5py.File(stack_path, "r") as h:
+        fs, lag = float(h.attrs["fs"]), float(h.attrs["maxlag"])
+        low, high = float(h.attrs.get("fmin", 0)), float(h.attrs.get("fmax", fs / 2))
+    if not (0 < band[0] < band[1] < fs / 2) or band[0] < low - 1e-6 or band[1] > high + 1e-6:
+        raise ValueError(
+            "display band %s Hz is outside the saved correlation band %g-%g Hz (fs %g Hz); "
+            "change plots.ccf_bands_hz / ccf_stack_band_hz" % (band, low, high, fs)
+        )
+    if maxlag is not None and maxlag > lag:
+        raise ValueError("plots.ccf_maxlag_s %g exceeds the saved lag window %g s" % (maxlag, lag))
+
+
+def clamp_default_band(stack_path, band):
+    """Rounded default display bands must stay inside the saved calculation band."""
+    with h5py.File(stack_path, "r") as h:
+        lo, hi = float(h.attrs.get("fmin", band[0])), float(h.attrs.get("fmax", band[1]))
+    return [max(lo, band[0]), min(hi, band[1])]
+
+
 def hz(f):
     """A frequency for a figure label: two significant digits, no trailing zeros."""
     return "%g" % float("%.2g" % f)
@@ -91,6 +112,7 @@ def moveout(cfg, stack_path, out, band=None, maxlag=None, vref=None, dmax=None):
     style.apply(cfg["plots"]["font_scale"])
     b, (vf, vs) = figure_band(cfg)
     band = band or b
+    validate_display(stack_path, band, maxlag)
     vref = vref or ((vf, "#ff1a1a"), (vs, "#00b4ff"))
     with h5py.File(stack_path, "r") as h:
         fs, full = float(h.attrs["fs"]), float(h.attrs["maxlag"])
@@ -163,7 +185,10 @@ def moveout(cfg, stack_path, out, band=None, maxlag=None, vref=None, dmax=None):
     for i, (v, c) in enumerate(vref):
         a2.text(0.985, 0.035 + 0.07 * (len(vref) - 1 - i), "%.3g km/s" % v, transform=a2.transAxes, ha="right", color=c)
     a2.set_xlabel("Lag time (s)")
-    return style.save(fig, out, cfg)
+    return dict(
+        files=style.save(fig, out, cfg),
+        parameters=dict(band_hz=list(band), maxlag_s=float(max(abs(t[0]), abs(t[-1]))), distance_max_km=float(dtop)),
+    )
 
 
 def _hourly(cfg, pair, bad_days):
@@ -191,10 +216,12 @@ def _hourly(cfg, pair, bad_days):
     return np.array(X), np.array(W), lab, fs, maxlag
 
 
-def stack_time(cfg, stack_path, pair, out, band=None, bad_days=(), vwin=None):
+def stack_time(cfg, stack_path, pair, out, band=None, bad_days=(), vwin=None, maxlag=None):
     style.apply(cfg["plots"]["font_scale"])
     b, (vf, vs) = figure_band(cfg)
     band = band or b
+    validate_display(stack_path, band, maxlag)
+    display_maxlag = maxlag
     if vwin:
         vf, vs = vwin
     with h5py.File(stack_path, "r") as h:
@@ -217,7 +244,7 @@ def stack_time(cfg, stack_path, pair, out, band=None, bad_days=(), vwin=None):
     snr = lambda y: np.abs(y[..., sig & pos]).max(axis=-1) / (y[..., noi & pos].std(axis=-1) + 1e-20)
     XF, CF = filt(X), filt(cum)
     stack = CF[-1]
-    tmax = float(min(maxlag, d / vs + 7.0 / band[0]))
+    tmax = float(min(maxlag, display_maxlag or maxlag, d / vs + 7.0 / band[0]))
     m = np.abs(t) <= tmax
     fig = plt.figure(figsize=(12.5, 6.8))
     gs = fig.add_gridspec(2, 2, width_ratios=[1.35, 1], height_ratios=[1, 4.0], hspace=0.05, wspace=0.24)
@@ -282,5 +309,11 @@ def stack_time(cfg, stack_path, pair, out, band=None, bad_days=(), vwin=None):
     ax2.legend(loc="upper left", frameon=False)
     files = style.save(fig, out, cfg)
     return dict(
-        files=files, pair=pair, dist_km=d, hours=nh, snr_final=float(acc[-1]), snr_single_median=float(np.median(one))
+        files=files,
+        pair=pair,
+        dist_km=d,
+        hours=nh,
+        snr_final=float(acc[-1]),
+        snr_single_median=float(np.median(one)),
+        parameters=dict(band_hz=list(band), maxlag_s=tmax, pair=pair),
     )

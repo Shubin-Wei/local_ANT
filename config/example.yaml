@@ -229,7 +229,7 @@ data:
 #     iterations: 14
 #     # [technical] 1-D forward: sublayers per node interval
 #     minthk: 3
-#   # [empirical] smoothing weight of lant's regularization (methods.md 8.4): the Laplacian of the model itself, as a mean over the parameters, against the mean squared travel-time residual, so that it does not change with the number of travel times or nodes (units s per km/s); default 1, calibrated on lant's areal synthetic example (smallest error of the model against the true one; lines not calibrated)
+#   # [empirical] smoothing weight of lant's regularization (methods.md 8.4): the Laplacian of the model itself, as a mean over the parameters, against the mean squared travel-time residual, so that it does not change with the number of travel times or nodes (units s per km/s); default 1, calibrated on the areal waveform synthetic used to develop 2.0.1 (smallest error of the model against the true one; lines not calibrated)
 #   weight: 1.0
 #   # [rule] lower Vs bound; auto: 0.6 x the slowest Vs of the starting model
 #   vmin: auto
@@ -284,6 +284,12 @@ data:
 #   font_scale: 1.0
 #   # [choice] pair(s) of the single-pair figures (stack time, dispersion): a name or a list; default: three pairs at the 20 / 50 / 80 % quantiles of the distances of the pairs with long curves
 #   pair_example: null
+#   # [choice] moveout display bands [[low_Hz, high_Hz], ...]; []: default bands. Changes redraw only; bands must lie within the saved correlation band
+#   ccf_bands_hz: []
+#   # [choice] hourly stack diagnostic display band [low_Hz, high_Hz]; null: measured band of the pair. Changes redraw only
+#   ccf_stack_band_hz: null
+#   # [choice] maximum displayed absolute lag (s), bounded by the saved lag window; null: fit the arrivals. Changes redraw only
+#   ccf_maxlag_s: null
 
 # resources:
 #   # [technical] cores of a step; auto: max(1, 0.8 x (usable CPUs - 1-minute load average)), without the load this run caused itself (idle = not used by others), taken again at every step and solver project; parallel work is also limited to half of the available memory (lant/resources.py); an integer is used as given

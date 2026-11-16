@@ -15,6 +15,18 @@ The derivation of an "auto" value with the numbers of the present data is writte
 """
 
 DOC = {
+    "plots.ccf_bands_hz": (
+        "choice",
+        "moveout display bands [[low_Hz, high_Hz], ...]; []: default bands. Changes redraw only; bands must lie within the saved correlation band",
+    ),
+    "plots.ccf_stack_band_hz": (
+        "choice",
+        "hourly stack diagnostic display band [low_Hz, high_Hz]; null: measured band of the pair. Changes redraw only",
+    ),
+    "plots.ccf_maxlag_s": (
+        "choice",
+        "maximum displayed absolute lag (s), bounded by the saved lag window; null: fit the arrivals. Changes redraw only",
+    ),
     "plots.backend": (
         "choice",
         "gmt: reference command interface; pygmt: isolated Python GMT C-API renderer; both require GMT",
@@ -520,18 +532,59 @@ def template(
     cfg = C.defaults()
     dump = lambda v: yaml.safe_dump(v, default_flow_style=True).strip().replace("\n...", "")
     lines = [
-        "# lant configuration: three required paths; uncomment optional settings as needed.",
-        "# Full template: lant init --full -o full.yaml. Effective values: lant plan -c THIS_FILE.",
-        "project:",
-        "  output_dir: " + dump(output_dir),
-        "  # array_type: auto  # derive surface/line from station geometry",
-        "data:",
-        "  raw_dir: " + dump(raw_dir),
-        "  station_file: " + dump(station_file),
+        "# Edit the settings for the next step. Defaults are shown; only three paths are required.",
+        "# Preview actual values and changes: lant plan STEP -c THIS_FILE",
+        "# Inspect an existing result: lant params results/figures/FILE.png -c THIS_FILE",
+        "# auto values are resolved by the relevant step and saved with its results.",
+        "# Advanced settings and explanations: lant init --full -o reference.yaml; docs/parameters.md",
     ]
-    if line:
-        lines.append("  line: " + dump(str(line)))
-    for key in ("velocity_range_kms", "day_label", "response", "exclude_stations", "start_date", "end_date"):
-        lines.append("  # %s: %s  # %s" % (key, dump(cfg["data"][key]), describe("data." + key)[1]))
-    lines += ["# plots:", "#   formats: " + dump(cfg["plots"]["formats"]) + "  # PNG figures"]
+    common = {
+        "project": ["output_dir", "array_type"],
+        "data": [
+            "raw_dir",
+            "station_file",
+            "velocity_range_kms",
+            "response",
+            "channel",
+            "start_date",
+            "end_date",
+            "exclude_stations",
+        ],
+        "clean": ["write_archive"],
+        "correlation": ["fs", "fs_max", "fmin_hz", "fmax_hz", "seg_len_s", "seg_step_s", "maxlag_s"],
+        "stack": ["block_hours", "exclude_station_days", "exclude_station_hours"],
+        "reference": ["source", "file"],
+        "dispersion": ["fmin_hz", "fmax_hz", "alpha", "lam_min", "qc"],
+        "inversion": ["weight", "depth_sequence_km", "grid_spacing_deg", "iterations"],
+        "plots": [
+            "ccf_bands_hz",
+            "ccf_stack_band_hz",
+            "ccf_maxlag_s",
+            "pair_example",
+            "slice_depths_km",
+            "vs_range",
+            "sections",
+            "topography",
+            "dpi",
+        ],
+    }
+    cfg["project"].update(output_dir=output_dir, array_type="auto")
+    cfg["data"].update(raw_dir=raw_dir, station_file=station_file)
+    for section, keys in common.items():
+        lines += ["", section + ":"]
+        if section == "data" and line:
+            lines.append("  line: " + dump(str(line)))
+        for key in keys:
+            value = cfg[section][key]
+            if isinstance(value, dict):
+                lines.append("  " + key + ":")
+                for sub, val in value.items():
+                    lines.append("    %s: %s  # %s" % (sub, dump(val), describe(section + "." + key + "." + sub)[1]))
+            else:
+                lines.append("  %s: %s  # %s" % (key, dump(value), describe(section + "." + key)[1]))
+    lines += [
+        "",
+        "# Line-specific defaults remain automatic unless you explicitly add their keys.",
+        "# stack.block_hours is a jackknife sub-stack; the final stack uses all selected data.",
+    ]
     return "\n".join(lines) + "\n"

@@ -25,3 +25,14 @@ def test_step_times_come_from_the_latest_completed_run(tmp_path):
         fh.write("not json\n")
     assert run_report.step_seconds(cfg) == {"cc": 136.0, "run": 1256.2}
     assert [run_report._duration(s) for s in (None, 52.0, 1256.2, 9000.0)] == ["", "52 s", "21 min", "2.5 h"]
+
+
+def test_report_shows_current_step_duration_before_its_done_log_is_written(tmp_path):
+    from lant import manifest
+
+    cfg = config.defaults()
+    cfg["project"]["output_dir"] = str(tmp_path)
+    manifest.record(cfg, "clean", "done", seconds=17.0)
+    run_report.write_report(cfg)
+    assert "| clean |" in (tmp_path / "REPORT.md").read_text()
+    assert "17 s" in (tmp_path / "REPORT.md").read_text()

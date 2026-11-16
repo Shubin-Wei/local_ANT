@@ -102,9 +102,9 @@ def test_step_products_are_available_before_inversion_and_keep_their_origins(tmp
     assert not Path(paths.P(cfg, paths.REFERENCE, "fj.png")).exists()  # moved, not copied
     assert not (root / "results/model").exists()
     effective = yaml.safe_load((root / "results/parameters.yaml").read_text())
-    assert effective["project"]["output_dir"] == ".."
+    assert effective["products"]["results/figures/3_fj_phase_velocity.png"]["step"] == "reference"
     assert not (root / "results/parameters").exists()
-    assert effective["reference"] == cfg["reference"]
+    assert effective["runs"] == {}  # direct publication has no execution record; do not invent one
     state = {s: dict(state="done", run=1, time="t") for s in delivery.STEP_FIGURES}
     state["reference"]["run"] = 2  # the retained spectrum is from the previous reference run
     monkeypatch.setattr(manifest, "status", lambda *a, **k: state)
@@ -112,7 +112,7 @@ def test_step_products_are_available_before_inversion_and_keep_their_origins(tmp
     report = (root / "REPORT.md").read_text()
     assert "results/parameters.yaml" in report
     assert "![3_fj_phase_velocity](results/figures/3_fj_phase_velocity.png)" in report
-    assert report.count("OLDER than the latest run 2") == 2  # spectrum and the parameters (last written by reference)
+    assert report.count("OLDER than the latest run 2") == 1  # retained spectrum; parameter index is not a calculation
 
 
 def test_borrowed_reference_does_not_publish_a_stale_fj_spectrum(tmp_path):

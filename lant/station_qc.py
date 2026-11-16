@@ -146,9 +146,17 @@ def station_qc(cfg, stack_path, out_dir):
                 # Standard error of the median: 1.2533 x (1.4826 MAD) / sqrt(n)
                 sd_shift_se[si[s], dd] = 1.2533 * 1.4826 * np.median(np.abs(v - np.median(v))) / np.sqrt(m.sum())
     zc = np.arctanh(np.clip(sd_corr, -0.999999, 0.999999))  # Fisher's z: near-normal for correlation coefficients
-    with np.errstate(all="ignore"):
-        day_med = np.nanmedian(sd_corr, axis=0)
-        dev = zc - np.nanmedian(zc, axis=0)[None, :]
+    valid_days = np.isfinite(sd_corr).any(axis=0)
+    day_med, centre = np.full(nday, np.nan), np.full(nday, np.nan)
+    day_med[valid_days] = np.nanmedian(sd_corr[:, valid_days], axis=0)
+    centre[valid_days] = np.nanmedian(zc[:, valid_days], axis=0)
+    dev = zc - centre[None, :]
+    if not valid_days.all():
+        print(
+            "  station diagnosis: %d of %d blocks lack enough valid partners; not judged"
+            % (int((~valid_days).sum()), nday),
+            flush=True,
+        )
     lim = outlier_limits(dev, sd_shift, fs)
     np.savez(
         os.path.join(out_dir, "station_qc.npz"),

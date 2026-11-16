@@ -39,6 +39,7 @@ def lambda_qc(cfg, path):
             r[dropped_run] |= REASONS["short_run"]
             h["reason"][...] = r
         h.attrs["qc_lam_c"] = lam_cl
+        h.attrs["lam_c_final"] = lam_cl
     return dict(phase_points_before=n0, phase_points=int(ok.sum()))
 
 

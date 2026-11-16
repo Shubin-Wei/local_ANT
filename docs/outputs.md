@@ -21,19 +21,21 @@ Any other file here, or in `work/`, `results/` or `.lant/`, that lant did not wr
 
 `results/dispersion/` is replaced after a complete disp step; `results/model/` and `results/validation/` are replaced together after a complete evaluate step, so rebuilding or rerunning the inversion keeps the previous evaluated model until the new one is evaluated. Unregistered files in these directories are never replaced. They stay readable after `lant clean-work`; `work/` is not disposable as a whole.
 
-Each completed step rewrites `results/parameters.yaml`: the configuration with every value resolved so far and the record of your confirmations (the values each step used are in its report, `.lant/steps/<step>.md`, and in `.lant/manifest.json`). The cleaning, station-diagnosis and F-J figures are moved into `results/figures/` when their step completes (they are kept only there); `REPORT.md` links them and their originating runs. A rerun that disables a diagnostic keeps its earlier published figure with its earlier run label.
+Each task updates `results/parameters.yaml`, indexing the source step, execution record and display settings of retained data and images. Editing the configuration does not relabel existing results. A partial redraw preserves records for images that were not redrawn. `.lant/runs/` preserves execution parameters and upstream sources, not copies of every overwritten large product. Missing historical records from older outputs are explicitly unavailable. Coverage, station diagnostics and F-J figures still move into `results/figures/` when their step completes, with only one copy retained.
 
 | File | Content |
 |---|---|
 | ★ `model/vs_model.csv` | the 3-D model: `longitude_deg`, `latitude_deg` (WGS84), `depth_km`, `vs_km_s`, `dws` (summed data sensitivity at the node in the last iteration: 0 where no ray passes, empty where the node is not updated), sorted by depth, latitude, longitude; the values exactly as the solver wrote them. Nodes far from the ray paths keep the starting model: read it with the checkerboards |
 | ★ `dispersion/curves.csv` | every pair and measurement frequency: measured values, `accepted_qc`, `used_in_inversion` and the values given to DSurfTomo |
-| `parameters.yaml` | every value resolved, with the confirmation record; written by the latest completed step (some auto values resolve only in later steps) |
+| `parameters.yaml` | current data and per-image parameter index: `products` identifies files, `runs` contains execution records, `steps` gives latest step states. Read-only result metadata, not input configuration |
 | `figures/` | result figures (below) |
 | `validation/evaluation.json` | residual statistics of the starting and final model, checkerboard recovery per depth, control inversions |
 | `validation/checkerboard_recovery.csv` | per checkerboard and depth: recovered fraction of the anomaly (slope), pattern correlation r, nodes |
 | `validation/residuals_start.csv`, `residuals_final.csv` | travel time observed and predicted per pair and period, kept or rejected by DSurfTomo's rule |
 
 To rerun or redraw, everything is in `work/` (nothing has to be computed again): the solver files of the main model are in `work/06_inversion/main/` (`DSurfTomo.in`, `surfdata.dat`, `MOD`, final model `DSurfTomo.inMeasure.dat`), the starting model and average curve in `work/06_inversion/`, the station table in `work/01_clean/stations.csv`. All measurements with their rejection reasons and diagnostics (`disp.h5`, `median_vs_reference.txt`) and the per-pair diagnostic figures stay in `work/05_dispersion/` (no copy in `results/`); the checkerboard and control projects with their recovered models stay in `work/06_inversion/`. Checkerboard figures are drawn for the check projects of the present configuration (`work/06_inversion/checks.json`), the same ones the evaluation uses; a project directory left from an earlier configuration is kept in `work/` but not drawn.
+
+Raw-to-archive associations are in `work/01_clean/archive_sources.csv`: station, processing day, input file, output file and merge/clean action. Per-station-day operation counts are in `station_days.csv` in the same directory. Raw files are not deleted.
 
 ## .lant/: the run record
 
@@ -44,6 +46,7 @@ To rerun or redraw, everything is in `work/` (nothing has to be computed again):
 | `manifest.json` | the inputs, parameters and upstream results each step stands on; after a change of parameters or inputs `lant status` uses it to tell which steps are stale |
 | `auto_parameters.json` | every parameter derived from the data by a rule, with its derivation (the numbers substituted) |
 | `config.yaml`, `config_history/` | the complete configuration of the latest run (all defaults included) and the earlier ones |
+| `runs/*.json` | frozen input settings, actual final values, upstream executions, code and status per task; images reference their own display settings |
 | `run_log.jsonl` | start, end, duration and outcome of every step |
 | `provenance/` | code version (with a fingerprint of uncommitted changes), versions of dependencies, fingerprints of third-party programs; package source SHA-256 frozen at process import |
 | `forward_cache/*.npz` | dependency- and checksum-verified forward predictions shared by prechecks, automatic noise and residuals; internal rebuildable data, not a result model |
@@ -63,6 +66,7 @@ To rerun or redraw, everything is in `work/` (nothing has to be computed again):
 | ★ `stations.csv` | the stations used: `NET.STA`, longitude, latitude, elevation (all later steps use these names) |
 | `processing_days.txt` | label of each processing day and its UTC window |
 | `station_days.csv` | per station-day: hours of data, gaps, shifted and interpolated records, overlaps, dropped short pieces |
+| `archive_sources.csv` | raw-to-archive associations per station-day, with merge/clean action |
 | `pulse_1s.csv` | statistic, limit and effective degrees of freedom of the 1-s folding test per station-day |
 | `input_files.csv`, `raw_index.json` | every file and record read; a miniSEED file whose first and last records are of a station that cannot be in the station table is read only at its ends (`not_read_because` says so) |
 | `archive/` | cleaned day files (one miniSEED per station and day; `*.done.json` are fingerprints for resuming); absent when `clean.write_archive: false` |
@@ -98,7 +102,7 @@ The figures of clean (data coverage), stack (station diagnosis) and reference (F
 
 | File | Content |
 |---|---|
-| `disp.h5` | per pair and measured frequency: phase velocity `vc`, group velocity `vg`, signal-to-noise ratio, jackknife error, number of cycles, accepted `ok_c`, bit mask of rejection reasons `reason` |
+| `disp.h5` | per pair and measured frequency: phase velocity `vc`, group velocity `vg`, signal-to-noise ratio, jackknife error, number of cycles, accepted `ok_c`, bit mask of rejection reasons `reason`; saved filter, phase and wavelength settings, and `reference_zones/<zone>/` for local references |
 | ★ `median_vs_reference.txt` | per frequency, median of the accepted points minus the reference; a systematic offset points to a problem with the reference curve or the number of cycles |
 | `curves.csv` | every pair and measurement frequency: measured values, QC and inversion flags, and the values given to DSurfTomo (periods to six decimals, velocities to five, as before) |
 | `pair_figures/` | single-pair figures (`export.curve_figures` pairs spread evenly over distance, plus the pairs with most rejected points and with the largest departure from the median): velocity–frequency image, picks, rejection reasons |
@@ -131,9 +135,9 @@ Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group
 | `1_stations` | recorded stations over coloured, lightly shaded relief (SRTM, `plots.topography`), bounded map height with internal legend separating recorded and inversion station counts; stations left out by `data.exclude_stations` as red crosses | all |
 | `2_ccf_moveout_<band>` | stacked correlations sorted by distance, one figure per band (the measurement band cut at round frequencies); distances up to where pairs were measured in the band; the two dashed moveouts are the slowest group and the fastest phase velocity measured in the band | all |
 | `2_ccf_stack_time_<k>` | three pairs (short, middle, long distance): stacked correlation, hourly correlations in time order, signal-to-noise ratio of the symmetric component against stacked hours | all |
-| `3_dispersion_pair_<k>` | the same three pairs: waveform; phase-matched filter picks with integer-cycle branches and the F-J reference (no classical narrow-band phase background); group-velocity envelope image with measured arrivals | all |
+| `3_dispersion_pair_<k>` | the same three pairs: waveform; phase-matched coherence image with picks, integer-cycle branches and the F-J reference; group-velocity envelope energy with measured arrivals. Phase colour shows normalised phase agreement, not absolute energy or QC acceptance | all |
 | `3_dispersion_curves` | all accepted phase-velocity curves, mean and standard deviation | all |
-| `4_start_model` | median observed phase velocities and the prediction used to initialize the 1-D model, with RMS; connected Vs parameter nodes and fixed bottom value, not detected layer interfaces | all |
+| `4_start_model` | median observed phase velocities and the prediction used to initialize the 1-D model, with RMS; connected Vs parameter nodes and fixed bottom value, not detected layer interfaces; published during inversion preparation, before confirmation | all |
 | `4_kernels` | illustrative 1-D joint sensitivity on a separate finer, extended model (Vs +/-5%, Vp/rho follow), per km; not the actual inversion Jacobian; the dashed line is the inversion bottom boundary | all |
 | `5_depth_slices` | Vs at the slice depths over grey relief, with the section lines | areal |
 | `5_slices_3d` | five slices in a perspective view, the relief above them | areal |
@@ -141,8 +145,9 @@ Bits of `reason`: 1 no group pick, 2 signal-to-noise too low, 4 no data, 8 group
 | `6_checkerboard_*` | checkerboard input and recovery, red (slow) – white (zero) – blue (fast): maps at up to seven depths (areal), input and recovered section (line) | all |
 | `6_recovery` | test-by-depth heatmaps and depth profiles of amplitude recovery factor (100% / 1.0 ideal) and pattern correlation r (1.0 ideal) within the near-station evaluation region | all |
 | `6_residuals` | all-observation residual histogram in ms, relative RMS by period; mean, population standard deviation and RMS are listed separately, with kept/all counts; actual iteration curves only when already evaluated | all |
+| `6_path_coverage` | up to six representative periods; blue retained paths, grey input paths; straight source-receiver connections, not bent rays in the final model | All |
 
-A figure that cannot be drawn is listed in the figures report with the reason (e.g. a band without measurements, or no relief available offline).
+A figure that cannot be drawn is listed in the figures report with the reason (e.g. a band without measurements, or no relief available offline). Missing required inputs or a renderer error make a redraw incomplete and retain the previous images and their origins. Dispersion wavelength gates use the saved measurement thresholds, even after the editable configuration changes.
 Workflow figures are PNG only (`plots.formats: [png]`). The figures use one journal style (serif type, ticks inside, slow red and fast blue); maps of input and recovered anomalies share colour limits.
 
 Recovery heatmaps support a single depth, check aligned increasing depths, and retain negative correlations and amplitude overshoots. Cells display node samples rather than resolved depth intervals. Section anomalies are explicitly relative to the 1-D reference, which need not be a heterogeneous initial model.

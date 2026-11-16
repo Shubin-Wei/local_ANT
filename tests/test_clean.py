@@ -37,6 +37,14 @@ def test_clean_mixed_formats(tmp_path):
     assert cfg["correlation"]["fs"] == 50.0  # from the velocity range and the rates (fs_max 50)
     assert auto.unresolved(cfg, auto.CLEAN_KEYS) == [] and auto.unresolved(cfg, auto.REFERENCE_KEYS)
     assert s["response"]["removed"] is False and s["array_type"]["type"] == "surface"
+    import csv
+
+    with open(tmp_path / "out/work/01_clean/archive_sources.csv") as fh:
+        sources = list(csv.DictReader(fh))
+    merged = [row for row in sources if row["operation"] == "merge_and_clean"]
+    assert len(merged) >= 2 and len({row["archive_file"] for row in merged}) == 1
+    assert all(os.path.isfile(row["source_file"]) for row in sources)
+    assert all(os.path.isfile(tmp_path / "out" / row["archive_file"]) for row in sources)
 
 
 def test_clean_long_names_nan_polarity(tmp_path):

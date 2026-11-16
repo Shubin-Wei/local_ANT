@@ -15,7 +15,7 @@ Do not attach raw records or station coordinates you may not share; a small exam
 
 ## Changing the code
 
-Follow the [development rules](docs/engineering.md) and the code section of [AGENTS.md](AGENTS.md): one purpose per commit, defaults only in `lant/config.py` with their basis in `lant/params.py`, every document in English and Chinese, DSurfTomo and pDSurfTomo unmodified, and no method or threshold without a source.
+Follow the [development rules](docs/engineering.md) and the code section of [AGENTS.md](AGENTS.md): one purpose per commit, defaults only in `lant/config.py` with their basis in `lant/params.py`, every document in English and Chinese, the forward port compatible with DSurfTomo, intentional inversion departures documented and compared, and no method or threshold without a source.
 
 Before a pull request:
 
@@ -23,6 +23,7 @@ Before a pull request:
 pip install -e ".[dev]"
 ruff check lant tests tools
 ruff format --check lant tests tools
+python tools/make_parameter_doc.py --check
 python -m pytest tests
 python tests/smoke_records.py make --out DIR && python tests/smoke_records.py run --dir DIR   # the chain runs
 ```

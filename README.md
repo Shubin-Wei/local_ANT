@@ -52,10 +52,14 @@ lant check                                                   # reports anything 
 On your data:
 
 ```bash
-lant run all --raw /data/raw --stations /data/stations.csv --out /data/result
+lant init -o /data/result/config.yaml --raw /data/raw --stations /data/stations.csv --out /data/result
+# Edit the common settings in config.yaml before running.
+lant validate -c /data/result/config.yaml
+lant plan cc -c /data/result/config.yaml
+lant run all -c /data/result/config.yaml
 ```
 
-This writes `/data/result/config.yaml` and starts the chain. When it stops for a judgement it prints the files to look at and the next command:
+The configuration stays editable; each execution records the values it actually used. When the chain stops for a judgement it prints the evidence and next command:
 
 ```bash
 lant status -c /data/result/config.yaml        # state of every step and the next command

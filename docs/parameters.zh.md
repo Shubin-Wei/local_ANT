@@ -2,7 +2,7 @@
 
 中文 | [English](parameters.md)
 
-配置文件的每一个键：默认值、含义、默认值的依据。本文件由 `tools/make_parameter_doc.py` 根据 `lant/config.py`（默认值）和 `lant/params.py`（说明）生成；`lant init` 把同样的信息写进配置文件，步骤报告（`输出目录/.lant/steps/<步骤>.md`）给出每一步实际用的值，由规则推出的值还写出代入你的数据后的推导。
+配置文件的每一个键：默认值、含义、默认值的依据。本文件由 `tools/make_parameter_doc.py` 根据 `lant/config.py`（默认值）和 `lant/params.py`（说明）生成；`lant init` 展开常用参数，`lant init --full` 列出全部参数及说明，步骤报告（`输出目录/.lant/steps/<步骤>.md`）给出每一步实际用的值，由规则推出的值还写出代入你的数据后的推导。
 
 ## 1. 表格怎么读
 
@@ -197,6 +197,9 @@
 | `contour_step` | `auto` | 规则 | 等值线间隔；auto：约为色标范围的十分之一 |
 | `font_scale` | `1.0` | 选择 | 字号系数 |
 | `pair_example` | `null` | 选择 | 单台对图（叠加时长、频散）画哪些台对：一个台对名或列表；默认在曲线较长的台对中按距离的 20 % / 50 % / 80 % 分位数取三对 |
+| `ccf_bands_hz` | `[]` | 选择 | 互相关走时图的显示频段 [[下限_Hz, 上限_Hz], ...]；[] 使用默认分频。只影响重画；频段须在已保存的互相关计算频带内 |
+| `ccf_stack_band_hz` | `null` | 选择 | 逐小时叠加诊断图的显示频段 [下限_Hz, 上限_Hz]；null 使用该台对的测量频段。只影响重画 |
+| `ccf_maxlag_s` | `null` | 选择 | 图中显示的最大绝对时延（秒），不超过已保存的时延窗；null 按到时确定。只影响重画 |
 
 ## 13. resources：计算资源
 

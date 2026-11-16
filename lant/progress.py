@@ -28,6 +28,8 @@ class Progress:
         with self.guard:
             elapsed = time.monotonic() - self.started
             count = "%d/%d %s" % (self.done, self.total, self.unit) if self.total is not None else "running"
+            if self.total:
+                count += " (%.0f%%)" % min(100, 100 * self.done / self.total)
             eta = ""
             if self.eta and self.total and self.done and elapsed >= 2:
                 eta = ", ETA ~%.0fs" % (elapsed * max(0, self.total - self.done) / self.done)

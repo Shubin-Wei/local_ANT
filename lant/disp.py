@@ -502,6 +502,14 @@ def measure(cfg, stack, reference, out):
         h.create_dataset("c_ref", data=np.where(ref["ref_valid"], ref["c_fill"], np.nan))
         h.create_dataset("ref_valid", data=ref["ref_valid"])
         h.create_dataset("ref_support", data=ref["ref_support"])
+        # Keep the exact local reference with the measurement, so later redraws do not read a replaced sidecar.
+        if G["refs"]:
+            zones = h.create_group("reference_zones")
+            for key, local in sorted(G["refs"].items()):
+                group = zones.create_group(str(key))
+                group.create_dataset("c_ref", data=np.where(local["ref_valid"], local["c_fill"], np.nan))
+                for name in ("u_ref", "ref_valid", "ref_support"):
+                    group.create_dataset(name, data=local[name])
         h.create_dataset("side_off", data=off_band_mask(freqs, d["side_off_bands"]))
         h.create_dataset("vel_axis", data=VEL)
         h.create_dataset("zone", data=zone)
@@ -515,6 +523,7 @@ def measure(cfg, stack, reference, out):
                 reference=os.path.abspath(reference),
                 side_off_bands=d["side_off_bands"] or "none",
                 phase_constant=opt["phi0"],
+                lam_min=opt["lam_min"],
                 lam_c_final=lam_c_final,
                 **{"qc_" + k: (0.0 if np.isinf(v) else v) for k, v in QC.items()},
             )

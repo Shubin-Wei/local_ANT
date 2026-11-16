@@ -102,7 +102,50 @@ def test_moveout_window_and_example_pairs(tmp_path):
     assert all(ccf.nice_hz(lo) == lo and ccf.nice_hz(hi) == hi and hi > lo for _, (lo, hi) in pairs)
 
 
+@pytest.mark.parametrize("phi0", [np.pi / 4, -np.pi / 4])
+def test_phase_image_uses_signal_phase_with_the_measurement_convention(phi0):
+    from lant import disp, signal
+
+    fs, nfft, dist = 50.0, 8192, 6.0
+    f = np.fft.rfftfreq(nfft, 1 / fs)
+    c = lambda freq: 2.2 + 0.9 / (1 + (np.asarray(freq) / 2) ** 1.5)
+    # A real dispersive arrival with known spectral phase, independent of any phase picks.
+    amplitude = np.exp(-(((f - 5) / 4) ** 8))
+    spectrum = amplitude * np.exp(-2j * np.pi * f * dist / c(f) + 1j * phi0)
+    spectrum[0] = 0
+    sig = np.fft.irfft(spectrum, nfft)[: nfft // 2 + 1]
+    freqs = signal.log_freqs(1, 8, 12)
+    vel = np.arange(1.5, 3.501, 0.001)
+    vg = disp.group_reference(freqs, c(freqs))
+    image = dispersion._phase_image(sig, fs, freqs, vel, dist, vg, vg, 20, phi0)
+    power_at_truth = np.array([np.interp(cv, vel, row) for cv, row in zip(c(freqs), image)])
+    assert np.min(power_at_truth[2:-2]) > 0.99
+    # Wrong phase convention moves the high-power ridge; the background cannot be painted from a pick.
+    wrong = dispersion._phase_image(sig, fs, freqs, vel, dist, vg, vg, 20, phi0 + np.pi)
+    assert np.allclose(image + wrong, 1)
+
+
+def test_phase_image_leaves_zero_signal_and_missing_arrivals_blank():
+    from lant import signal
+
+    f = signal.log_freqs(1, 4, 12)
+    v = np.linspace(1, 3, 101)
+    vg = np.full(len(f), 2.0)
+    zero = dispersion._phase_image(np.zeros(1001), 50, f, v, 4, vg, vg, 20, np.pi / 4)
+    assert np.isnan(zero).all()
+    sig = np.zeros(1001)
+    sig[100] = 1
+    missing = vg.copy()
+    missing[3] = np.nan
+    image = dispersion._phase_image(sig, 50, f, v, 4, missing, vg, 20, np.pi / 4)
+    assert np.isnan(image[3]).all() and np.isfinite(image[4]).all()
+    blank = dispersion._phase_image(sig, 50, f, v, 4, np.full(len(f), np.nan), vg, 20, np.pi / 4)
+    assert np.isnan(blank).all()
+
+
 def test_pair_figure_separates_reference_and_measured_wavelength_gates(tmp_path, monkeypatch):
+    from matplotlib.collections import QuadMesh
+
     from lant.plotting import style
 
     path = tmp_path / "disp.h5"
@@ -112,11 +155,16 @@ def test_pair_figure_separates_reference_and_measured_wavelength_gates(tmp_path,
     with h5py.File(path, "w") as h:
         h["pairs"], h["freqs"], h["c_ref"] = [b"A_B"], f, ref
     image = dict(freqs=f, vel=np.linspace(1, 3, 11), okc=accepted, vc=ref, vg=ref * 0.8, dist=1.0,
-                 branches={}, cref=ref, gimg=np.ones((len(f), 11)), tt=np.linspace(0, 2, 20), sym=np.zeros(20))  # fmt: skip
+                 branches={}, cref=ref, reference_full=ref, pimg=np.ones((len(f), 11)), gimg=np.ones((len(f), 11)),
+                 tt=np.linspace(0, 2, 20), sym=np.zeros(20),
+                 parameters=dict(lam_initial=1, lam_final=2))  # fmt: skip
     monkeypatch.setattr(dispersion, "_images", lambda *args: image)
     monkeypatch.setattr(style, "save", lambda fig, *args: fig)
     cfg = config.defaults()  # initial: d/lambda_ref >= 1; final: d/lambda_measured >= 2
-    fig = dispersion.pair_example(cfg, str(path), "unused", "A_B", "unused", vwin=[3, 1])
+    cfg["dispersion"]["lam_min"] = 3
+    cfg["dispersion"]["qc"]["lam_c"] = 6  # unexecuted edits cannot relabel the saved picks
+    result = dispersion.pair_example(cfg, str(path), "unused", "A_B", "unused", vwin=[3, 1])
+    fig = result["files"]
     try:
         ax = fig.axes[1]
         limit = next(line for line in ax.lines if line.get_label().startswith("Final limit:"))
@@ -124,8 +172,56 @@ def test_pair_figure_separates_reference_and_measured_wavelength_gates(tmp_path,
         shade = next(c for c in ax.collections if c.get_label().startswith("Below"))
         assert "= 1$" in shade.get_label()
         assert any(line.get_label() == "Rejected candidate" for line in ax.lines)
+        assert any(isinstance(c, QuadMesh) for c in ax.collections)
+        assert any(isinstance(c, QuadMesh) for c in fig.axes[2].collections)
+        assert "Phase coherence" in ax.child_axes[0].get_ylabel()
+        assert result["parameters"]["lam_initial"] == 1 and result["parameters"]["lam_final"] == 2
     finally:
         style.plt.close(fig)
+
+
+@pytest.mark.parametrize("zoned", [False, True])
+def test_pair_images_record_saved_filter_and_wavelength_settings(tmp_path, zoned):
+    from lant import signal
+
+    f = signal.log_freqs(1, 4, 12)
+    stack, measured = tmp_path / "stack.h5", tmp_path / "disp.h5"
+    t = np.arange(1001) / 50 - 10
+    with h5py.File(stack, "w") as h:
+        h["stack"] = [np.cos(4 * np.pi * t) * np.exp(-((np.abs(t) - 2) ** 2))]
+        h.attrs.update(fs=50.0, maxlag=10.0)
+    with h5py.File(measured, "w") as h:
+        h["freqs"], h["vel_axis"], h["dist_km"] = f, np.linspace(1, 3, 51), [4.0]
+        h["vc"], h["vg"], h["ok_c"] = [np.full(len(f), 2.0)], [np.full(len(f), 2.0)], [np.ones(len(f), bool)]
+        h["c_ref"], h["u_ref"] = np.full(len(f), 2.0), np.full(len(f), 2.0)
+        h["zone"] = [0 if zoned else -1]
+        if zoned:
+            local = h.create_group("reference_zones/0")
+            local["c_ref"], local["u_ref"] = np.full(len(f), 2.7), np.full(len(f), 2.5)
+        h.attrs.update(alpha=17.0, phase_constant=-np.pi / 4, lam_min=1.5, qc_lam_c=2.5, lam_c_final=2.5)
+    cfg = config.defaults()
+    image = dispersion._images(cfg, str(measured), str(stack), 0)
+    assert image["parameters"] == dict(alpha=17.0, phase_constant=-np.pi / 4, lam_initial=1.5, lam_final=2.5,
+                                     reference_zone=0 if zoned else -1)  # fmt: skip
+    assert np.all(image["cref"] == (2.7 if zoned else 2.0))
+    with h5py.File(measured, "r+") as h:
+        h["vc"][:] = 2.8
+    changed_picks = dispersion._images(cfg, str(measured), str(stack), 0)
+    assert np.array_equal(image["pimg"], changed_picks["pimg"], equal_nan=True)
+    # Older files did not have a separate initial-limit attribute: use their recorded run, never the next config.
+    from lant import manifest
+
+    cfg["project"]["output_dir"] = str(tmp_path)
+    manifest.record(cfg, "disp", "done", params={"dispersion.lam_min": 1.5})
+    with h5py.File(measured, "r+") as h:
+        del h.attrs["lam_min"]
+    cfg["dispersion"]["lam_min"] = 3
+    assert dispersion._images(cfg, str(measured), str(stack), 0)["parameters"]["lam_initial"] == 1.5
+    if zoned:
+        with h5py.File(measured, "r+") as h:
+            del h["reference_zones"]
+        with pytest.raises(RuntimeError, match="no saved reference for zone"):
+            dispersion._images(cfg, str(measured), str(stack), 0)
 
 
 def test_relief_tiles_and_limits(tmp_path):
@@ -263,6 +359,24 @@ def test_nothing_to_draw_is_not_a_failure_and_obsolete_variants_go(tmp_path):
     figure.attempt("2_ccf_moveout_1-2Hz", lambda: (_ for _ in ()).throw(RuntimeError("GMT failed")))
     figure.remove_old()
     assert kept.exists()  # a failed group keeps its previous figures
+
+
+@pytest.mark.parametrize("name", ["ccf_moveout", "ccf_stack_time", "dispersion_pair"])
+def test_missing_inputs_preserve_previous_figure_variants(tmp_path, name):
+    from lant.plotting import figures
+
+    figure = figures._Figures.__new__(figures._Figures)
+    figure.out, figure.done, figure.skipped, figure.failed = str(tmp_path), {}, {}, set()
+    figure.todo = [name]
+    figure.stack, figure.disp = str(tmp_path / "missing-stack.h5"), str(tmp_path / "missing-disp.h5")
+    prefix = figures.MULTI[name].rstrip("*")
+    old = tmp_path / (prefix + "_example.png")
+    old.write_bytes(b"previous complete image")
+    figures._moveout(figure)
+    figures._example_pairs(figure)
+    figure.remove_old()
+    assert old.read_bytes() == b"previous complete image"
+    assert name in figure.failed and "missing" in figure.skipped[name]
 
 
 def test_figure_with_numbers_keeps_them_and_its_staged_files(tmp_path):

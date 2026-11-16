@@ -1,14 +1,17 @@
 #!/usr/bin/env python
-"""Write docs/parameters.md and docs/parameters.zh.md from lant/params.py (English texts) and ZH below.
+"""Write parameter references and the full configuration template from the defaults and descriptions.
 
     python tools/make_parameter_doc.py
+    python tools/make_parameter_doc.py --check  # report drift without writing
 
 Run it after changing a default (lant/config.py) or a description (lant/params.py); a key without a Chinese
 text stops it.
 """
 
+import argparse
 import os
 import sys
+from pathlib import Path
 
 import yaml
 
@@ -27,6 +30,9 @@ KIND_ZH = {
 }
 
 ZH = {
+    "plots.ccf_bands_hz": "互相关走时图的显示频段 [[下限_Hz, 上限_Hz], ...]；[] 使用默认分频。只影响重画；频段须在已保存的互相关计算频带内",
+    "plots.ccf_stack_band_hz": "逐小时叠加诊断图的显示频段 [下限_Hz, 上限_Hz]；null 使用该台对的测量频段。只影响重画",
+    "plots.ccf_maxlag_s": "图中显示的最大绝对时延（秒），不超过已保存的时延窗；null 按到时确定。只影响重画",
     "plots.backend": "gmt：参考命令接口；pygmt：独立 Python GMT C API 绘图；两者均保留 GMT 依赖",
     "project.name": "项目名（只用于图和记录）",
     "project.array_type": "auto：按台站分布判断（台站分布的长宽比，小于 3 为面状，大于 10 为线状，介于两者之间时在 clean 交给你确认）；或直接写 surface / line",
@@ -182,7 +188,7 @@ HEAD = {
 
 [中文](parameters.zh.md) | English
 
-Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` writes the same information into the configuration file, and the step reports (`OUT/.lant/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
+Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` expands common settings; `lant init --full` writes every key and its explanation, and the step reports (`OUT/.lant/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
 
 ## 1. How to read the tables
 
@@ -206,7 +212,7 @@ Where the chain stops for you: after `clean` (ambiguous names, stations without 
 
 中文 | [English](parameters.md)
 
-配置文件的每一个键：默认值、含义、默认值的依据。本文件由 `tools/make_parameter_doc.py` 根据 `lant/config.py`（默认值）和 `lant/params.py`（说明）生成；`lant init` 把同样的信息写进配置文件，步骤报告（`输出目录/.lant/steps/<步骤>.md`）给出每一步实际用的值，由规则推出的值还写出代入你的数据后的推导。
+配置文件的每一个键：默认值、含义、默认值的依据。本文件由 `tools/make_parameter_doc.py` 根据 `lant/config.py`（默认值）和 `lant/params.py`（说明）生成；`lant init` 展开常用参数，`lant init --full` 列出全部参数及说明，步骤报告（`输出目录/.lant/steps/<步骤>.md`）给出每一步实际用的值，由规则推出的值还写出代入你的数据后的推导。
 
 ## 1. 表格怎么读
 
@@ -289,7 +295,12 @@ def dump(v):
     return t if len(t) <= 60 else t[:57] + "..."
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="fail if committed references differ; do not write")
+    args = parser.parse_args(argv)
+    root = Path(HERE).parent
+    outputs = {"config/example.yaml": params.template(full=True)}
     cfg = config.defaults("surface")
     cfg["project"]["array_type"] = "auto"
     keys = params.flat(cfg)
@@ -322,9 +333,20 @@ def main():
         line = "\n".join("- `%s`: `%s`" % (k, dump(v)) for k, v in params.flat(config.LINE_OVERRIDES))
         refs = "\n".join("- " + r for r in REFS)
         L.append(TAIL[lang] % (len(SECTIONS) + 2, line, refs))
-        with open(os.path.join(os.path.dirname(HERE), "docs", name), "w") as fh:
-            fh.write("\n".join(L).rstrip() + "\n")
-        print("wrote docs/%s" % name)
+        outputs["docs/" + name] = "\n".join(L).rstrip() + "\n"
+    stale = []
+    for relative, contents in outputs.items():
+        path = root / relative
+        if args.check:
+            if not path.exists() or path.read_text() != contents:
+                stale.append(relative)
+        else:
+            path.write_text(contents)
+            print("wrote %s" % relative)
+    if stale:
+        sys.exit("out-of-date parameter references: %s; run python tools/make_parameter_doc.py" % ", ".join(stale))
+    if args.check:
+        print("parameter references and configuration template are current")
 
 
 if __name__ == "__main__":

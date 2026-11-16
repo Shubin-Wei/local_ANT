@@ -1,7 +1,7 @@
 """Dispersion figures.
 
-pair_example  one pair: symmetric cross-correlation with the velocity window, phase picks and their integer-cycle
-              alternatives (no phase-energy background), and the group-velocity squared-envelope image. The array
+pair_example  one pair: symmetric cross-correlation with the velocity window, phase-matched coherence with picks
+              and their integer-cycle alternatives, and the group-velocity squared-envelope image. The array
               F-J phase-velocity spectrum is a separate reference product, not single-pair energy.
 all_curves    every exported phase-velocity curve in grey, mean and standard deviation (>= 20 curves), period axis on
               top
@@ -17,6 +17,7 @@ import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
 from .. import disp as D
+from .. import signal as S
 from ..export import read_curves
 from . import style
 from .style import plt
@@ -37,31 +38,80 @@ def _freq_axis(ax, f):
     ax.set_xlim(f[0], f[-1])
 
 
+def _phase_image(sig, fs, freqs, vel, dist, vg, u_ref, alpha, phi0):
+    """Phase-only coherent power, |1 + exp(i residual)|^2 / 4, from the measured signal.
+
+    Rebuild the measurement's phase-matched filter and evaluate its phase against d / c, without using phase
+    picks or their cycle counts. This diagnostic is normalised at each frequency, not absolute signal energy
+    or an acceptance score. Missing group arrivals remain blank, including pairs without any group picks.
+    """
+    image = np.full((len(freqs), len(vel)), np.nan)
+    measured = np.isfinite(vg) & (vg > 0)
+    ref_ok = np.isfinite(u_ref) & (u_ref > 0)
+    if not measured.any() or not ref_ok.any():
+        return image
+    # Match reference_work's nearest-valid filling and process_chunk's log-frequency interpolation.
+    idx = np.flatnonzero(ref_ok)
+    near = idx[np.argmin(np.abs(np.arange(len(freqs))[:, None] - idx[None, :]), axis=1)]
+    vg_fill = np.where(measured, vg, u_ref[near])
+    po = int(round(1 / np.log2(freqs[1] / freqs[0])))
+    ffine = S.log_freqs(freqs[0], freqs[-1], 4 * po)
+    tg_fine = dist / np.interp(np.log(ffine), np.log(freqs), vg_fill)
+    tp0 = D.matched_phase(sig, fs, ffine, tg_fine, alpha, phi0)[::4]
+    residual = 2 * np.pi * freqs[:, None] * (dist / vel[None, :] - tp0[:, None])
+    image[measured] = np.cos(0.5 * residual[measured]) ** 2
+    return image
+
+
 def _images(cfg, disp_path, stack_path, i):
     with h5py.File(disp_path, "r") as h:
         freqs = h["freqs"][:]
         vel = h["vel_axis"][:]
         okc, vc, vg, dist = (h[k][i] for k in ("ok_c", "vc", "vg", "dist_km"))
         alpha = float(h.attrs["alpha"])
+        phi0 = float(h.attrs["phase_constant"])
+        zone = int(h["zone"][i]) if "zone" in h else -1
+        ref = h
+        if zone >= 0:
+            if "reference_zones" not in h or str(zone) not in h["reference_zones"]:
+                raise RuntimeError(
+                    "measurement has no saved reference for zone %d; rerun `lant run disp -c CONFIG` "
+                    "before redrawing this pair" % zone
+                )
+            ref = h["reference_zones"][str(zone)]
+        u_ref = ref["u_ref"][:].astype(float)
+        cref = ref["c_ref"][:].astype(float) if ref["c_ref"].ndim == 1 else ref["c_ref"][i].astype(float)
+        if "ref_valid" in ref:
+            cref = np.where(ref["ref_valid"][:], cref, np.nan)
+        support = ref["ref_support"][:].astype(bool) if "ref_support" in ref else np.ones(len(freqs), bool)
+        lam_initial = h.attrs.get("lam_min")
+        if lam_initial is None and cfg["project"]["output_dir"]:
+            from ..manifest import load
+
+            previous = load(cfg)["steps"].get("disp", {}).get("params", {})
+            lam_initial = previous.get("dispersion.lam_min")
+        lam_final = h.attrs.get("lam_c_final")
+        if lam_initial is None or lam_final is None:
+            raise RuntimeError(
+                "measurement has no saved wavelength limits; rerun `lant run disp -c CONFIG` before redrawing"
+            )
+        lam_initial, lam_final = float(lam_initial), float(lam_final)
     with h5py.File(stack_path, "r") as h:
         x = h["stack"][i].astype(float)
         fs, maxlag = float(h.attrs["fs"]), float(h.attrs["maxlag"])
     D.VEL = vel
-    an, gimg, _ = D.symmetric_images(x[None, :], np.array([dist]), fs, maxlag, freqs, alpha)
-    an, gimg = an[0], gimg[0]
+    _, gimg, _ = D.symmetric_images(x[None, :], np.array([dist]), fs, maxlag, freqs, alpha)
+    gimg = gimg[0]
     gimg = (gimg / (gimg.max(axis=1, keepdims=True) + 1e-30)) ** 2
-    # cycle branches of the measured phase (phase-matched filter, lant.disp): c_n = d / (t_p + n / f), t_p = d / vc;
-    # the pick is the branch n = 0.  (The narrow-band phase read at t = d / c, the classical phase image, differs from
-    # the measurement where the dispersion is strong, so it is not drawn.)
-    with h5py.File(disp_path, "r") as h:
-        vc_all = h["vc"][i].astype(float)
-        cref = h["c_ref"][:].astype(float) if h["c_ref"].ndim == 1 else h["c_ref"][i].astype(float)
-        support = h["ref_support"][:].astype(bool) if "ref_support" in h else np.ones(len(freqs), bool)
-    tp = np.where(okc, dist / vc_all, np.nan)
+    pos, neg = S.branches(x[None, :], fs, maxlag)
+    pimg = _phase_image(0.5 * (pos[0] + neg[0]), fs, freqs, vel, dist, vg, u_ref, alpha, phi0)
+    # Cycle branches of the measured phase: c_n = d / (t_p + n / f), t_p = d / vc; the pick is branch n = 0.
+    tp = np.where(okc, dist / vc, np.nan)
     branches = {}
     for n in (-3, -2, -1, 1, 2, 3):
         t_n = tp + n / freqs
         branches[n] = np.where(t_n > 0, dist / np.where(t_n > 0, t_n, 1), np.nan)
+    reference_full = cref.copy()
     cref = np.where(support, cref, np.nan)  # the reference only where the F-J picks support it
     w = sosfiltfilt(
         butter(4, [freqs[0], min(freqs[-1], 0.45 * fs)], btype="bandpass", fs=fs, output="sos"), x - x.mean()
@@ -79,9 +129,14 @@ def _images(cfg, disp_path, stack_path, i):
         dist=float(dist),
         branches=branches,
         cref=cref,
+        reference_full=reference_full,
+        pimg=pimg,
         gimg=gimg,
         tt=np.arange(n) / fs,
         sym=sym,
+        parameters=dict(
+            alpha=alpha, phase_constant=phi0, lam_initial=lam_initial, lam_final=lam_final, reference_zone=zone
+        ),
     )
 
 
@@ -93,9 +148,10 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
         vwin = figure_band(cfg)[1]
     with h5py.File(disp_path, "r") as h:
         i = [p.decode() for p in h["pairs"][:]].index(pair)
-        cref = h["c_ref"][i].astype(float) if h["c_ref"].ndim == 2 else h["c_ref"][:].astype(float)
         fr = h["freqs"][:]
     a = _images(cfg, disp_path, stack_path, i)
+    cref = a["reference_full"]
+    lam_initial, lam_final = a["parameters"]["lam_initial"], a["parameters"]["lam_final"]
     # frequencies where the path is at least one wavelength of the reference (below, the images carry no phase
     # velocity information); and not above the first accepted frequency
     okf = np.isfinite(cref) & (cref > 0) & (a["dist"] * fr / np.where(cref > 0, cref, np.inf) >= 1.0)
@@ -104,8 +160,8 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
         f_lo = min(f_lo, a["freqs"][a["okc"]].min())
     f_lo = fr[max(0, np.searchsorted(fr, f_lo) - 2)]  # show the approach to the wavelength gate
     keepf = a["freqs"] >= f_lo * (1 - 1e-9)
-    fig = plt.figure(figsize=(11.0, 6.6))
-    gs = fig.add_gridspec(2, 2, height_ratios=[1, 2.7], hspace=0.42, wspace=0.26)
+    fig = plt.figure(figsize=(12.0, 6.6))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 2.7], hspace=0.42, wspace=0.48)
     ax = fig.add_subplot(gs[0, :])
     t1, t2 = a["dist"] / vwin[0], a["dist"] / vwin[1]
     inw = (a["tt"] >= t1) & (a["tt"] <= t2)
@@ -135,16 +191,26 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
     if vals.size:
         vlo = max(vlo, np.floor(10 * 0.75 * vals.min()) / 10)
         vhi = min(vhi, np.ceil(10 * 1.3 * vals.max()) / 10)
-    ax = fig.add_subplot(gs[1, 0])  # phase: cycle branches, reference, picks
+    ax = fig.add_subplot(gs[1, 0])  # phase: measured-signal coherence, cycle branches, reference, picks
     fk = a["freqs"][keepf]
+    pm = ax.pcolormesh(
+        fk, a["vel"], a["pimg"][keepf].T, shading="gouraud", cmap=style.ENERGY,
+        vmin=0, vmax=1, rasterized=True, zorder=0,
+    )  # fmt: skip
+    cb = fig.colorbar(pm, cax=ax.inset_axes([1.04, 0, 0.04, 1]))
+    cb.set_label("Phase coherence")
+    cb.set_ticks([0, 0.5, 1])
+    if not np.isfinite(a["pimg"][keepf]).any():
+        ax.text(0.5, 0.5, "No usable phase-matched signal", transform=ax.transAxes, ha="center", fontsize=8)
     for n, cn in a["branches"].items():
         ax.plot(a["freqs"], cn, "-", color="0.7", lw=0.8, zorder=1)
     ax.plot([], [], "-", color="0.7", lw=0.8, label="Other numbers of cycles")
     ax.plot(fk, a["cref"][keepf], "--", color=style.BLUE, lw=1.4, zorder=2, label="Reference (F-J)")
     rejected = ~a["okc"] & np.isfinite(a["vc"]) & keepf
     ax.plot(a["freqs"][rejected], a["vc"][rejected], "x", color="0.5", ms=4, label="Rejected candidate")
-    ax.plot(a["freqs"][a["okc"]], a["vc"][a["okc"]], "o", ms=4, color=style.RED, zorder=3, label="Accepted")
-    path_ok = np.isfinite(cref) & (a["dist"] * fr >= cfg["dispersion"]["lam_min"] * cref)
+    ax.plot(a["freqs"][a["okc"]], a["vc"][a["okc"]], "o", ms=4, color=style.RED, mec="white", mew=0.4,
+            zorder=3, label="Accepted")  # fmt: skip
+    path_ok = np.isfinite(cref) & (a["dist"] * fr >= lam_initial * cref)
     ax.fill_between(
         fk,
         0,
@@ -152,22 +218,23 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
         where=~path_ok[keepf],
         transform=ax.get_xaxis_transform(),
         color="0.9",
-        zorder=0,
-        label=r"Below $d/\lambda_{ref} = %g$" % cfg["dispersion"]["lam_min"],
+        alpha=0.6,
+        zorder=0.5,
+        label=r"Below $d/\lambda_{ref} = %g$" % lam_initial,
     )
     ax.plot(
         fk,
-        a["dist"] * fk / cfg["dispersion"]["qc"]["lam_c"],
+        a["dist"] * fk / lam_final,
         ":",
         color="k",
         lw=1,
-        label=r"Final limit: $d/\lambda = %g$" % cfg["dispersion"]["qc"]["lam_c"],
+        label=r"Final limit: $d/\lambda = %g$" % lam_final,
     )
     _freq_axis(ax, fk)
     ax.set_ylim(vlo, vhi)
     ax.set_ylabel("Phase velocity (km/s)")
-    ax.set_title("(b) Phase picks", loc="left")
-    ax.legend(loc="best", frameon=False, fontsize="small")
+    ax.set_title("(b) Phase velocity", loc="left")
+    ax.legend(loc="best", frameon=True, facecolor="white", framealpha=0.85, fontsize="small")
     ax = fig.add_subplot(gs[1, 1])  # group: envelope image and the measured arrival
     pm = ax.pcolormesh(
         fk, a["vel"], a["gimg"][keepf].T, shading="gouraud", cmap=style.ENERGY, vmin=0, vmax=1, rasterized=True
@@ -184,11 +251,16 @@ def pair_example(cfg, disp_path, stack_path, pair, out, vwin=None):
     fig.text(
         0.06,
         0.02,
-        "Phase: picks and cycle alternatives. Grey: initial reference gate; dotted: final wavelength limit. Other QC gates apply.\n"
-        "Group: normalized envelope energy. Array F-J energy is in 3_fj_phase_velocity.",
+        "Phase: normalised phase-matched coherence; group: normalised envelope energy. Colour is not a QC score.\n"
+        "Grey: initial reference gate; dotted: final wavelength limit. Other QC gates apply. Array F-J: 3_fj_phase_velocity.",
         fontsize=8.5,
     )
-    return style.save(fig, out, cfg)
+    return dict(
+        files=style.save(fig, out, cfg),
+        parameters=dict(
+            a["parameters"], waveform_band_hz=[float(fr[0]), float(fr[-1])], velocity_window_kms=list(vwin)
+        ),
+    )
 
 
 def choose_pairs(disp_path, n=3, min_points=12):

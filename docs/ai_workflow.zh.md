@@ -66,6 +66,8 @@ lant status -c OUT/config.yaml --json                        # 2. 每次停下�
 
 ## 5. 记录
 
+运行前用 `lant plan STEP -c CONFIG` 查看本步设置及变化。运行后，`lant params STEP -c CONFIG` 对照已执行与下一次参数，传入结果路径则查询单份成果。`results/parameters.yaml` 索引实际执行，`.lant/runs/` 保存执行记录；它们是输出信息，下一次运行应修改输入配置。
+
 每个决定用 `lant note` 追加一条到 `OUT/notes.md`（步骤、事项、决定、依据、谁决定）：
 
 ```

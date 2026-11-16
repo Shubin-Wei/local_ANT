@@ -66,6 +66,8 @@ lant status -c OUT/config.yaml --json                        # 2. after every st
 
 ## 5. Records
 
+Before running a step, use `lant plan STEP -c CONFIG` to review settings and changes. Afterward, `lant params STEP -c CONFIG` compares recorded and next settings; a result path queries one retained product. `results/parameters.yaml` indexes actual executions and `.lant/runs/` preserves their records. They are output metadata; edit the input configuration for the next command.
+
 One note per decision, appended to `OUT/notes.md` with `lant note` (step, item, decision, basis, who decided):
 
 ```

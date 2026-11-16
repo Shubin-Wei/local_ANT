@@ -18,6 +18,7 @@ defaults before the user's file is read.
 
 import copy
 import datetime
+import hashlib
 import math
 import os
 import re
@@ -223,6 +224,9 @@ DEFAULTS = {
         "contour_step": "auto",  # auto: about a tenth of the colour range, 1-2-2.5-5 step
         "font_scale": 1.0,
         "pair_example": None,  # pair(s) of the single-pair figures (default: three, short / middle / long)
+        "ccf_bands_hz": [],  # explicit moveout bands; empty: existing automatic display bands
+        "ccf_stack_band_hz": None,  # hourly stack diagnostic display band; null: measured band of the pair
+        "ccf_maxlag_s": None,  # display window only; null: fit the arrivals, bounded by the saved lag window
     },
     "resources": {
         "cores": "auto",  # auto: 80 % of the idle cores, taken again at every step and solver project
@@ -382,10 +386,17 @@ def load(path):
     "_basis": fingerprint of what was looked at}}; lant.auto.apply uses its values where the configuration says
     "auto" (a value written in the configuration wins)."""
     path = os.path.abspath(path)
-    with open(path) as fh:
-        user = yaml.load(fh, Loader=_UniqueKeyLoader) or {}
+    with open(path, encoding="utf-8", newline="") as fh:
+        source = fh.read()
+        try:
+            user = yaml.load(source, Loader=_UniqueKeyLoader) or {}
+        except yaml.YAMLError as exc:
+            raise ConfigError("invalid YAML: %s" % exc) from exc
     if not isinstance(user, dict):
         raise ConfigError("%s: the file must be a YAML mapping" % path)
+    for section in ("project", "data"):
+        if section in user and not isinstance(user[section], dict):
+            raise ConfigError("%s must be a mapping (key: value)" % section)
     confirmed = user.pop("confirmed", None) or {}
     if not isinstance(confirmed, dict) or any(
         k not in CONFIRM_STEPS or not isinstance(v, dict) for k, v in confirmed.items()
@@ -410,6 +421,7 @@ def load(path):
     cfg = build(user, array_type, os.path.dirname(path))
     cfg["_array_type"] = how
     cfg["_config_file"] = path
+    cfg["_config_sha256"] = hashlib.sha256(source.encode()).hexdigest()
     cfg["_user"] = copy.deepcopy(user)
     cfg["_confirmed"] = copy.deepcopy(confirmed)
     for step, vals in confirmed.items():
@@ -732,6 +744,20 @@ def validate(cfg):
         raise ConfigError("plots.backend must be 'gmt' or 'pygmt'")
     if cfg["plots"]["formats"] != ["png"]:
         raise ConfigError("plots.formats must be [png]; workflow figures are PNG only")
+    bands = cfg["plots"]["ccf_bands_hz"]
+    if not isinstance(bands, list):
+        raise ConfigError("plots.ccf_bands_hz must be a list of [low_Hz, high_Hz] bands (or [] for default bands)")
+    single = cfg["plots"]["ccf_stack_band_hz"]
+    for band in bands + ([] if single is None else [single]):
+        if not (
+            isinstance(band, (list, tuple)) and len(band) == 2 and all(_real(x) for x in band) and 0 < band[0] < band[1]
+        ):
+            raise ConfigError(
+                "plots.ccf_bands_hz / ccf_stack_band_hz: each band must be [low_Hz, high_Hz], 0 < low < high"
+            )
+    lag = cfg["plots"]["ccf_maxlag_s"]
+    if lag is not None and not (_real(lag) and lag > 0):
+        raise ConfigError("plots.ccf_maxlag_s must be a positive number of seconds, or null")
     if sm["source"] not in ("invert", "file") or (sm["source"] == "file" and not sm["file"]):
         raise ConfigError("inversion.start_model.source must be 'invert', or 'file' with start_model.file")
     if cfg["inversion"]["wave"] != "rayleigh_phase":

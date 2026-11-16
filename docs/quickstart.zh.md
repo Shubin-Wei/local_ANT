@@ -18,6 +18,17 @@ lant check                                                   # 各项均应显�
 
 反演就是当前环境中的 DSurfTomo Python 移植版，不需要另装求解器。与原生程序的对比见 [python_backends.zh.md](python_backends.zh.md)。
 
+如果旧版 Conda 长时间停在依赖求解，已有 Python ≥ 3.11 和 GMT 6 的机器也可在仓库根目录使用独立 Python 环境：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+lant check
+```
+
+GMT 和 Ghostscript 需要另行安装并位于 PATH；`lant check` 会检查依赖。该方式不会删除或修改其他 Conda 环境。
+
 ## 2. 准备自己的数据
 
 需要两项输入：
@@ -78,3 +89,39 @@ lant status -c /data/result/config.yaml        # 各步骤状态及下一条命�
 | `results/figures/5_depth_slices.png`、`5_sections.png`、`6_checkerboard_*.png` | 模型及其可分辨的尺度，须结合起来看 |
 
 各输出文件的说明见[输出文件](outputs.zh.md)。
+
+## 5. 每一步改参数，结果出来后重画
+
+`config.yaml` 中常用计算参数和绘图参数已经展开，通常只需改当前步骤的几个值。完整高级参数见[参数说明](parameters.zh.md)，也可用 `lant init --full -o reference.yaml` 生成带说明的参考模板；不要把它作为第二份生效配置。
+
+以下命令均可在任意目录执行（已激活安装环境），配置使用绝对路径：
+
+```bash
+lant plan cc -c /data/result/config.yaml       # 本步骤的值，以及相对上次运行的变化
+lant run cc -c /data/result/config.yaml        # 单独重算该步骤
+lant params cc -c /data/result/config.yaml     # 上次实际设置与下次设置
+```
+
+每条计算命令开始时固定本次配置；运行期间修改文件只影响后续命令。修改后尚未重算时，已有结果仍属于之前的参数。后续步骤是否需要重算，查看 `lant status -c /data/result/config.yaml`。
+
+互相关图的显示参数在 `plots` 中，独立于 `correlation` 的计算参数。例如在原有 `plots:` 区域修改（不要重复添加同名区域）：
+
+```yaml
+plots:
+  ccf_bands_hz: [[1.0, 2.0], [2.0, 5.0]]
+  ccf_stack_band_hz: [1.0, 5.0]
+  ccf_maxlag_s: 10.0
+```
+
+这些数值仅是填写形式示例，不是研究区推荐值。显示频段和时延窗必须处于已有互相关结果支持的范围；`[]`、`null` 保留默认显示选择。
+
+```bash
+lant plot ccf_moveout -c /data/result/config.yaml
+lant params results/figures/2_ccf_moveout_1-2Hz.png -c /data/result/config.yaml
+```
+
+单独重画只更新选中的图片，不会重算互相关。使用 `lant plot --help`、`lant plot -c CONFIG` 查看用法或重画全部可用图件；可选名称见[输出文件](outputs.zh.md)。调整 `plots.vs_range`、`slice_depths_km` 后，可以用 `lant plot depth_slices -c CONFIG` 单独重画深度切片。
+
+`REPORT.md` 链接当前结果的参数来源；`results/parameters.yaml` 集中列出数据和每张图的实际运行记录、上游来源及绘图设置。这是结果索引，不是下一次运行的配置文件。只重画部分图片时，其他图片保持自己的来源记录。失败重画保留旧图及旧记录。历史记录保存参数，不自动保留被替换的大数据和所有历史图片；旧工程缺少的历史信息不会被猜测补齐。
+
+终端显示当前阶段、完成数量、耗时及可确定的百分比；工作量未知时显示运行状态。详细输出集中在 `.lant/lant.log`，加 `-v` 可查看详细输出。先打开 `REPORT.md` 和 `results/figures/`，无需翻找内部日志。

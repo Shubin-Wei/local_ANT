@@ -31,7 +31,10 @@ def _origin(mark, state):
     made = state.get(mark["step"], {})
     origin = "from run %d of step %s (%s)" % (mark["run"], mark["step"], mark["time"])
     if made.get("run") != mark["run"]:
-        origin += "; OLDER than the latest run %s of that step (%s)" % (made.get("run"), made.get("state"))
+        if mark["step"] == "figures":
+            origin += "; not redrawn in the latest plotting task (its own settings are retained)"
+        else:
+            origin += "; OLDER than the latest run %s of that step (%s)" % (made.get("run"), made.get("state"))
     elif made.get("state") != "done":
         origin += "; that step is now %s; read its report before use" % made.get("state", "not run")
     return origin
@@ -73,8 +76,10 @@ def write_report(cfg: dict) -> None:
             "",
             "## Parameters",
             "",
-            "- [%s](%s): every value resolved, with your confirmations; %s. The values each step used are in its "
-            "report (.lant/steps/)." % (rel, rel, _origin(marks.get(rel), state)),
+            "- [%s](%s): actual settings and execution records for each retained result; "
+            "this is not the editable configuration. Use `lant params STEP -c CONFIG` to compare "
+            "next settings with a recorded execution, or `lant params results/figures/FILE.png -c CONFIG` "
+            "for one image." % (rel, rel),
         ]
     figures = main_figures(root)
     if figures:
@@ -84,6 +89,9 @@ def write_report(cfg: dict) -> None:
             lines += ["**%s** (`%s`)" % (caption, f.name), "", "![%s](%s)" % (f.stem, rel), ""]
             if rel in marks:
                 lines += [_origin(marks[rel], state), ""]
+                record = marks[rel].get("record")
+                if record:
+                    lines += ["[Actual parameters and source results](%s)" % record, ""]
     lines += ["", "## Steps", "", "| Step | State | Time | Detail |", "|---|---|---|---|"]
     seconds = step_seconds(cfg)
     for step, info in state.items():
@@ -93,7 +101,7 @@ def write_report(cfg: dict) -> None:
         detail = detail.replace("|", "\\|").replace("\n", " ")
         link = ".lant/steps/%s.md" % step
         label = "[%s](%s)" % (step, link) if (root / link).exists() else step
-        when = _duration(seconds.get(step))  # of its latest completed run, also when it is out of date now
+        when = _duration(recorded.get(step, {}).get("seconds", seconds.get(step)))
         lines.append("| %s | %s | %s | %s |" % (label, info["state"], when, detail))
     lines += ["", "## Retained results", ""]
     trees = [p for p in (root / "results").iterdir() if p.is_dir()] if (root / "results").is_dir() else []
@@ -138,9 +146,12 @@ FIGURES = (
     ("0_data_coverage", "Data coverage after cleaning"),
     ("1_stations", "Stations"),
     ("2_station_qc", "Station diagnostics (candidates require your decision)"),
+    ("2_ccf_moveout_*", "Correlation moveout (one display band; all bands in results/figures)"),
+    ("2_ccf_stack_time_*", "Hourly correlations and stacking progress for one example pair"),
     ("3_fj_phase_velocity", "Array F-J phase-velocity spectrum and reference picks"),
     ("3_reference_zones", "Local reference curves"),
     ("3_dispersion_curves", "Phase-velocity curves used by the inversion"),
+    ("3_dispersion_pair_*", "Dispersion extraction for one example pair"),
     ("4_start_model", "1-D starting model and its fit"),
     ("5_depth_slices", "Vs at depth"),
     ("5_sections", "Vs sections"),
@@ -151,6 +162,7 @@ FIGURES = (
     ),
     ("6_recovery", "Checkerboard recovery with depth"),
     ("6_residuals", "Travel-time residuals of the starting and final model"),
+    ("6_path_coverage", "Source-receiver coverage (straight connections, not bent ray trajectories)"),
 )
 
 

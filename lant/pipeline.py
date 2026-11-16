@@ -16,6 +16,7 @@
 A step after a confirmation point does not run before `lant confirm <step>` (lant.confirm).
 """
 
+import copy
 import json
 import os
 import shutil
@@ -143,6 +144,9 @@ def step_inversion(cfg):
         + [("controls", n) for n, _ in checks["built"] if n.startswith(("reg_", "start_"))]
     )
     json.dump(dict(projects=projects), open(inv_dir(cfg, "checks.json"), "w"), indent=1)
+    from .plotting import inversion as PI
+
+    start_figure = PI.start_model(cfg, d, os.path.join(d, "start_model"))
     return dict(
         start=info,
         project={k: v for k, v in meta.items() if k != "grid"},
@@ -150,6 +154,7 @@ def step_inversion(cfg):
         grid=meta["grid"],
         checks=checks,
         short_paths=short_path_note(curves),
+        start_figure=start_figure,
     )
 
 
@@ -391,10 +396,13 @@ def run_step(cfg, name, **kw):
     """Run one step: only when every earlier step stands (lant.manifest.gate); the run is written to the manifest."""
     import time
 
-    from . import auto, confirm, manifest, provenance, report
+    from . import auto, confirm, lineage, manifest, provenance, report
 
     if name not in FUNCS:
         raise ValueError("unknown step %s (steps: %s)" % (name, ", ".join(STEPS)))
+    cfg = copy.deepcopy(report.resolved(cfg))
+    cfg["_frozen"] = True  # subsequent edits to the input file belong to the next command
+    cfg["_plot_settings"] = copy.deepcopy(cfg["plots"])
     if name in confirm.VALUE_KEYS and manifest.upstream_changed(cfg, name):
         cfg.get("_confirmed", {}).pop(name, None)  # confirmed for the results of other inputs: the rule decides anew
     manifest.gate(report.resolved(cfg), name)
@@ -422,6 +430,7 @@ def run_step(cfg, name, **kw):
         from . import resources
 
         resources.begin_step(cfg)
+        lineage.begin(cfg, name, kw)
         try:
             s = FUNCS[name](cfg, **kw)
             from .runtime_identity import assert_unchanged
@@ -439,6 +448,19 @@ def run_step(cfg, name, **kw):
 
             if not st.failed:
                 publish(rcfg, name)
+                from .artifacts import required
+
+                lineage.mark_many(
+                    rcfg,
+                    [
+                        relative
+                        for relative in required(rcfg, name)
+                        if os.path.isfile(os.path.join(rcfg["project"]["output_dir"], relative))
+                    ],
+                    name,
+                )
+            lineage.finish(rcfg, name, "partial" if st.failed else "done", s)
+            records.save_config(rcfg)
             rec = manifest.record(
                 cfg,
                 name,
@@ -451,6 +473,7 @@ def run_step(cfg, name, **kw):
                 code=code,
                 inputs=inputs,
             )
+            lineage.publish_index(rcfg)
             try:
                 from .run_report import write_report
 
@@ -462,6 +485,7 @@ def run_step(cfg, name, **kw):
 
                 print("[lant] report failed: %s; see run_log.jsonl" % exc, file=sys.stderr)
         except BaseException as exc:
+            lineage.finish(cfg, name, "failed", error="%s: %s" % (type(exc).__name__, exc))
             manifest.record(
                 cfg,
                 name,
@@ -470,7 +494,9 @@ def run_step(cfg, name, **kw):
                 error="%s: %s" % (type(exc).__name__, exc),
                 code=code,
                 inputs=inputs,
+                params=report.used_params(cfg, name),
             )
+            lineage.publish_index(cfg)
             try:
                 from .run_report import write_report
 
@@ -480,7 +506,7 @@ def run_step(cfg, name, **kw):
             raise
         if st.failed:
             raise records.StepIncomplete(
-                "step %s: %d items failed (listed in the step summary); repair or exclude failed inputs, then "
-                "run lant run all -c %s" % (name, len(st.failed), cfg["_config_file"])
+                "step %s: %d items failed: %s; repair or exclude failed inputs, then "
+                "run lant run all -c %s" % (name, len(st.failed), "; ".join(st.failed[:3]), cfg["_config_file"])
             )
     return s

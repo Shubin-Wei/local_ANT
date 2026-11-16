@@ -12,6 +12,8 @@ Step publication copies existing QC and array F-J figures and saves effective pa
 
 ---
 
+Configuration and figure provenance do not change the scientific methods below. `plots.ccf_bands_hz`, `ccf_stack_band_hz` and `ccf_maxlag_s` are user-selected display settings: filtering and cropping saved correlations, without changing dispersion measurements or inversion. Each execution records its actual parameters and each figure its source results.
+
 ## 1. Overview
 
 Ambient-noise imaging rests on the relation between the cross-correlation of two records in a nearly isotropic, diffuse noise field and the Green's function between the two stations; its phase gives the surface-wave travel time between them. The workflow interprets fundamental-mode Rayleigh waves on the vertical component; the user must judge the mode using the array spectrum rather than assume the strongest arrival is always fundamental. The workflow therefore has three parts:
@@ -166,6 +168,10 @@ with t_g the measured group delay. Multiplying by exp(iΨ) removes the dispersio
 t_p = −(Φ − φ₀) / ω_c + N T,  c = Δ / t_p,
 
 with φ₀ = π/4 under this implementation's causal J₀-correlation and Fourier convention. Lin et al. (2008, eq. 7) discuss the EGF convention; taking a negative time derivative changes the phase, so its sign cannot be copied directly onto the correlation. Here N is the integer number of cycles, T the period and Δ the ellipsoidal distance. On exact J₀ correlations of a laterally uniform medium (Aki 1957) the median error of this procedure is below 0.3 %, and 95 % of the values are within 0.4 % on paths of 5 wavelengths or more and within 1.5 % at 3–5 wavelengths (unit test `tests/test_numerics.py`).
+
+The single-pair phase-velocity figure evaluates the same phase-matched filter on the same four-times-finer frequency grid, using the saved group picks, reference group velocities, filter width and phase constant. Its background is phase-only coherent power E(f, c) = |1 + exp{i[Φ(f) − φ₀ + 2πfΔ/c]}|² / 4. This display convention gives 1 for phase agreement and 0 for opposite phase; it is not absolute signal energy, SNR or QC acceptance. It uses the correlation signal rather than the selected phase curve, so all integer-cycle alternatives appear. Frequencies without a measured group arrival, or without a nonzero matched signal, remain blank. Group colour is the squared envelope normalised separately at each frequency. Redrawing changes neither picks nor QC.
+
+Local references are also saved inside `disp.h5` under `reference_zones/<zone>/`, so a pair's phase image and reference line use the zone that produced its measurements. Old zoned measurements without this snapshot require rerunning `disp` before drawing that pair; the renderer reports the missing reference instead of substituting the global curve. Wavelength-limit lines use saved measurement thresholds, and per-image records include these thresholds and the filter settings.
 
 ### 7.4 Number of cycles
 

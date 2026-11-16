@@ -8,6 +8,30 @@ import pytest
 from lant import cli
 
 
+def test_one_run_command_keeps_its_input_settings_across_steps(tmp_path, monkeypatch):
+    from lant import pipeline, report
+
+    file = tmp_path / "config.yaml"
+    original = "project: {output_dir: out}\ndata: {raw_dir: raw, station_file: stations.csv, min_trace_length_s: 5}\n"
+    file.write_text(original)
+    used = []
+
+    def run_step(cfg, step, **kw):
+        used.append((step, report.resolved(cfg)["data"]["min_trace_length_s"]))
+        file.write_text(original.replace("min_trace_length_s: 5", "min_trace_length_s: 9"))
+
+    monkeypatch.setattr(pipeline, "run_step", run_step)
+    cli.main(["run", "clean", "cc", "-c", str(file)])
+    assert used == [("clean", 5), ("cc", 5)]
+    cli.main(["run", "clean", "-c", str(file)])
+    assert used[-1] == ("clean", 9)
+
+
+def test_config_and_quick_start_paths_are_not_silently_mixed():
+    with pytest.raises(SystemExit, match="edit its paths"):
+        cli.main(["run", "clean", "-c", "config.yaml", "--raw", "ignored-directory"])
+
+
 def test_note_and_json_status_have_one_output_contract(tmp_path, capsys):
     cfg, out = tmp_path / "config.yaml", tmp_path / "out"
     cli.main(

@@ -10,6 +10,8 @@ The rules file for AI assistants follows `project.ai_assistant`: `codex` AGENTS.
 
 Open `OUT/REPORT.md` after each step: it links the available main figures and `results/parameters.yaml`. The coverage, station diagnostics and array F-J spectrum are available before inversion; full model products are retained after evaluation. Caches remain under `work/`; see [outputs](outputs.md) and preview `lant clean-work --help` before choosing cache removal.
 
+Before running a step, edit its configuration and use `lant plan STEP -c CONFIG` to review changes; `lant params STEP -c CONFIG` compares recorded settings. See [quick start, section 5](quickstart.md#5-edit-a-step-then-redraw-its-results) for calculations and independent redraws.
+
 ## 1. Installation
 
 ### 1.1 Environment
@@ -151,6 +153,8 @@ Header scans reuse unchanged files using nanosecond file metadata; old cache sig
 6. Export: per pair only the longest continuous segment, written as DSurfTomo input.
 
 **Look at**: `results/figures/3_dispersion_curves.png` (all curves and the reference), `pair_figures/` (single pairs: velocity spectrum, picks, reasons), `median_vs_reference.txt`.
+
+The three `results/figures/3_dispersion_pair_<k>.png` examples show the symmetric waveform, phase-matched coherence with phase picks, and group-envelope energy with group arrivals. Phase colour indicates phase agreement at each candidate velocity, not absolute energy or QC acceptance (methods.md, section 7.3). To refresh these figures without measuring again: `lant plot dispersion_pair -c CONFIG`.
 
 **Do not loosen the quality control to get more points.** A changed threshold needs its reason, recorded with `lant note`.
 

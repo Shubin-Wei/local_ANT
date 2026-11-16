@@ -7,6 +7,7 @@ to judge, and what to change - kept in <output>/.lant/steps/<step>.md (printed w
 Nothing here changes a result.
 """
 
+import copy
 import json
 import os
 
@@ -155,12 +156,18 @@ def resolved(cfg, without=None):
     """The configuration as it now stands in its file, with every "auto" value resolved (confirmed values, then the
     rules' values of .lant/auto_parameters.json): the same view for the recorded and the present parameters.
     without: a step whose confirmation is left out (lant.pipeline.run_step)."""
+    if cfg.get("_frozen"):
+        new = copy.deepcopy(cfg)
+        if without:
+            new.get("_confirmed", {}).pop(without, None)
+        return auto.apply(new)
     if not cfg.get("_config_file"):
         return cfg
     new = C.load(cfg["_config_file"])
     if without:
         new["_confirmed"].pop(without, None)
     new["_verbose"] = cfg.get("_verbose", False)
+    new["_position"] = cfg.get("_position", "")
     return auto.apply(new)
 
 
@@ -169,7 +176,8 @@ def used_params(cfg, step):
     the run log keeps (JSON: dates as text)."""
     out = {}
     for k in STEP_KEYS.get(step, []):
-        _flatten(k, _get(cfg, k), out)
+        value = cfg.get("_plot_settings", cfg["plots"]) if step == "figures" and k == "plots" else _get(cfg, k)
+        _flatten(k, value, out)
     for k, setting in auto.DERIVED_LATER.get(step, {}).items():
         if k in out:
             out[k] = setting(cfg)
@@ -369,7 +377,7 @@ def write_step_report(cfg, step, summary, rec=None):
     return txt
 
 
-def plan(cfg):
+def plan(cfg, steps=None):
     """What the chain will do with this configuration, step by step, before anything runs."""
     from . import confirm as CF
     from .pipeline import STEPS
@@ -381,11 +389,26 @@ def plan(cfg):
         "step writes its report to .lant/steps/<step>.md",
         "",
     ]
-    for i, step in enumerate(STEPS):
+    from . import manifest
+
+    previous = manifest.load(cfg)["steps"]
+    for i, step in enumerate(steps or STEPS):
         L.append("%d. %s - %s" % (i + 1, step, STEP_DOC[step]))
         if step in CF.CONFIRM_STEPS:
             L.append("   stops for your judgement: %s" % JUDGED[step])
         L += ["   " + x[2:] for x in _param_lines(param_rows(cfg, list(used_params(cfg, step)))) if True]
+        old = previous.get(step)
+        if old:
+            changed = [
+                (k, old["params"].get(k), v)
+                for k, v in used_params(cfg, step).items()
+                if old["params"].get(k) != v and k not in manifest.RESOURCE_KEYS
+            ]
+            L.append(
+                "   compared with recorded run %s: %s"
+                % (old["run"], "changed (existing results keep their old settings)" if changed else "unchanged")
+            )
+            L += ["     %s: %s -> %s" % (k, _short(a), _short(b)) for k, a, b in changed]
         L.append("")
     return "\n".join(L)
 

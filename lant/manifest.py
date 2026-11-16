@@ -117,6 +117,7 @@ def record(
         basis=basis,
         error=error,
         numerics=numerical_dependencies(cfg, step),
+        record=cfg.get("_run_record"),
     )
     from .artifacts import required
 

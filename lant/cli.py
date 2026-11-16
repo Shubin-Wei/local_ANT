@@ -7,9 +7,11 @@ Getting started
 
 Working with a project (CFG: its configuration file)
   lant init -o CFG [--raw DIR --stations FILE --out DIR] [--full]
-                                            write a configuration (compact; --full: every key with its basis)
+                                            write common editable settings (--full: all advanced keys with their basis)
   lant validate -c CFG                      check the configuration, the station table and the raw directory
   lant plan -c CFG                          what every step will do, with which values and why
+  lant plan STEP -c CFG                     inspect this step and changes since its recorded run
+  lant params STEP_OR_RESULT -c CFG        recorded settings and result provenance
   lant run all -c CFG                       run from the first step that does not stand; stops where you judge
                                             (--from STEP, --to STEP, --rebuild; -v: detailed output)
   lant run STEP [STEP ...] -c CFG           single steps: clean cc stack reference disp inversion run evaluate figures
@@ -63,7 +65,9 @@ def cmd_init(a):
         "wrote %s\n  1. %s\n  2. lant validate -c %s\n  3. lant plan -c %s\n  4. lant run all -c %s"
         % (
             a.output,
-            "the three paths are filled in" if len(given) == 3 else "fill in the three paths at its top",
+            "review the common calculation and display settings below the three paths"
+            if len(given) == 3
+            else "fill in the three paths, then review the calculation and display settings",
             a.output,
             a.output,
             a.output,
@@ -277,6 +281,8 @@ def cmd_run(a):
     from . import pipeline as PL
     from .confirm import NeedsConfirmation
 
+    if a.config and (a.raw or a.stations or a.out):
+        sys.exit("use -c CONFIG alone and edit its paths; --raw/--stations/--out are only for creating a new project")
     if not a.config and (a.raw or a.stations or a.out):
         cfgs = _quick_config(a)
         if len(cfgs) > 1:  # one project per line, one after the other
@@ -301,6 +307,7 @@ def cmd_run(a):
             sys.exit(max(codes))
         a.config = cfgs[0]
     cfg = _cfg(a.config)
+    cfg["_frozen"] = True  # all steps in this invocation share the input settings; rules still resolve per step
     cfg["_verbose"] = a.verbose
     chain = a.steps == ["all"]
     steps = a.steps
@@ -431,7 +438,41 @@ def cmd_plan(a):
     from . import auto, report
 
     cfg = auto.apply(_cfg(a.config))
-    print(report.plan(cfg))
+    print(report.plan(cfg, [a.step] if a.step else None))
+
+
+def cmd_params(a):
+    from .lineage import parameters
+
+    result = parameters(_cfg(a.config), a.target)
+    if a.json:
+        print(json.dumps(result, indent=1, ensure_ascii=False, default=str))
+    elif "step" in result:
+        from .step_descriptions import _short
+
+        previous = result["last_execution"]
+        print(
+            "%s: next settings versus recorded run %s (%s)"
+            % (a.target, previous.get("run", "none"), previous.get("state", "not run"))
+        )
+        for key, value in result["next"].items():
+            old = previous.get("params", {}).get(key, "not recorded")
+            flag = "  CHANGED" if key in result["differences"] else ""
+            print("  %s: used %s; next %s%s" % (key, _short(old, 90), _short(value, 90), flag))
+        if previous.get("record"):
+            print("  full execution record: %s" % previous["record"])
+    else:
+        import yaml
+
+        execution = result["execution"]
+        concise = dict(
+            product=result["product"],
+            origin=result["origin"],
+            calculation_sources=execution.get("upstream", {}),
+            actual_parameters=execution.get("params", {}),
+            note=result["note"],
+        )
+        print(yaml.safe_dump(concise, sort_keys=False, allow_unicode=True))
 
 
 def cmd_inspect(a):
@@ -548,6 +589,14 @@ def main(argv=None):
         q.add_argument("-c", "--config", **config)
         if name == "status":
             q.add_argument("--json", action="store_true", help="machine-readable: steps, reasons, next command")
+        if name == "plan":
+            q.add_argument(
+                "step", nargs="?", choices=tuple(STEP_DIRS), help="show only this step, including parameter changes"
+            )
+    q = command("params", cmd_params, "show next versus recorded parameters, or the actual settings of one result")
+    q.add_argument("target", help="step name, or result path relative to the output directory")
+    q.add_argument("-c", "--config", **config)
+    q.add_argument("--json", action="store_true", help="machine-readable parameter record")
     q = command("run", cmd_run, "run steps of the chain (all: from the first step that does not stand)")
     q.add_argument(
         "steps",
@@ -581,7 +630,7 @@ def main(argv=None):
     )
     q.add_argument("--exclude-candidates", action="store_true", help="stack: remove the candidate station-days/-hours")
     q = command("inspect", cmd_inspect, "key numbers of a step, as JSON")
-    q.add_argument("topic", help="data, or a step name")
+    q.add_argument("topic", help="data, auto, or a step name")
     q.add_argument("-c", "--config", **config)
     q = command("plot", cmd_plot, "draw the figures again")
     q.add_argument("names", nargs="*", metavar="NAME", help="figures to draw (default: all)")

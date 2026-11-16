@@ -14,6 +14,7 @@
   6_checkerboard_*       checkerboard input and recovery: maps (areal), sections along the line (line) (GMT)
   6_recovery             recovery slope and correlation with depth
   6_residuals            travel-time residuals of the starting and final model
+  6_path_coverage        retained and input source-receiver connections at representative periods
 Figures of the processing steps are written by the steps themselves (work/01_clean/coverage.png,
 work/03_stack/station_qc/station_qc.png, work/04_reference/fj.png) and moved by delivery to results/figures
 as 0_data_coverage, 2_station_qc and 3_fj_phase_velocity when the corresponding step completes.
@@ -24,7 +25,7 @@ import os
 import time
 
 from .. import paths
-from . import ccf, dispersion, inversion, maps, sections
+from . import ccf, coverage, dispersion, inversion, maps, sections
 from . import gmt as G
 
 NAMES = [
@@ -41,6 +42,7 @@ NAMES = [
     "checkerboards",
     "recovery",
     "residuals",
+    "path_coverage",
 ]
 # Groups with numbered or banded copies: discard obsolete copies only after successful rendering.
 MULTI = {
@@ -113,6 +115,7 @@ class _Figures:
         self.line = cfg["project"]["array_type"] == "line"
         self.done, self.skipped, self.failed = {}, {}, set()
         self.seconds = {}
+        self.figure_parameters = {}
         self.excluded = {}
         try:
             allst = D.read_canonical(D.canonical_table(cfg["project"]["output_dir"]))
@@ -129,10 +132,11 @@ class _Figures:
         miss = [p for p in need if not os.path.exists(p)]
         if miss:
             self.skipped[n] = "missing %s" % ", ".join(miss)
+            self.failed.add(n)  # an unavailable input must not retire the previous complete figures
             return False
         return True
 
-    def attempt(self, n, fn):
+    def attempt(self, n, fn, parameters=None):
         import tempfile
 
         destination = self.out
@@ -156,6 +160,11 @@ class _Figures:
                     targets.append(target)
                 if targets:
                     self.done[n] = dict(result, files=targets) if isinstance(result, dict) else targets
+                    if hasattr(self, "figure_parameters"):
+                        actual = dict(parameters or {})
+                        if isinstance(result, dict):
+                            actual.update(result.get("parameters", {}))
+                        self.figure_parameters[n] = dict(plots=self.cfg["plots"].copy(), **actual)
             from ..progress import detail
 
             detail("%d figure tasks completed" % len(self.done))
@@ -206,19 +215,29 @@ def _moveout(F):
     if not F.want("ccf_moveout", [F.stack]):
         return
     band, _ = ccf.figure_band(F.cfg)
-    for lo, hi in ccf.figure_bands(*band):
-        nm = "2_ccf_moveout_%s-%sHz" % (ccf.hz(lo), ccf.hz(hi))
+    explicit = F.cfg["plots"]["ccf_bands_hz"]
+    lag = F.cfg["plots"]["ccf_maxlag_s"]
+    for lo, hi in explicit or ccf.figure_bands(*band):
+        if not explicit:
+            lo, hi = ccf.clamp_default_band(F.stack, [lo, hi])
+        nm = "2_ccf_moveout_%.12g-%.12gHz" % (lo, hi)
         win = ccf.band_window(F.disp, (lo, hi)) if os.path.exists(F.disp) else None
-        if os.path.exists(F.disp) and not win:
+        if os.path.exists(F.disp) and not win and not explicit:
             F.skipped[nm] = "no phase velocity was measured in this band"
             continue
         kw = dict(dmax=win["dmax"], vref=((win["vfast"], "#ff1a1a"), (win["vslow"], "#00b4ff"))) if win else {}
-        F.attempt(nm, lambda lo=lo, hi=hi, nm=nm, kw=kw: ccf.moveout(F.cfg, F.stack, F.path(nm), band=(lo, hi), **kw))
+        F.attempt(
+            nm,
+            lambda lo=lo, hi=hi, nm=nm, kw=kw: ccf.moveout(F.cfg, F.stack, F.path(nm), band=(lo, hi), maxlag=lag, **kw),
+            parameters=dict(band_hz=[lo, hi], maxlag_s=lag),
+        )
 
 
 def _example_pairs(F):
     """The same example pairs (plots.pair_example, or short / middle / long) for the stacking and dispersion figures."""
-    if not (os.path.exists(F.disp) and {"ccf_stack_time", "dispersion_pair"} & set(F.todo)):
+    requested = {"ccf_stack_time", "dispersion_pair"} & set(F.todo)
+    available = [F.want(name, [F.stack, F.disp]) for name in sorted(requested)]
+    if not any(available):
         return
     chosen = dispersion.choose_pairs(F.disp)
     given = F.cfg["plots"]["pair_example"]
@@ -237,11 +256,22 @@ def _example_pairs(F):
         if os.path.exists(p):
             bad = [tuple(l.split()) for l in open(p) if len(l.split()) == 2 and not l.startswith("#")]
         for k, (pair, band) in enumerate(chosen, 1):
+            band = F.cfg["plots"]["ccf_stack_band_hz"] or ccf.clamp_default_band(
+                F.stack, band or ccf.figure_band(F.cfg)[0]
+            )
             F.attempt(
                 "ccf_stack_time_%d" % k,
                 lambda pair=pair, band=band, k=k, vw=vwin(band): ccf.stack_time(
-                    F.cfg, F.stack, pair, F.path("2_ccf_stack_time_%d" % k), band=band, bad_days=bad, vwin=vw
+                    F.cfg,
+                    F.stack,
+                    pair,
+                    F.path("2_ccf_stack_time_%d" % k),
+                    band=band,
+                    bad_days=bad,
+                    vwin=vw,
+                    maxlag=F.cfg["plots"]["ccf_maxlag_s"],
                 ),
+                parameters=dict(pair=pair, band_hz=band),
             )
     if F.want("dispersion_pair", [F.stack, F.disp]):
         for k, (pair, band) in enumerate(chosen, 1):
@@ -250,6 +280,7 @@ def _example_pairs(F):
                 lambda pair=pair, k=k, vw=vwin(band): dispersion.pair_example(
                     F.cfg, F.disp, F.stack, pair, F.path("3_dispersion_pair_%d" % k), vwin=vw
                 ),
+                parameters=dict(pair=pair),
             )
 
 
@@ -331,6 +362,8 @@ def _evaluation(F):
     res_csv = paths.P(F.cfg, paths.INV, "evaluation", "residuals_final.csv")
     if F.ev and F.want("residuals", [res_csv]):
         F.attempt("residuals", lambda: inversion.residuals(F.cfg, res_csv, F.ev, F.path("6_residuals")))
+    if F.want("path_coverage", [res_csv]):
+        F.attempt("path_coverage", lambda: coverage.path_coverage(F.cfg, res_csv, F.path("6_path_coverage")))
 
 
 GROUPS = [_station_map, _moveout, _example_pairs, _curves_and_start, _model, _checkerboards, _evaluation]
@@ -341,6 +374,11 @@ def make_all(cfg, which=None):
     failed: figures whose drawing raised ("name: reason"); the step is then incomplete (lant.pipeline.run_step),
     their previous images are kept.  A figure with nothing to draw is not_drawn only."""
     F = _Figures(cfg, which)
+    if not hasattr(F, "figure_parameters"):
+        F.figure_parameters = {}
+    unknown = set(F.todo) - set(NAMES)
+    if unknown:
+        raise ValueError("unknown figure name(s): %s; available: %s" % (", ".join(sorted(unknown)), ", ".join(NAMES)))
     notes = resolve(cfg, F.model, F.stations)
     G.RELIEF_NOTES.clear()
     from .figure_batch import render
@@ -355,8 +393,15 @@ def make_all(cfg, which=None):
             F.skipped.update(result["not_drawn"])
             F.failed.update(result["failed"])
             F.seconds.update(result["figure_seconds"])
+            F.figure_parameters.update(result.get("figure_parameters", {}))
             G.RELIEF_NOTES.extend(result["relief_notes"])
     F.remove_old()
+    if cfg.get("_run_record"):
+        from ..lineage import mark
+
+        for name, result in F.done.items():
+            for file in result.get("files", []) if isinstance(result, dict) else result:
+                mark(cfg, os.path.relpath(file, cfg["project"]["output_dir"]), "figures", F.figure_parameters.get(name))
     if G.RELIEF_NOTES:
         F.skipped["relief"] = "; ".join(dict.fromkeys(G.RELIEF_NOTES))
     return dict(
@@ -365,4 +410,5 @@ def make_all(cfg, which=None):
         failed=["%s: %s" % (n, F.skipped.get(n, "failed")) for n in sorted(F.failed)],
         figure_seconds=F.seconds,
         plot_parameters={k: dict(value=cfg["plots"][k], rule=v) for k, v in notes.items()},
+        figure_parameters=F.figure_parameters,
     )
