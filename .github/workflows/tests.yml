@@ -48,5 +48,5 @@ jobs:
           /tmp/lant-installed/bin/pip install dist/*.whl
           cd /tmp
           /tmp/lant-installed/bin/lant --version
-          /tmp/lant-installed/bin/lant init -o /tmp/installed.yaml
+          /tmp/lant-installed/bin/python -c "from lant import config; assert config.defaults()['cc']['overlap'] == 0.5"
           /tmp/lant-installed/bin/python -c "import lant.inversion.dsurf_main"
