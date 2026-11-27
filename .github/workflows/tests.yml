@@ -1,7 +1,4 @@
-# Lint, unit tests on the supported Python versions, a smoke test of the chain and an installed wheel, on every
-# push and pull request.  The smoke test (tests/smoke_records.py) runs the chain from generated raw records up to the
-# inversion project; its gates are confirmed automatically because the records are generated there - never do this
-# with real data.  It checks that the chain runs, not accuracy (docs/validation.md).
+# Lint, unit tests on the supported Python versions and an installed wheel, on every push and pull request.
 name: tests
 on: [push, pull_request]
 jobs:
@@ -14,9 +11,9 @@ jobs:
           python-version: "3.12"
       - run: pip install "ruff==0.14.0"
       - name: lint
-        run: ruff check lant tests tools
+        run: ruff check lant tests
       - name: format
-        run: ruff format --check lant tests tools
+        run: ruff format --check lant tests
 
   test:
     runs-on: ubuntu-22.04
@@ -35,11 +32,6 @@ jobs:
           lant check || true  # GMT is not installed here; the tests that draw maps skip without it
       - name: unit tests
         run: python -m pytest tests -q --cov=lant --cov-report=term-missing --cov-report=xml
-      - name: smoke test of the chain (to the inversion project)
-        run: |
-          python tests/smoke_records.py make --out /tmp/smoke
-          python tests/smoke_records.py run --dir /tmp/smoke
-          lant status -c /tmp/smoke/synthetic.yaml --json
 
   package:
     runs-on: ubuntu-22.04

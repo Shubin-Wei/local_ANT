@@ -2,248 +2,86 @@
 
 [中文](parameters.zh.md) | English
 
-Every key of the configuration file, with its default, what it means and what the default rests on. This file is written by `tools/make_parameter_doc.py` from `lant/config.py` (defaults) and `lant/params.py` (texts); `lant init` expands common settings; `lant init --full` writes every key and its explanation, and the step reports (`OUT/.lant/steps/<step>.md`) show the value each step used and, for derived values, the derivation with your numbers.
+Every setting of the configuration file, its default and its basis. The template with the same comments is `lant/config_template.yaml` (`lant init` writes a filled-in copy). "Convention" marks a value that is a choice, not a result of theory or a literature value; change it when you have a reason.
 
-## 1. How to read the tables
+## Required
 
-Only three keys are required: `project.output_dir`, `data.raw_dir`, `data.station_file`. A value written in the configuration always wins. `auto` means: derived from your data by the rule in the description.
-
-The column "basis" says what a default rests on:
-
-| basis | meaning |
+| Key | Meaning |
 |---|---|
-| required | only you know it |
-| literature | a value or method taken from the cited source |
-| theory | follows from a relation of the method (sampling, filter width, far-field phase) |
-| rule | derived from your data by a written rule; the rule's own factors are project choices unless a source is cited |
-| empirical | experience of this project; no literature value was found. Change it when your data call for it, and say so |
-| choice | yours; there is no right value |
-| technical | affects speed, memory or files only, not the result |
+| `output_dir` | folder for all results, one sub-folder per step |
+| `data.raw_dir` | folder of continuous records (any format ObsPy reads, any layout) |
+| `data.station_file` | station table with a header line (`network station longitude latitude [elevation]`), or StationXML |
+| `data.velocity_range_kms` | slowest and fastest Rayleigh phase velocity expected (km/s) |
+| `cc.fs_hz`, `cc.fmin_hz`, `cc.fmax_hz`, `cc.maxlag_s`, `cc.segment_s` | correlation settings; `lant init` suggests them (rules below) |
 
-Where the chain stops for you: after `clean` (ambiguous names, stations without data, coordinate mismatches, unknown component orientation, an array type between areal and line, responses not removed and instrument models unknown), after `stack` (only when the diagnosis lists candidates), after `reference` (is the picked ridge the fundamental mode?), after `inversion` (starting model, deepest node, velocity bounds). A step with nothing to judge does not stop.
+## data
 
-## 2. project
+| Key | Default | Meaning and basis |
+|---|---|---|
+| `channel` | `"*Z"` | channel codes of the vertical component (shell pattern) |
+| `response` | `null` | response files (StationXML, RESP, dataless SEED; file or folder): responses are removed to velocity. Needed when the instruments differ; with one instrument model the cross-coherence makes it unnecessary (methods §2) |
+| `start_date`, `end_date` | `null` | first and last UTC day used |
+| `exclude_stations` | `[]` | stations left out (names as in the table) |
 
-| key | default | basis | meaning |
-|---|---|---|---|
-| `name` | `my_array` | choice | project name (figures and records only) |
-| `array_type` | `auto` | rule | auto: from the station geometry (how many times the station cloud is longer than wide; below 3 areal, above 10 line, in between shown for confirmation); or surface / line |
-| `output_dir` | — | required | every result, figure and record is written here |
-| `ai_assistant` | `null` | choice | the one file of rules for AI assistants written into the project, with the full text: codex AGENTS.md, claude CLAUDE.md, gemini GEMINI.md; null: AGENTS.md (the open convention read by many coding agents). An existing file is never overwritten |
+## cc (step 1)
 
-## 3. data: raw data
+| Key | Default | Meaning and basis |
+|---|---|---|
+| `fs_hz` | init | sampling rate after decimation; a whole fraction of every raw rate. Suggested: the lowest whole-number rate with `fmax_hz` ≤ 0.4 fs (the anti-alias low-pass is at 0.8 × Nyquist) |
+| `fmin_hz` | init | lower band edge. Suggested: the longest pair r_max is 2 wavelengths at the fastest velocity, f = 2 v_fast / r_max (two-station far field, Bensen et al. 2007; Luo et al. 2015), lowered by the half-gain width of the Gaussian filter, × (1 − √(ln 2/α)) |
+| `fmax_hz` | init | upper band edge. Suggested: the F-J spectrum is free of spatial aliasing for k ≤ π/Δr, Δr the mean interval of the pair distances (Wang et al. 2019 eq. 14): f = v_slow / (2Δr), × (1 + √(ln 2/α)); at most 0.4 × the lowest raw rate |
+| `maxlag_s` | init | lag window. Suggested: r_max / (0.6 v_slow) + 4 / fmin. 0.6: convention, group velocities in dispersive layers lie well below the phase velocity; 4 periods give the noise window after the arrival |
+| `segment_s` | init | segment length. Must exceed 2 × maxlag (circular correlation). Suggested: max(2.5 maxlag, 10 / fmin) |
+| `overlap` | 0.5 | overlap of segments (Welch averaging; Seats et al. 2012) |
+| `max_over_std` | 10 | a segment whose peak exceeds this × the std of its station-day is not used (NoisePy, Jiang & Denolle 2020); 0: off |
+| `substack_hours` | 24 | length of the sub-stacks, the groups of the jackknife error (at least 3 needed). `lant init` suggests shorter ones for records shorter than 3 days |
+| `max_distance_km` | `null` | correlate only pairs up to this distance (saves memory and disk for very large arrays) |
 
-| key | default | basis | meaning |
-|---|---|---|---|
-| `raw_dir` | — | required | raw-data directory, searched recursively; any layout and file names |
-| `format` | `auto` | technical | auto: ObsPy detects the format of each file (MSEED, SAC, GSE2, SEG2, ...); or one ObsPy format name |
-| `file_patterns` | `['*']` | technical | file-name patterns that are tried |
-| `ignore_patterns` | `['*.txt', '*.csv', '*.xml', '*.json', '*.yaml', '*.yml', ...` | technical | file-name patterns that are not read |
-| `station_file` | — | required | station table in any common form (CSV, text, Excel, StationXML) |
-| `component` | `Z` | choice | Z: vertical-component correlations (Rayleigh waves); the only one supported |
-| `channel` | `auto` | rule | auto: the vertical channel of each station from the channel name or the SAC header; or a pattern such as "*3" when the names do not tell |
-| `network_default` | `null` | choice | network code for record headers without one |
-| `rename` | `{}` | choice | {header name: table name} where the automatic matching fails |
-| `day_start_utc_hour` | `auto` | rule | processing days start at this UTC hour; auto: the hour at which >= 60 % of the records longer than 12 h start, else 0 |
-| `day_label` | `utc_start` | choice | how a processing day is labelled: utc_start, or a fixed offset such as "UTC+8" |
-| `velocity_range_kms` | `[0.1, 5.0]` | choice | approximate Rayleigh-wave phase velocities of the area [slow, fast] in km/s; sets the lag window, the band and the F-J scan.  The default covers soft soil to hard rock; a narrower range saves computing time (the reference step reports the measured velocities) |
-| `response` | `null` | choice | instrument response file or directory (StationXML, dataless SEED, RESP): the responses are removed in the clean step (Bensen et al. 2007).  Without it every station must carry the same instrument model |
-| `line` | `null` | choice | when the station table has a line column: the line this project processes (one project per line) |
-| `min_trace_length_s` | `0.0` | empirical | pieces of record shorter than this are not used |
-| `exclude_stations` | `[]` | choice | stations left out entirely (an instrument or coupling problem you know of) |
-| `start_date` | `null` | choice | first processing day used (YYYY-MM-DD) |
-| `end_date` | `null` | choice | last processing day used (YYYY-MM-DD) |
+## disp (step 2)
 
-## 4. clean: cleaning (`01_clean`)
+| Key | Default | Meaning and basis |
+|---|---|---|
+| `fmin_hz`, `fmax_hz` | `null` | measurement band; `null`: the correlation band narrowed so the edge filters keep half gain inside it, f_c (1 ∓ √(ln 2/α)) |
+| `per_octave` | 12 | measurement frequencies per octave (convention) |
+| `reference` | `fj` | `fj` (F-J spectrum of the array), `model` (1-D Vs model), `file` (a curve) — methods §4 |
+| `reference_file` | `null` | `model`: `depth_km Vs_km/s`; `file`: `frequency_Hz c_km/s` |
+| `fj_band_hz` | `null` | band of the F-J picks (`null`: all frequencies) |
+| `alpha` | 5 | width of the Gaussian filters, exp(−α((f′−f)/f)²) (FTAN; convention for local scales) |
+| `group_window` | 0.3 | group arrival searched within ±30 % of the reference group velocity (convention) |
+| `snr_min` | 5 | lowest SNR of the arrival (literature 5–15) |
+| `min_wavelengths` | 2 | shortest path in wavelengths (Bensen et al. 2007: 3; Luo et al. 2015: 1–2) |
+| `max_jackknife_rel` | 0.02 | largest jackknife standard deviation / c (convention; `null`: not used) |
+| `reference_error` | 0.1 | assumed largest error of the reference; the cycle count is set only where the path is at most 1/(2 × this) wavelengths (theory: half a branch spacing) |
+| `slip_cycles` | 0.3 | a phase jump larger than this fraction of a cycle ends the curve (AFTAN) |
+| `min_points` | 6 | shortest accepted curve (consecutive frequencies; convention) |
 
-| key | default | basis | meaning |
-|---|---|---|---|
-| `write_archive` | `true` | technical | write the cleaned day files (about the size of the raw data); false: later steps read the raw files, and the 1-s periodic signal is not tested (response removal and moved nodes need the archive) |
-| `encoding` | `FLOAT32` | technical | miniSEED encoding of the archive |
-| `min_free_disk_factor` | `1.2` | technical | refuse to write the archive when the free disk is below this factor x its estimated size |
+## inv (step 3)
 
-## 5. correlation: hourly cross-coherence (`02_ccf`)
+| Key | Default | Meaning and basis |
+|---|---|---|
+| `grid_km` | `null` | horizontal node spacing; `null`: median measured wavelength / 3 (lateral resolution ≈ one wavelength, three nodes sample it) |
+| `depths_km` | `null` | depth nodes; `null`: from 0 in steps of max(shortest λ/4, depth/4) to past half the longest λ (Foti et al. 2018 §4.2.3); the last node is a fixed half-space |
+| `start_model_file` | `null` | `depth_km Vs_km/s`; `null`: 1-D inversion of the median curve |
+| `per_octave` | 4 | periods per octave used (a subset of the measured ones) |
+| `iterations` | 6 | iterations of the 3-D inversion |
+| `weight` | 0.5 | smoothing weight (rms travel-time misfit in s per rms roughness in km/s; data and model terms are means, so the value does not depend on the number of data or nodes). Chosen on lant's synthetic inversion tests with Gaussian noise (best 0.35–0.5); larger is smoother |
+| `damping` | 0.1 | damping towards the starting model; keeps nodes without rays near the starting model |
+| `outlier_mad` | 3 | rejection beyond k × 1.4826 MAD of the residuals of a period (Leys et al. 2013: 3 "very conservative") |
+| `vs_min_kms`, `vs_max_kms` | `null` | Vs bounds; `null`: 0.6 × slowest and 1.4 × fastest Vs of the starting model (convention) |
 
-| key | default | basis | meaning |
-|---|---|---|---|
-| `fs_max` | `50.0` | choice | highest processing rate (Hz); the top of the band is 0.4 fs / (1 + sqrt(ln 2 / alpha)): raise it for small, high-frequency arrays |
-| `fs` | `auto` | rule | rate after decimation; auto: the highest whole-number rate <= fs_max that every raw rate reaches by an integer factor |
-| `seg_len_s` | `auto` | rule | segment length; auto: max(2 x maxlag (circular correlation), 10 longest periods) |
-| `seg_step_s` | `auto` | literature | segment step; auto: half the segment (50 % overlap, Seats et al. 2012) |
-| `maxlag_s` | `auto` | rule | lag window; auto: longest distance / (0.6 x slowest velocity) + 4 longest periods (the slowest arrival, then a stretch of noise for the SNR) |
-| `fmin_hz` | `auto` | rule | bottom of the correlation band; auto: where the longest pair is 2 wavelengths at the slowest velocity, widened to the half-gain point of the Gaussian filter there |
-| `fmax_hz` | `auto` | theory | top of the correlation band; auto: dispersion.fmax_hz widened to the half-gain point of its Gaussian filter, not above 0.4 fs (anti-alias filter) |
-| `max_distance_km` | `null` | choice | only pairs up to this distance are correlated (none: all pairs); for very large arrays, where all pairs do not fit into memory |
-| `smooth_bins` | `1` | literature | smoothing of the coherence denominator in frequency bins; 1 = none (cross-coherence as in Xu et al. 2021) |
-| `max_over_std` | `10.0` | literature | a segment is dropped when its peak exceeds this many standard deviations of the station-day (NoisePy max_over_std, Jiang & Denolle 2020) |
-| `remove_1s_comb` | `auto` | literature | subtract the waveform folded modulo 1 s, hour by hour (coherent logger noise at 1-s intervals, Takagi et al. 2015); auto: for the stations where the clean step detects it (F test of the folded records); true: all stations; false: none |
+## checker
 
-## 6. stack: stack and station diagnosis (`03_stack`)
+| Key | Default | Meaning and basis |
+|---|---|---|
+| `amplitude` | 0.1 | ±10 % of the starting model |
+| `noise` | `auto` | per period, the robust standard deviation of the residuals of the 3-D model (s) (Rawlinson & Spakman 2016: noise like the data); or a number in seconds |
 
-| key | default | basis | meaning |
-|---|---|---|---|
-| `block_hours` | `auto` | rule | sub-stack length of the jackknife; auto: the longest of 24, 12, 8, 6, 4, 3, 2, 1 h that gives the median station at least 8 sub-stacks |
-| `station_qc.enabled` | `true` | choice | station diagnosis: sub-stacks of a station that differ from the rest in correlation or time shift are listed (never removed without you) |
-| `station_qc.partners` | `20` | empirical | each station is compared through its pairs with this many nearest stations |
-| `station_qc.min_partners` | `5` | empirical | pairs with data needed to judge a station sub-stack (fewer: not judged, and reported so) |
-| `exclude_station_days` | `[]` | choice | station-days you remove: [station, YYYYDDD], [station, "YYYYDDD-"], ... |
-| `exclude_station_hours` | `[]` | choice | station-hours you remove: [station, YYYYDDD, hour] |
-| `exclude_candidates` | `false` | choice | also remove the candidates of the diagnosis (set by `lant confirm stack --exclude-candidates`) |
+## plots, cores
 
-## 7. reference: reference curve (`04_reference`)
-
-| key | default | basis | meaning |
-|---|---|---|---|
-| `source` | `fj` | literature | fj: frequency-Bessel spectrum of this array (Wang et al. 2019); file: a curve you give (as AFTAN and Yao's EGFAnalysisTimeFreq take a reference curve) |
-| `file` | `null` | choice | the borrowed curve: npz written by lant, or text "freq_Hz c_km/s" |
-| `zone_km` | `null` | choice | none: one reference curve for the whole array; a size in km: one F-J curve per square zone of that size from the pairs whose path midpoint lies in it, for arrays across which the structure changes strongly; a zone without a clear curve uses that of the whole array |
-| `fj_mode` | `max_peak` | empirical | max_peak: the strongest ridge (areal arrays); track_fundamental: the ridge followed from an unambiguous start (lines) |
-| `normal_dispersion` | `true` | choice | track_fundamental: the curve may not rise with frequency; false where a velocity reversal makes the ridge really rise |
-| `fj_rmax_lambda` | `5.0` | empirical | pairs up to this many wavelengths enter the F-J spectrum of a frequency |
-| `fj_c_nominal` | `auto` | rule | velocity that turns fj_rmax_lambda into a distance; auto: the curve picked in a first pass with every pair (two passes) |
-| `fj_cmin` | `auto` | rule | slowest scanned velocity; auto: 0.5 x the slowest of data.velocity_range_kms |
-| `fj_cmax` | `auto` | rule | fastest scanned velocity; auto: 1.5 x the fastest of data.velocity_range_kms |
-| `fj_dc` | `auto` | rule | velocity step of the scan; auto: the 1-2-2.5-5 step not above fj_cmin / 200 |
-| `fj_nfft` | `auto` | technical | FFT length of the spectra; auto: power of 2 >= 4 x the lag window, >= 8192 |
-| `fj_fit_fmax` | `auto` | rule | highest frequency of the fitted picks; auto: the top of the longest run of clear picks |
-| `track_start_band_hz` | `auto` | rule | where the ridge tracking starts; auto: of starts every 1/3 octave, the one followed over the most frequencies (on a tie the slower) |
-
-## 8. dispersion: measurement and quality control (`05_dispersion`)
-
-| key | default | basis | meaning |
-|---|---|---|---|
-| `fmin_hz` | `auto` | rule | lowest measured frequency; auto: where the longest pair is qc.lam_c wavelengths of the reference curve |
-| `fmax_hz` | `auto` | theory | highest measured frequency; auto: 0.4 fs / (1 + sqrt(ln 2 / alpha)), the highest whose Gaussian filter stays inside the anti-alias band; the QC decides how far the data reach |
-| `per_octave` | `12` | literature | measurement frequencies per octave, log-spaced (Xu et al. 2021) |
-| `vmin` | `auto` | rule | bottom of the velocity axis; auto: 0.6 x the slowest reference velocity in the band |
-| `vmax` | `auto` | rule | top of the velocity axis; auto: 1.3 x the fastest |
-| `dv` | `auto` | rule | step of the velocity axis; auto: the 1-2-2.5-5 step not above vmin / 100 |
-| `alpha` | `5.0` | literature | relative width of the Gaussian filter exp(-alpha ((f - fc) / fc)^2), as in FTAN (Bensen et al. 2007); larger = narrower |
-| `phase_constant` | `pi/4` | theory | pi/4 for the causal J0 correlation convention; the negative-time-derivative EGF convention needs its phase accounted for |
-| `min_dist_km` | `0.0` | choice | pairs shorter than this are not measured (0: lam_min alone rules) |
-| `lam_min` | `1.0` | literature | paths shorter than this many reference wavelengths are not measured (Luo et al. 2015: one wavelength can be enough) |
-| `anchor_max_lambda` | `3.5` | empirical | the cycle count is fixed where the path is lam_min to this many wavelengths long (few cycles: the reference cannot be a cycle off) |
-| `njack` | `5` | empirical | delete-a-group jackknife groups of the sub-stacks; auto: the sub-stacks holding >= 25 % of the fullest one |
-| `min_jackknife_groups` | `3` | empirical | fewer groups with data: no error estimate, the sample is rejected |
-| `chunk` | `20` | technical | pairs per task |
-| `side_off_bands` | `''` | choice | bands 'lo-hi,...' where the side-lobe rule is not applied |
-| `qc.snr_c` | `6.0` | literature | SNR at the picked arrival (peak / rms of the trailing noise); the literature uses 4-10 (Bensen et al. 2007: 10 for global data) |
-| `qc.jk_c_rel` | `0.02` | empirical | jackknife standard error allowed, relative to the velocity |
-| `qc.ucons_c` | `0.25` | empirical | disagreement allowed between the measured group velocity and the one implied by the phase curve (0 = off) |
-| `qc.side_c` | `1.0` | empirical | height of a competing envelope peak allowed, relative to the pick |
-| `qc.dev_pre` | `0.3` | empirical | deviation of the group pick allowed from the reference (0 = off) |
-| `qc.lam_c` | `2.0` | literature | accepted samples need a path of this many of their own wavelengths (Bensen et al. 2007 use 3; Luo et al. 2015 show 1 can be enough) |
-| `qc.min_run` | `6` | empirical | accepted samples must form runs of at least this many frequencies |
-| `qc.snr_g` | `4.0` | empirical | first gate: the largest SNR of a frequency must reach this |
-
-## 9. export: curves passed to the inversion (`05_dispersion/curves.csv`)
-
-| key | default | basis | meaning |
-|---|---|---|---|
-| `tmin_s` | `auto` | rule | shortest period passed on; auto: 1 / dispersion.fmax_hz |
-| `tmax_s` | `auto` | rule | longest period passed on; auto: 1 / dispersion.fmin_hz |
-| `one_segment` | `true` | literature | one continuous segment per pair, the longest (as curves are picked in Yao's EGFAnalysisTimeFreq) |
-| `curve_figures` | `30` | choice | single-pair figures drawn: this many spread over distance plus the conspicuous ones (0 none, -1 all) |
-
-## 10. inversion: DSurfTomo (`06_inversion`)
-
-| key | default | basis | meaning |
-|---|---|---|---|
-| `wave` | `rayleigh_phase` | choice | rayleigh_phase (the only one supported) |
-| `median_min_pairs` | `50` | empirical | pairs a period needs to enter the average curve of the 1-D model |
-| `depth_sequence_km` | `auto` | rule | depth nodes; auto: steps of max(shortest wavelength / 4, depth / 4) down to half the longest wavelength (rule of thumb, Foti et al. 2018) |
-| `fine_step_km` | `0.0` | choice | extra depth nodes every this many km down to fine_zmax_km (0 = none) |
-| `fine_zmax_km` | `0.0` | choice | see fine_step_km |
-| `grid_spacing_deg` | `auto` | rule | grid spacing [lat, lon]; auto (set by the inversion step): the median measured wavelength c T / 3 km in both directions (user's rule; the lateral resolution is about a wavelength) |
-| `line_strip_cells` | `null` | empirical | lines: cells kept on each side of the stations across the line |
-| `start_model.source` | `invert` | choice | invert: 1-D model from this array's average curve; file: depth Vs |
-| `start_model.file` | `null` | choice | the starting model of your own (two columns: depth km, Vs km/s) |
-| `start_model.smooth` | `0.01` | empirical | 1-D inversion: weight of the model curvature |
-| `start_model.damp` | `0.05` | empirical | 1-D inversion: damping |
-| `start_model.iterations` | `14` | empirical | 1-D inversion: iterations |
-| `start_model.minthk` | `3` | technical | 1-D forward: sublayers per node interval |
-| `weight` | `1.0` | empirical | smoothing weight of lant's regularization (methods.md 8.4): the Laplacian of the model itself, as a mean over the parameters, against the mean squared travel-time residual, so that it does not change with the number of travel times or nodes (units s per km/s); default 1, calibrated on the areal waveform synthetic used to develop 2.0.1 (smallest error of the model against the true one; lines not calibrated) |
-| `vmin` | `auto` | rule | lower Vs bound; auto: 0.6 x the slowest Vs of the starting model |
-| `vmax` | `auto` | rule | upper Vs bound; auto: 1.4 x the fastest |
-| `iterations` | `6` | empirical | iterations of the 3-D inversion (rays, kernels and the least-squares update each time); 6, the number the smoothing weight was calibrated with (methods.md 8.4): with the regularization of the model itself the model settles, on the areal synthetic example the residual changed by less than 1 % after the third |
-| `per_octave` | `4` | rule | periods per octave in the 3-D inversion: the measured periods on this coarser grid (through 1 Hz, every dispersion.per_octave / this-th one).  The Gaussian filter of the measurement (dispersion.alpha) averages over a band of about an octave: two filters 1/12 octave apart share exp(-alpha x^2 / 2) = 99 % of their energy (x = 2^(1/12) - 1, alpha = 5), 1/4 octave apart still 92 %, so the left-out periods add little that is independent while the travel times and kernels cost in proportion to the number of periods |
-| `outlier_mad` | `3.0` | literature | travel times whose residual is further than this x 1.4826 MAD from the median residual of their period get no weight in the iteration (median absolute deviation, Rousseeuw & Croux 1993; 3 = 'very conservative', Leys et al. 2013; per period because the travel-time error grows with the period) |
-| `noise` | `auto` | rule | Gaussian noise added to the synthetic travel times of the checkerboards: a number is a fraction of each time (DSurfTomo's noiselevel), a list [[period s, standard deviation s], ...] the noise of each period; auto: per period, 1.4826 MAD of the residuals of the final main model in seconds, so that the synthetic data are as noisy as the real data fit (Rawlinson & Spakman 2016; per period because a phase error grows with the period, not with the path); the checkerboards then run after the main project |
-
-## 11. checks: checkerboards, controls, precheck
-
-| key | default | basis | meaning |
-|---|---|---|---|
-| `checkerboards` | `auto` | rule | horizontal checkerboards [{name, cell_km}], each a full inversion; cell_km is half the period of the pattern; auto (set by the inversion step): three tests, cells of 1, 2 and 3 median measured wavelengths c T (the lateral resolution is limited by the predominant wavelength, Yao et al. 2006; tests at several scales, Rawlinson & Spakman 2016; the factors 1, 2, 3 are the user's choice); lines: along the line |
-| `vertical` | `auto` | rule | depth-varying checkerboards [{name, cell_km, reversal_depths_km}]; auto (set by the inversion step): one test, cell 2 median wavelengths, one sign reversal at the median wavelength / 3 (depth of the largest sensitivity of the Rayleigh phase velocity, rule of thumb of Fang et al. 2015); none when no updated depth node lies on both sides of it |
-| `amplitude` | `0.1` | empirical | checkerboard perturbation, a fraction of the 1-D Vs of each depth |
-| `controls` | `[start_grad0.05]` | empirical | control inversions: reg_x<f> the smoothing weight times f (stability of the model under the choice of the weight), reg_w<w> a given weight, start_grad<f> other starting model |
-| `precheck.min_kept` | `0.5` | empirical | a project is invalid when the rejection (inversion.outlier_mad) would keep less than this fraction of its data in the first iteration |
-| `iteration_residuals` | `false` | choice | also evaluate the model of every iteration (one forward run each) |
-
-## 12. plots: figures
-
-| key | default | basis | meaning |
-|---|---|---|---|
-| `backend` | `gmt` | choice | gmt: reference command interface; pygmt: isolated Python GMT C-API renderer; both require GMT |
-| `formats` | `[png]` | choice | figure format; [png] only |
-| `dpi` | `300` | choice | resolution of the png figures |
-| `topography` | `auto` | choice | relief under the maps; auto: SRTM 1-arc-second tiles (Farr et al. 2007) from the GMT data server, kept in ~/.cache/lant/srtm1 (only the tile names are requested; maps up to 3 degrees wide); or a grid file / GMT remote grid; null: no relief |
-| `vs_range` | `auto` | rule | colour range; auto: 2nd-98th percentile of the model under the stations, to 0.1 km/s |
-| `vs_cpt` | `seis` | choice | GMT colour table |
-| `slice_depths_km` | `auto` | rule | depths of the slices; auto: up to 8 updated depth nodes, evenly chosen |
-| `sections` | `auto` | rule | sections [{name, start, end}]; auto: two through the array centre along its principal axes (areal) or along the line |
-| `section_zmax_km` | `null` | choice | depth of the sections (default: the deepest updated node) |
-| `contour_step` | `auto` | rule | contour interval; auto: about a tenth of the colour range |
-| `font_scale` | `1.0` | choice | font size factor |
-| `pair_example` | `null` | choice | pair(s) of the single-pair figures (stack time, dispersion): a name or a list; default: three pairs at the 20 / 50 / 80 % quantiles of the distances of the pairs with long curves |
-| `ccf_bands_hz` | `[]` | choice | moveout display bands [[low_Hz, high_Hz], ...]; []: default bands. Changes redraw only; bands must lie within the saved correlation band |
-| `ccf_stack_band_hz` | `null` | choice | hourly stack diagnostic display band [low_Hz, high_Hz]; null: measured band of the pair. Changes redraw only |
-| `ccf_maxlag_s` | `null` | choice | maximum displayed absolute lag (s), bounded by the saved lag window; null: fit the arrivals. Changes redraw only |
-
-## 13. resources: computing resources
-
-| key | default | basis | meaning |
-|---|---|---|---|
-| `cores` | `auto` | technical | cores of a step; auto: max(1, 0.8 x (usable CPUs - 1-minute load average)), without the load this run caused itself (idle = not used by others), taken again at every step and solver project; parallel work is also limited to half of the available memory (lant/resources.py); an integer is used as given |
-
-
-## 14. Defaults that differ for line arrays
-
-A line array (`project.array_type: line`, or `auto` on an elongated array) uses:
-
-- `data.min_trace_length_s`: `600.0`
-- `reference.fj_mode`: `track_fundamental`
-- `dispersion.njack`: `auto`
-- `inversion.median_min_pairs`: `20`
-- `inversion.line_strip_cells`: `1.0`
-
-## References
-
-- Aster, R. C., Borchers, B., & Thurber, C. H. (2018). *Parameter Estimation and Inverse Problems* (3rd ed.), chapter 4. Elsevier.
-- Bensen, G. D., et al. (2007). Processing seismic ambient noise data to obtain reliable broad-band surface wave dispersion measurements. *GJI*, 169, 1239–1260. doi:10.1111/j.1365-246X.2007.03374.x
-- Brocher, T. M. (2005). Empirical relations between elastic wavespeeds and density in the Earth's crust. *BSSA*, 95, 2081–2092. doi:10.1785/0120050077
-- Constable, S. C., Parker, R. L., & Constable, C. G. (1987). Occam's inversion. *Geophysics*, 52, 289–300. doi:10.1190/1.1442303
-- Fang, H., Yao, H., Zhang, H., Huang, Y.-C., & van der Hilst, R. D. (2015). Direct inversion of surface wave dispersion for three-dimensional shallow crustal structure based on ray tracing. *GJI*, 201, 1251–1263. doi:10.1093/gji/ggv080
-- Farr, T. G., et al. (2007). The Shuttle Radar Topography Mission. *Rev. Geophys.*, 45, RG2004. doi:10.1029/2005RG000183
-- Foti, S., et al. (2018). Guidelines for the good practice of surface wave analysis. *Bull. Earthquake Eng.*, 16, 2367–2420. doi:10.1007/s10518-017-0206-7
-- Herrin, E., & Goforth, T. (1977). Phase-matched filters: application to the study of Rayleigh waves. *BSSA*, 67, 1259–1275.
-- Jiang, C., & Denolle, M. A. (2020). NoisePy: a new high-performance Python tool for ambient-noise seismology. *SRL*, 91, 1853–1866. doi:10.1785/0220190364
-- Jing, J., et al. (2025). Ambient noise seismic tomography of Tonglushan skarn-type Cu-Fe-Au deposit in Eastern China. *Ore Geology Reviews*, 184, 106718. doi:10.1016/j.oregeorev.2025.106718
-- Lévêque, J.-J., Rivera, L., & Wittlinger, G. (1993). On the use of the checker-board test to assess the resolution of tomographic inversions. *GJI*, 115, 313–318.
-- Levshin, A. L., & Ritzwoller, M. H. (2001). Automated detection, extraction, and measurement of regional surface waves. *Pure Appl. Geophys.*, 158, 1531–1545. doi:10.1007/978-3-0348-8264-4_11
-- Leys, C., Ley, C., Klein, O., Bernard, P., & Licata, L. (2013). Detecting outliers: do not use standard deviation around the mean, use absolute deviation around the median. *J. Exp. Soc. Psychol.*, 49, 764–766. doi:10.1016/j.jesp.2013.03.013
-- Lin, F.-C., Moschetti, M. P., & Ritzwoller, M. H. (2008). Surface wave tomography of the western United States from ambient seismic noise: Rayleigh and Love wave phase velocity maps. *GJI*, 173, 281–298. doi:10.1111/j.1365-246X.2008.03720.x
-- Luo, Y., Yang, Y., Xu, Y., Xu, H., Zhao, K., & Wang, K. (2015). On the limitations of interstation distances in ambient noise tomography. *GJI*, 201, 652–661. doi:10.1093/gji/ggv043
-- Morozov, V. A. (1966). On the solution of functional equations by the method of regularization. *Soviet Math. Dokl.*, 7, 414–417.
-- Rawlinson, N., & Spakman, W. (2016). On the use of sensitivity tests in seismic tomography. *GJI*, 205, 1221–1243. doi:10.1093/gji/ggw084
-- Seats, K. J., Lawrence, J. F., & Prieto, G. A. (2012). Improved ambient noise correlation functions using Welch's method. *GJI*, 188, 513–523. doi:10.1111/j.1365-246X.2011.05263.x
-- Sens-Schönfelder, C. (2008). Synchronizing seismic networks with ambient noise. *GJI*, 174, 966–970. doi:10.1111/j.1365-246X.2008.03842.x
-- Shapiro, N. M., & Singh, S. K. (1999). A systematic error in estimating surface-wave group-velocity dispersion curves and a procedure for its correction. *BSSA*, 89, 1138–1142.
-- Shaw, P. R., & Orcutt, J. A. (1985). Waveform inversion of seismic refraction data and applications to young Pacific crust. *Geophys. J. R. astr. Soc.*, 82, 375–414.
-- Stehly, L., Campillo, M., & Shapiro, N. M. (2007). Traveltime measurements from noise correlation: stability and detection of instrumental time-shifts. *GJI*, 171, 223–230. doi:10.1111/j.1365-246X.2007.03492.x
-- Takagi, R., Nishida, K., Aoki, Y., et al. (2015). A single bit matters: coherent noise of seismic data loggers. *SRL*, 86(3), 901–907. doi:10.1785/0220150030
-- Taylor, J. R. (1997). *An Introduction to Error Analysis* (2nd ed.), chapter 6 (Chauvenet's criterion). University Science Books.
-- Wang, J., Wu, G., & Chen, X. (2019). Frequency-Bessel transform method for effective imaging of higher-mode Rayleigh dispersion curves from ambient seismic noise data. *JGR Solid Earth*, 124, 3708–3723. doi:10.1029/2018JB016595
-- Xu, Y., Lebedev, S., Meier, T., Bonadio, R., & Bean, C. J. (2021). Optimized workflows for high-frequency seismic interferometry using dense arrays. *GJI*, 227, 875–897. doi:10.1093/gji/ggab260
-- Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis – I. Phase velocity maps. *GJI*, 166, 732–744. doi:10.1111/j.1365-246X.2006.03028.x
+| Key | Default | Meaning |
+|---|---|---|
+| `plots.relief` | `auto` | relief under the maps: `auto` GMT's `@earth_relief_03s` (needs internet; maps without relief when not available), a grid file, or `null` |
+| `plots.vs_range_kms` | `null` | colour range of Vs (`null`: 2–98 % of the model under the stations) |
+| `plots.slice_depths_km` | `null` | depths of the map slices (`null`: up to 8 depth nodes) |
+| `plots.dpi` | 300 | resolution of the PNG figures |
+| `cores` | `auto` | `auto`: 80 % of the idle CPUs (others can still work on a shared machine); or a number |

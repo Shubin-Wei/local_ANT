@@ -46,7 +46,8 @@ periods), except where lant 2.0.1 changes the method on purpose: steps 4, 6, 7a,
       dist, dsyn, obst, dsyn*w, obst*w, w, list-directed (396-411);
    f. lant: data rows divided by sqrt(kept rows); smoothing rows (Laplacian of
       the whole box, faces included) of the model itself, m + dv - m0, as a mean
-      over the parameters; no damping (the damp of DSurfTomo.in is read, not used) (``model_regularization``; DSurfTomo: smoothing
+      over the parameters; damping rows of m + dv - m0 with the damp of DSurfTomo.in, also as a mean
+      (``model_regularization``; DSurfTomo: smoothing
       of dv, faces only 2 x weight on the diagonal, 414-462);
    g. lant: LSMR in double precision on the column-scaled matrix, the tolerances and iteration limit of its
       authors, no damping (``least_squares``; DSurfTomo: LSMR in REAL, damp, atol = btol = 1e-6, conlim = 100,
@@ -99,7 +100,7 @@ NOISE_FILE = "noise_seconds.txt"
 class Output:
     """Screen (stdout, flushed per line, as GFORTRAN_UNBUFFERED_ALL would) and the log file."""
 
-    def __init__(self, log_path, screen=sys.stdout):
+    def __init__(self, log_path, screen):
         self.log = open(log_path, "w")
         self.screen = screen
 
@@ -250,7 +251,7 @@ def _set_threads(workers):
     numba.set_num_threads(max(1, min(workers, numba.config.NUMBA_NUM_THREADS)))
 
 
-def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen=sys.stdout, dws_file=None):
+def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen=None, dws_file=None):
     """Run DSurfTomo's inversion in ``directory``; returns per-iteration seconds of each module.
 
     kernels: optional function (depths, vs) -> dsurf_kernels.Kernels used instead of dsurf_kernels.
@@ -259,6 +260,7 @@ def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen
     means); the rejection is lant's (dsurf_system.reject_mad).
     """
     directory = Path(directory)
+    screen = sys.stdout if screen is None else screen  # at call time: the caller may have redirected it
     _set_threads(workers)
     # The native banner names its author as the contact for bugs; this port is not his program, so it says whose
     # it is instead (the rest of the log keeps DSurfTomo's layout).
@@ -286,7 +288,7 @@ def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen
             true_vs = dsurf_input.read_true_model(directory / "MOD.true", c.nx, c.ny, c.nz)
             noise_file = directory / NOISE_FILE if (directory / NOISE_FILE).exists() else None
             obst = synthetic_data(project, true_vs, workers, directory, kernels, noise_file)
-        reg = Regularization(c.nx - 2, c.ny - 2, c.nz - 1, project.vs[:-1, 1:-1, 1:-1].copy(), c.weight)
+        reg = Regularization(c.nx - 2, c.ny - 2, c.nz - 1, project.vs[:-1, 1:-1, 1:-1].copy(), c.weight, c.damp)
         timings = [_iteration(out, directory, inputfile, project, obst, maxvp, it, workers, kernels,
                               dws_file if it == c.maxiter else None, reg)
                    for it in range(1, c.maxiter + 1)]  # fmt: skip

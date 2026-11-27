@@ -2,32 +2,22 @@
 
 中文 | [English](AGENTS.md)
 
-本仓库是密集台阵高频背景噪声面波成像的完整流程（原始记录 → 清洗 → 逐小时互相干 → 叠加与台站诊断 → 参考曲线 → 两台法相速度与质量控制 → 由走时直接反演三维 Vs（Fang et al. 2015，DSurfTomo 的方法；lant 的正则化）→ 检验和出图），命令行入口是 `lant`。
+本仓库是 `lant`，密集台阵背景噪声面波成像的命令行工具：`lant cc`（互相关）、`lant disp`（参考曲线与相速度）、`lant inv`（三维反演，Fang et al. 2015）、`lant checker`（分辨率检验）。原则：通用、易用、透明、简洁、正确。
 
 ## 使用者让你处理数据时
 
-按 [docs/ai_workflow.zh.md](docs/ai_workflow.zh.md) 做。要点：
+1. 先 `lant check`，缺什么装什么。
+2. `lant init -o 配置 --raw 目录 --stations 台站表 --out 目录 --velocity 最慢 最快`；把建议值及其规则（写在配置里）给使用者看。
+3. **一步一步**运行（先 `lant cc`，再 `lant disp`，再 `lant inv`，再 `lant checker`）。每步之后读它的 `log.txt` 和 `summary.txt`，把 [docs/tutorial.zh.md](docs/tutorial.zh.md) 列出的图给使用者看，再往下走。最重要的是由使用者判断 `2_disp/figures/fj_reference.png`（参考曲线是不是基阶）。
+4. 结果只写到使用者的输出文件夹。不改原始数据，不改 `lant/`。
+5. 不为了多出数据或图好看而放宽质控、调参数。汇报给数字和图，并说明哪些没有检验。使用者没要求时不设 `cores`。
 
-1. 先 `lant check`；缺的东西按它列出的命令安装。
-2. 用 `lant run all --raw 目录 --stations 台站表 --out 目录` 开始（或 `lant init -o 配置` 后 `lant run all -c 配置`）。所有结果写到使用者的输出目录。**不在仓库里写结果，不改原始数据，不改 `lant/`。**
-3. 每次停下后运行 `lant status -c 配置 --json`：它给出每一步的状态、原因和下一条命令。先读 `输出目录/.lant/steps/<步骤>.md` 和它列出的文件，再往下走。
-4. 流程停下来等判断时，把报告里 “FOR YOU TO JUDGE” 下的事项连同图交给使用者，**由使用者决定：不得自行运行 `lant confirm`。** 把使用者的决定和理由记到 `输出目录/notes.md`。
-5. 不为了多出点或图好看而放宽质量控制、调参数。汇报只给数字和图，并说明哪些没有检验、哪些受限。
-6. 只以两种方式建文件：笔记（`lant note`）和 `OUT/scratch/` 下的临时文件；`lant status --json` 会列出其他所有不是 lant 写的文件。
+参数及依据：[docs/parameters.zh.md](docs/parameters.zh.md)；方法：[docs/methods.zh.md](docs/methods.zh.md)。
 
-每个参数的含义和依据：[docs/parameters.zh.md](docs/parameters.zh.md)。每一步的细节：[docs/tutorial.zh.md](docs/tutorial.zh.md)；原理和依据：[docs/methods.zh.md](docs/methods.zh.md)；输出文件：[docs/outputs.zh.md](docs/outputs.zh.md)；已知问题与处理：[docs/troubleshooting.zh.md](docs/troubleshooting.zh.md)。
+## 修改代码时
 
-## 修改本项目代码时
-
-- 结构：`lant/`（每步一个模块：`clean`（台站日归档由 `clean_archive.py` 处理）`cc` `stack` `reference` `disp` `qc` `export`；`pipeline.py` 串起来；`manifest.py` 记录哪些结果成立；`lineage.py` 固定执行参数并索引结果来源；`auto.py` 是规则；`confirm.py` 是判断事项；`report.py` 组装步骤报告；`step_descriptions.py` 描述各步骤已记录结果；`params.py` 是每个键的含义和依据；另有 `response.py`、`stations.py`（台站表）、`station_match.py`（记录对应台站）、`station_qc.py`（叠加步骤的台站诊断）、`pulse.py`（1 s 授时脉冲）、`fj.py`（F-J 谱和脊线）、`inversion/`（`run.py` 调度求解，`model_evaluation.py` 读取及评估模型）、`plotting/`（含 `figure_batch.py`，独立进程绘制主图）；工程基础设施：`record_index.py`（原始文件发现及头段缓存）、`paths.py`（目录布局）、`records.py`（步骤上下文、日志）、`artifacts.py`（文件登记、写锁上下文、缓存清理）、`delivery.py`（成果、工程 README）、`run_report.py`（REPORT.md）、`assistant_rules.py`（工程里给 AI 助手的规则文件）、`progress.py`、`processes.py`（求解进程组、进程池看门狗）、`resources.py`（内存和磁盘）），`cc_kernel.py`（cc 的编译版台站对求和）、`config/example.yaml`（完整模板，即 `lant init --full` 写出的内容），`docs/`，`tests/`（每个模块一个文件，公用函数在 `tests/util.py`）。
-- 默认值只放在 `lant/config.py`；每个键都要在 `lant/params.py` 里有说明（有测试检查）。同一生成器同步更新 `config/example.yaml`；`python tools/make_parameter_doc.py --check` 只读检查三份生成文件是否同步。改了默认值或方法，要同步改两种语言的 `docs/parameters`（`python tools/make_parameter_doc.py`）、`docs/tutorial` 和 `docs/methods`，并在 `docs/history` 里记下改动。
-- 代码、配置、图中文字用英文。每份文档都有英文版（`x.md`）和中文版（`x.zh.md`），两版逐节对应。
-- 每个模块一个明确的职责，名字说明它做什么。约 500 行时检查是否混入了几个职责（混入了就拆；默认值表不算）；200 行以内不为凑小文件而拆。
-- 运行 `python -m pytest tests` 和流程冒烟测试（`tests/smoke_records.py`，与 CI 相同）；改动方法时还要做 docs/validation.zh.md 中反演层面的合成对比。
-- `dsurf_*` 模块逐句对应 DSurfTomo，2.0.1 起 lant 有意做的改动除外（正则化、剔除、最小二乘求解、深度核求导、合成噪声；列在 docs/python_backends.zh.md “2.0.1 的改动”，模块说明中标为 “lant”）。改动其数值时必须重新与原版对比，再有新的不同也要连同依据加进那张表。
-- 核数由程序定（`resources.cores: auto`）；用户没要求不要设，只汇报每一步用了多少。
-- 方法和默认值要有出处：文献、理论，或明确标为“经验值”。不要自己造门限。
-
-## 处理数据与开发仓库
-
-使用者明确要求开发仓库时，处理数据的规则不妨碍开发。记录的理由、交互终端或 `--yes` 都不能证明使用者已作决定；只有使用者的决定才能使确认有效。开发遵循[开发规范](docs/engineering.zh.md)。
+- 结构：`lant/config.py` + `config_template.yaml`（默认值的唯一位置，每个键都有注释）、`step.py`（每步都写的文件）、`records.py`（索引、对应、台站日）、`correlate.py` + `cc_kernel.py`（第 1 步）、`fj.py`、`reference.py`、`dispersion.py`、`disp_run.py`（第 2 步）、`inversion/`（`run.py` 第 3 步、`checker.py`、`start_model.py`、`project.py`；`dsurf_*.py` 为 DSurfTomo 移植、`model_regularization.py`、`least_squares.py`）、`plotting/`、`init.py`、`export.py`、`cli.py`；`tests/` 单元测试。
+- 每个方法或默认值都要有出处（文献或理论），否则在 docs/parameters 里标为"约定"。不为某一批数据加功能。
+- 改了设置或方法：同步更新 `config_template.yaml`、`docs/parameters`、`docs/methods`、`docs/tutorial` 和 `docs/history` 的中英两版。
+- `dsurf_*` 模块逐句按 DSurfTomo，文档字符串里标 "lant" 的地方除外。
+- 提交前：`ruff check lant tests`、`ruff format --check lant tests`、`python -m pytest tests`。

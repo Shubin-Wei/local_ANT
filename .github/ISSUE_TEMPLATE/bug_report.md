@@ -16,12 +16,7 @@ labels: bug
 ```
 ```
 
-**`lant status -c CONFIG --json` and the report of the failed step (`OUT/.lant/steps/<step>.md`) / 失败步骤的报告**
-
-```
-```
-
-**End of `OUT/.lant/lant.log` / 日志末尾**
+**`log.txt` of the step that failed / 出错那一步的 log.txt**
 
 ```
 ```

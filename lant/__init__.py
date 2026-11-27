@@ -1,12 +1,10 @@
-"""local_ANT: high-frequency ambient-noise surface-wave tomography for dense (nodal) arrays.
+"""lant: ambient-noise surface-wave tomography for dense arrays, from continuous records to a 3-D Vs model.
 
-Raw records of any layout and format -> cleaned archive (parameters from the data) -> hourly cross-coherence ->
-stack and station diagnosis -> F-J reference curve -> two-station phase velocities with quality
-control -> DSurfTomo direct inversion for 3-D Vs (areal arrays) or narrow-strip inversion along a line -> checks and
-figures.  Command line: `lant --help`; documentation: docs/tutorial.md.
+Three steps, run one after the other and checked in between (docs/tutorial.md):
+    lant cc     cross-correlation of every station pair and its stack
+    lant disp   reference curve and two-station Rayleigh phase velocities
+    lant inv    1-D starting model and 3-D direct inversion of the travel times (Fang et al. 2015)
+and the resolution test  lant checker.
 """
 
-__version__ = "2.0.2"
-
-# Freeze source identity before CLI and pipeline modules can be imported lazily.
-from . import runtime_identity as _runtime_identity  # noqa: E402,F401
+__version__ = "3.0.0"

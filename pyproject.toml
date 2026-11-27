@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lant"
-version = "2.0.2"
+version = "3.0.0"
 description = "High-frequency ambient-noise surface-wave tomography for dense nodal arrays (raw data to 3-D Vs)"
 readme = "README.md"
 license = {text = "MIT"}
@@ -26,11 +26,10 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.26", "scipy>=1.12", "numba>=0.61", "h5py>=2.10", "obspy>=1.2", "matplotlib>=3.5",
-    "pyyaml>=6.0", "openpyxl>=3.1",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
-pygmt = ["pygmt", "rasterio"]
 dev = ["pytest>=7,<9", "pytest-cov>=4,<6", "ruff==0.14.0", "build>=1.2,<1.3"]
 
 [project.urls]
@@ -44,6 +43,9 @@ lant = "lant.cli:main"
 
 [tool.setuptools]
 packages = ["lant", "lant.inversion", "lant.plotting"]
+
+[tool.setuptools.package-data]
+lant = ["config_template.yaml"]
 
 [tool.ruff]
 target-version = "py311"

@@ -20,9 +20,13 @@ penalties act on the model itself, m + dv - m0 (m0 the starting model), not on t
   reason the model terms are means over the n parameters: w is then the ratio of the rms travel-time misfit (s) to
   the rms roughness (km/s) it trades against, the same number for any grid and data set.
 
-No damping: the Laplacian leaves only a constant shift of the whole box free, which the data fix best; on lant's
-areal synthetic example damping towards the starting model (0.3, 1) made the model worse.  The data rows (G,
-rejection) and the solver (LSMR, without its damping) are DSurfTomo's.
+- damping (the damp of DSurfTomo.in): rows d (m + dv - m0) / sqrt(n), towards the starting model, also as a mean
+  over the parameters.  Nodes no ray reaches are held by it near the starting model instead of following the
+  smooth continuation of their neighbours without any data (zeroth-order Tikhonov term; Aster et al. 2013 ch. 4).
+
+    min  (1/N) ||W (G dv - r)||^2  +  (w^2/n) ||L (m + dv - m0)||^2  +  (d^2/n) ||m + dv - m0||^2
+
+The data rows (G, rejection) and the solver (LSMR, without its own damping) are DSurfTomo's.
 """
 
 import numpy as np
@@ -51,20 +55,30 @@ def laplacian(nvx, nvz, nzu):
 class Regularization:
     """The fixed parts of lant's regularization of one project: L, the starting model and the weight."""
 
-    def __init__(self, nvx, nvz, nzu, m0, weight):
+    def __init__(self, nvx, nvz, nzu, m0, weight, damping=0.0):
         self.n = nvx * nvz * nzu
         self.l_rows, self.l_cols, self.l_vals = laplacian(nvx, nvz, nzu)
         self.m0 = np.asarray(m0, np.float64).ravel()
         self.weight = float(weight)
-        self.per_node = 1.0 / np.sqrt(self.n)  # the model term as a mean over the n parameters
+        self.damping = float(damping)
+        self.per_node = 1.0 / np.sqrt(self.n)  # the model terms as means over the n parameters
 
     def rows(self, m, first_row):
-        """Smoothing rows below the data rows: (rows, cols, values, rhs) for the update of model m."""
+        """Smoothing (and damping) rows below the data rows: (rows, cols, values, rhs) for the update of model m."""
         x = np.asarray(m, np.float64).ravel() - self.m0
         lx = np.zeros(self.n)
         np.add.at(lx, self.l_rows, self.l_vals.astype(np.float64) * x[self.l_cols])
         w = self.weight * self.per_node
-        return first_row + self.l_rows, self.l_cols, (self.l_vals * F(w)).astype(F), (-w * lx).astype(F)
+        rows, cols = first_row + self.l_rows, self.l_cols
+        vals, rhs = (self.l_vals * F(w)).astype(F), (-w * lx).astype(F)
+        if self.damping > 0:
+            d = self.damping * self.per_node
+            node = np.arange(self.n)
+            rows = np.r_[rows, first_row + self.n + node]
+            cols = np.r_[cols, node]
+            vals = np.r_[vals, np.full(self.n, d, F)]
+            rhs = np.r_[rhs, (-d * x).astype(F)]
+        return rows, cols, vals, rhs
 
     def row_count(self):
-        return self.n
+        return 2 * self.n if self.damping > 0 else self.n

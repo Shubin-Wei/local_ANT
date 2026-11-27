@@ -4,28 +4,21 @@
 
 ## 报告问题
 
-用 bug 模板新建 issue。模板要的是不需要你的数据也能复现问题的信息：
-
-- `lant --version` 和 `lant check` 的输出；
-- 运行的命令和它打印的内容；
-- `lant status -c CONFIG --json`，以及失败步骤的报告（`OUT/.lant/steps/<步骤>.md`）；
-- `OUT/.lant/lant.log` 的末尾。
-
-不要附上不能公开的原始记录或台站坐标；能复现问题的小算例最有用。
+用 bug 模板新建 issue：`lant --version`、`lant check`、运行的命令，以及出错那一步的 `log.txt`。不要附上不能公开的数据；能复现问题的小算例最有用。
 
 ## 修改代码
 
-遵循[开发规范](docs/engineering.zh.md)和 [AGENTS.zh.md](AGENTS.zh.md) 中关于代码的部分：一次提交一件事；默认值只放在 `lant/config.py`，依据写在 `lant/params.py`；每份文档都有中英文；正演移植保持与 DSurfTomo 兼容，有意改变的反演方法需记录并对比；方法和门限都要有来源。
+- 一次提交一件事；格式化单独提交。
+- 一个模块一个职责；约 500 行时检查是否混了几个职责。
+- 每个方法或默认值都要有出处（文献或理论），否则在 docs/parameters 里标为"约定"。不为某一批数据加功能。
+- 不静默失败：报错说明哪里不对、该改什么。
+- 改了设置或方法：同步更新 `lant/config_template.yaml` 和文档（中英两版）以及 `docs/history`。
 
 提交 pull request 之前：
 
 ```bash
 pip install -e ".[dev]"
-ruff check lant tests tools
-ruff format --check lant tests tools
-python tools/make_parameter_doc.py --check
+ruff check lant tests
+ruff format --check lant tests
 python -m pytest tests
-python tests/smoke_records.py make --out DIR && python tests/smoke_records.py run --dir DIR   # 流程能跑通
 ```
-
-改动计算时，要对确定性产物（叠加、测量、求解器输入）与上一版本做同输入比较，并在 `docs/history.zh.md` 中记录。

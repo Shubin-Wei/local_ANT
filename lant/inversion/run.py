@@ -1,287 +1,179 @@
-"""Running solver projects (the Python DSurfTomo, lant.inversion.solver), and the forward evaluation of a model on a
-fixed data set.
+"""Step 3 (lant inv): 1-D starting model and 3-D direct inversion of the phase travel times.
 
-A project counts as finished only if its log ends with "Program finishes successfully", its model file is complete
-(one finite row per output node), its solver.json names the current implementation and none of its inputs is newer
-than the log.  The output of an interrupted run is never overwritten: it is moved to .lant/backups (reported) and
-the project runs again from its inputs.  A project whose inputs are newer than its log, or that an earlier
-implementation computed (stale), is an error.
+  1. average curve: the median phase velocity of each inversion period over the pairs (periods on the
+     1/inv.per_octave-octave grid through 1 Hz; a period needs max(5, min(50, a quarter of the pairs)) pairs);
+  2. depth nodes (inv.depths_km, or the rule of start_model.depth_nodes) and the 1-D starting model (inv.
+     start_model_file, or the 1-D inversion of the average curve, start_model.invert1d);
+  3. grid: inv.grid_km, or the median wavelength of the data / 3 (lateral resolution of surface-wave tomography is
+     about a wavelength; three nodes sample it);
+  4. the 3-D inversion (Fang et al. 2015, DSurfTomo's method in Python, lant.inversion.dsurf_main): every iteration
+     traces the rays in the current model (fast marching), computes the depth kernels, rejects travel times further
+     than inv.outlier_mad x 1.4826 MAD from the median residual of their period, and solves for the update with
+     smoothing (inv.weight) and damping (inv.damping) of the model itself (lant.inversion.model_regularization).
+
+Results in OUTPUT/3_inv:
+  dsurftomo/          the DSurfTomo project (surfdata.dat, DSurfTomo.in, MOD) and its outputs (log, residuals,
+                      the model of every iteration); the same files run with the original DSurfTomo
+  average_curve.csv   period, median c, pairs
+  start_model.csv     depth, Vs of the starting model; the fit of the average curve in start_fit.csv
+  vs_model.csv        lon, lat, depth, Vs, dVs (% of the starting model), DWS (data sensitivity; 0: no data)
+  residuals.csv       per period: travel times, kept, rms of the residuals of the starting and the final model
 """
 
-import json
 import os
-import subprocess
-import sys
-import threading
+import shutil
 
 import numpy as np
 
-from .. import records, resources
-from ..processes import run as run_process
-from ..processes import workers
-from ..progress import track
-from .model_evaluation import check_node_order as check_node_order
-from .model_evaluation import checker_recovery as checker_recovery
-from .model_evaluation import evaluate as evaluate
-from .model_evaluation import full_grid as full_grid
-from .model_evaluation import logged_residuals as logged_residuals
-from .model_evaluation import precheck as precheck
-from .model_evaluation import read_data as read_data
-from .model_evaluation import read_in as read_in
-from .model_evaluation import read_mod as read_mod
-from .model_evaluation import read_model as read_model
-from .model_evaluation import residual_stats as residual_stats
-from .model_evaluation import residuals as residuals
+from .. import resources
+from ..step import Step, need
+from . import project as P
+from . import start_model as S
 
-INPUTS = ("DSurfTomo.in", "MOD", "MOD.true", "surfdata.dat", "noise_seconds.txt")  # the last: dsurf_main.NOISE_FILE
-BUILT = INPUTS + ("vs1d.txt", "project.json")
+DIR = "3_inv"
+PROJECT = "dsurftomo"
 
 
-def model_complete(d):
-    """The model file exists, has one row per output node ((nx - 2) x (ny - 2) x (nz - 1): DSurfTomo writes neither
-    the outer ring of the grid nor the fixed bottom node) and only finite, positive velocities."""
-    import json
-
-    synthetic = os.path.exists(os.path.join(d, "MOD.true"))  # checkerboards write the recovered model here
-    p = os.path.join(d, "DSurfTomo.inSyn.dat" if synthetic else "DSurfTomo.inMeasure.dat")
-    meta = os.path.join(d, "project.json")
-    if not os.path.exists(p) or not os.path.getsize(p):
-        return False
-    try:
-        m = np.loadtxt(p, ndmin=2)
-    except ValueError:
-        return False
-    if os.path.exists(meta):
-        g = json.load(open(meta))
-        try:  # DSurfTomo drops the rim and the fixed bottom node
-            check_node_order(m, g["grid"]["nx"], g["grid"]["ny"], len(g["depths"]), p)
-        except RuntimeError:
-            return False
-    return m.shape[1] >= 4 and bool(np.all(np.isfinite(m[:, 3]))) and bool(np.all(m[:, 3] > 0))
+def read_dispersion(path):
+    return np.genfromtxt(path, delimiter=",", names=True, dtype=None, encoding="utf-8")
 
 
-def model_says_done(d):
-    log = os.path.join(d, "DSurfTomo.in.log")
-    return os.path.exists(log) and "Program finishes successfully" in open(log, errors="ignore").read()[-2000:]
+def min_pairs(n_pairs):
+    return int(max(5, min(50, n_pairs // 4)))
 
 
-def status(d):
-    """missing | new | stale (an input newer than the log) | done (the log ends with the success line and the model
-    file is complete) | unfinished."""
-    log = os.path.join(d, "DSurfTomo.in.log")
-    if not os.path.exists(os.path.join(d, "DSurfTomo.in")):
-        return "missing"
-    if not os.path.exists(log) and not os.path.exists(os.path.join(d, "run.log")):
-        return "new"
-    for f in INPUTS:
-        p = os.path.join(d, f)
-        if os.path.exists(p) and os.path.exists(log) and os.path.getmtime(p) > os.path.getmtime(log):
-            return "stale"
-    if os.path.exists(log):
-        tail = open(log, errors="ignore").read()[-2000:].strip().splitlines()[-5:]
-        record = os.path.join(d, "solver.json")
-        if any("Program finishes successfully" in ln for ln in tail) and model_complete(d) and os.path.exists(record):
-            from .solver import identity
-
-            try:
-                if json.load(open(record)).get("identity") != identity():
-                    return "stale"
-            except (ValueError, OSError):
-                return "stale"
-            return "done"
-    return "unfinished"
-
-
-def observed_iteration(project):
-    """Read only a bounded log tail; buffered logs may have no iteration information yet."""
-    import re
-
-    path = os.path.join(project, "DSurfTomo.in.log")
-    try:
-        with open(path, "rb") as fh:
-            fh.seek(max(0, os.path.getsize(path) - 65536))
-            text = fh.read().decode("utf-8", errors="replace")
-    except FileNotFoundError:
-        return None
-    matches = re.findall(r"(\d+)(?:st|nd|rd|th)\s+iteration", text, re.IGNORECASE)
-    return int(matches[-1]) if matches else None
-
-
-def max_iterations(project):
-    """The iteration count written into DSurfTomo.in ("c: maximum iteration"), or None."""
-    try:
-        for line in open(os.path.join(project, "DSurfTomo.in")):
-            if "c: maximum iteration" in line:
-                return int(line.split()[0])
-    except (OSError, ValueError):
-        pass
-    return None
-
-
-def set_aside_unfinished(cfg, dirs):
-    """Move the solver output of interrupted projects to one .lant/backups directory, so that they run again from
-    their inputs (nothing is deleted) -> {project: backup}."""
-    import datetime
-
-    from .. import records
-
-    root = cfg["project"]["output_dir"]
-    backup = os.path.join(
-        records.rec_dir(cfg), "backups", datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f") + "-interrupted"
-    )
-    moved = {}
-    for d in dirs:
-        if status(d) != "unfinished":
-            continue
-        target = os.path.join(backup, os.path.relpath(d, root))
-        os.makedirs(target)
-        for name in sorted(os.listdir(d)):
-            if name not in BUILT:
-                os.rename(os.path.join(d, name), os.path.join(target, name))
-        moved[d] = target
-        message = "%s: the output of an interrupted run is kept in %s; running it again" % (d, target)
-        print("  " + message, flush=True)
-        sys.stderr.write("[lant] %s\n" % message)  # the user should see it without -v
-    return moved
-
-
-_running = {}  # project name -> observed iteration, for the progress line
-_running_guard = threading.Lock()
-
-
-def _show_running(name=None, value=None):
-    from ..progress import detail
-
-    with _running_guard:
-        if value is None:
-            _running.pop(name, None)
+def run(cfg):
+    disp = need(os.path.join(cfg["output_dir"], "2_disp", "dispersion.csv"), "disp")
+    with Step(cfg, DIR, ["inv", "cores"]) as step:
+        inv = dict(cfg["inv"])
+        n_cores, how = resources.cores(cfg["cores"])
+        step.say("cores: %d (%s)" % (n_cores, how))
+        tab = read_dispersion(disp)
+        if tab.size == 0:
+            raise RuntimeError("%s has no accepted measurement" % disp)
+        recs, periods = P.records(tab, int(inv["per_octave"]))
+        if len(periods) < 2:
+            raise RuntimeError("fewer than 2 measured periods lie on the 1/%d-octave grid" % inv["per_octave"])
+        step.say("%d pairs, %d travel times, %d periods %.4g-%.4g s (the measured periods on the 1/%d-octave grid "
+                 "through 1 Hz: inv.per_octave)" % (len(recs), sum(len(r["values"]) for r in recs), len(periods),
+                                                     periods[0], periods[-1], inv["per_octave"]))  # fmt: skip
+        sel = P.on_grid(tab["period_s"], int(inv["per_octave"]))
+        need_pairs = min_pairs(len(recs))
+        avg = S.average_curve(np.round(tab["period_s"][sel], 6), tab["c_kms"][sel], need_pairs)
+        if len(avg) < 3:
+            raise RuntimeError("only %d periods have %d pairs: too few for a 1-D model" % (len(avg), need_pairs))
+        np.savetxt(step.path("average_curve.csv"), avg, fmt="%.6f,%.5f,%d", header="period_s,c_kms,pairs",
+                   comments="")  # fmt: skip
+        step.say(
+            "average curve: median over the pairs, periods with >= %d pairs (max(5, min(50, pairs / 4)))" % need_pairs
+        )
+        if inv["depths_km"] is not None:
+            z = np.array(inv["depths_km"], float)
         else:
-            _running[name] = value
-        text = ", ".join("%s %s" % kv for kv in sorted(_running.items()))
-    detail("iterations: " + text if text else "")
-
-
-def solver_command(threads, estimate):
-    """The solver process of a project (run in its directory)."""
-    return [sys.executable, "-m", "lant.inversion.solver", "--threads", str(threads), "--estimate", "%.0f" % estimate]
-
-
-def run_one(d, threads):
-    """Run the solver in project d with `threads` threads -> (d, message)."""
-    st = status(d)
-    if st == "done":
-        return d, "skipped (finished, inputs unchanged)"
-    if st == "stale":
-        return (
-            d,
-            "FAILED: its inputs or numerical implementation changed (stale); rebuild with lant run all --from inversion",
+            z = np.array(step.derive("inv.depths_km", [round(float(v), 3) for v in S.depth_nodes(avg)],
+                                     "from 0 in steps of max(shortest wavelength / 4, depth / 4) to the first node past "
+                                     "half the longest wavelength (the last node: fixed half-space)"))  # fmt: skip
+        if inv["start_model_file"]:
+            mz, mv = S.read_node_model(inv["start_model_file"])
+            if z[-1] > mz[-1] + 1e-6:
+                raise RuntimeError("inv.start_model_file ends at %.3f km; the nodes reach %.3f km" % (mz[-1], z[-1]))
+            vs = np.interp(z, mz, mv)
+            step.say("starting model: %s interpolated to the nodes" % inv["start_model_file"])
+        else:
+            step.say("starting model: 1-D inversion of the average curve")
+            vs, pred, _ = S.invert1d(avg[:, 0], avg[:, 1], z, log=step.say)
+            np.savetxt(step.path("start_fit.csv"), np.c_[avg[:, 0], avg[:, 1], pred], fmt="%.6f,%.5f,%.5f",
+                       header="period_s,c_average_kms,c_start_model_kms", comments="")  # fmt: skip
+            step.number("1-D fit rms (km/s)", round(float(np.sqrt(np.mean((avg[:, 1] - pred) ** 2))), 4))
+        np.savetxt(step.path("start_model.csv"), np.c_[z, vs], fmt="%.4f,%.5f", header="depth_km,vs_kms", comments="")
+        if inv["grid_km"] is not None:
+            spacing = float(inv["grid_km"])
+        else:
+            lam = float(np.median([c * t for r in recs for t, c in r["values"].items()]))
+            spacing = step.derive("inv.grid_km", float("%.2g" % (lam / 3)), "median wavelength of the data %.4g km / 3"
+                                  % lam)  # fmt: skip
+        inv["vs_min"] = (
+            inv["vs_min_kms"]
+            if inv["vs_min_kms"] is not None
+            else step.derive(
+                "inv.vs_min_kms", round(0.6 * float(vs.min()), 3), "0.6 x the slowest Vs of the starting model"
+            )
         )
-    if st == "unfinished":  # lant.pipeline sets interrupted runs aside before this
-        return d, "FAILED: output of an earlier run is present (unfinished); move it away or rerun the run step"
-    from ..runtime_identity import assert_unchanged, worker_environment
-    from .solver import memory_estimate
-
-    # Numba gets the threads; BLAS and OpenMP inside it stay single-threaded so that they do not multiply them.
-    env = dict(os.environ, **resources.thread_environment(1), **worker_environment())
-    env["NUMBA_NUM_THREADS"] = str(threads)
-    progress_errors = []
-    name, total = os.path.basename(d), max_iterations(d)
-    _show_running(name, "starting")
-
-    def show_iteration():
-        try:
-            iteration = observed_iteration(d)
-        except OSError as exc:
-            if not progress_errors:
-                print("  iteration progress unavailable: %s" % exc, flush=True)
-                progress_errors.append(str(exc))
-            return
-        if iteration is not None:
-            _show_running(name, "%d/%s" % (iteration, total or "?"))
-
-    command = solver_command(threads, memory_estimate(d))
-    try:
-        with open(os.path.join(d, "run.log"), "w") as fh:
-            rc = run_process(
-                command, cwd=d, env=env, stdout=fh, stderr=subprocess.STDOUT, on_poll=show_iteration
-            ).returncode
-    finally:
-        _show_running(name)
-    assert_unchanged()
-    if rc != 0:
-        return d, "FAILED: exit status %d (see %s/run.log)" % (rc, d)
-    st = status(d)
-    if st != "done":
-        if st == "stale":
-            return d, "FAILED: solver.json names another implementation than this lant (or an input changed)"
-        return d, (
-            "FAILED: the model file is incomplete (rows, NaN or non-positive velocities)"
-            if model_says_done(d)
-            else "FAILED: no 'Program finishes successfully' at the end of the log"
+        inv["vs_max"] = (
+            inv["vs_max_kms"]
+            if inv["vs_max_kms"] is not None
+            else step.derive(
+                "inv.vs_max_kms", round(1.4 * float(vs.max()), 3), "1.4 x the fastest Vs of the starting model"
+            )
         )
-    return d, "ok"
+        pdir = step.path(PROJECT)
+        if os.path.isdir(pdir):
+            shutil.rmtree(pdir)
+        os.makedirs(pdir)
+        info = P.write_surfdata(recs, os.path.join(pdir, "surfdata.dat"))
+        g = P.grid(info["stations"], spacing)
+        P.write_control(os.path.join(pdir, "DSurfTomo.in"), g, len(z), info["nsrc"], inv, periods)
+        P.write_model(os.path.join(pdir, "MOD"), z, vs, g)
+        step.say("grid: %d x %d nodes (latitude x longitude) every %.3g km, %d depth nodes; %d travel times"
+                 % (g["nx"], g["ny"], spacing, len(z), info["travel_times"]))  # fmt: skip
+        solve(pdir, n_cores, step)
+        results(pdir, step.dir, z, vs, step)
+        from ..plotting import inv_figures
+
+        inv_figures.make(cfg, step, pdir)
 
 
-@records.timed_phase("solver_batch")
-def run_projects(cfg, dirs, on_done=None):
-    """The projects, as many at a time as the cores and the memory allow (lant.resources.plan); each takes its
-    threads when it starts: its share of the cores of the step, fewer when the machine has become busier since."""
-    from .solver import memory_estimate
+def solve(pdir, n_cores, step):
+    from . import dsurf_main
 
-    todo = [d for d in dirs if status(d) != "done"]
-    peak = max((memory_estimate(d) for d in todo), default=0)
-    groups = sorted({"main" if os.path.basename(d) == "main" else os.path.basename(os.path.dirname(d)) for d in todo})
-    plan = resources.plan(cfg, max(1, len(todo)), peak or None, "solver projects (%s)" % ", ".join(groups))
-    own = resources.OwnLoad()
-    print(
-        "  cores %d (%s): %d project(s) at a time, up to %d threads each"
-        % (plan["cores"], plan["cores_rule"], plan["parallel"], plan["threads_each"]),
-        flush=True,
-    )
-
-    def timed_project(directory):
-        with records.phase(cfg, "solver_project", project=str(directory)) as timing:
-            now, how = resources.cores(cfg["resources"]["cores"], own.estimate())
-            threads = max(1, min(plan["threads_each"], now // plan["parallel"]))
-            timing.update(threads=threads, cores_rule=how)
-            job = own.start(threads)
-            try:
-                result = run_one(directory, threads)
-            finally:
-                own.stop(job)
-            timing["result"] = result[1]
-            if result[1].startswith("FAILED"):
-                timing["status"] = "failed"
-            elif result[1].startswith("skipped"):
-                timing["status"] = "skipped"
-            else:
-                record = json.load(open(os.path.join(directory, "solver.json")))
-                resources.note_solver(
-                    dict(project=os.path.relpath(directory, cfg["project"]["output_dir"]), threads=threads,
-                         wall_seconds=record["wall_seconds"], peak_memory_gb=record["peak_memory_gb"],
-                         memory_estimate_gb=record["memory_estimate_gb"])
-                )  # fmt: skip
-            return result
-
-    with workers(max_workers=plan["parallel"]) as ex:
-        from concurrent.futures import as_completed
-
-        futures = [ex.submit(timed_project, d) for d in dirs]
-        kinds = sorted(
-            {"main" if os.path.basename(d) == "main" else os.path.basename(os.path.dirname(d)) for d in dirs}
-        )
-        unit = "solver projects (%s)" % ", ".join(kinds)
-        done = []
-        for future in track(as_completed(futures), len(futures), unit, eta=False):
-            result = future.result()
-            done.append(result)
-            if on_done is not None:
-                on_done(*result)
-    res = sorted(done, key=lambda r: dirs.index(r[0]))  # summaries in project order, not in order of completion
-    for d, msg in res:
-        print("  %s %s" % (d, msg), flush=True)
-    failed = [d for d, m in res if m.startswith("FAILED")]
-    return dict(results=dict(res), failed=failed)
+    step.say("3-D inversion (%d threads); DSurfTomo's own log: %s/DSurfTomo.in.log" % (n_cores, PROJECT))
+    timings = dsurf_main.run(pdir, "DSurfTomo.in", n_cores, dws_file="dws.txt")
+    step.number("iterations", len(timings))
+    step.number("travel times rejected in the last iteration", timings[-1]["rejected"])
 
 
-# ------------------------------------------------------------------------------------------------ models
+def model_table(pdir, name):
+    """Inverted model (lon lat depth Vs) and the DWS of its nodes."""
+    a = np.loadtxt(os.path.join(pdir, name), ndmin=2)[:, :4]
+    dws = np.loadtxt(os.path.join(pdir, "dws.txt"), ndmin=2)[:, 3] if os.path.exists(os.path.join(pdir, "dws.txt")) \
+        else np.full(len(a), np.nan)  # fmt: skip
+    return a, dws
+
+
+def residual_table(pdir):
+    """Per period: travel times, kept by the rejection, rms of the kept residuals (s) of the start and final model."""
+    from . import dsurf_input
+
+    pr = dsurf_input.read_project(pdir)
+    per = pr.measurements.row_periods()
+    first = np.loadtxt(os.path.join(pdir, "residualFirst.dat"), ndmin=2)
+    last = np.loadtxt(os.path.join(pdir, "residualLast.dat"), ndmin=2)
+    rows = []
+    for k, t in enumerate(pr.control.periods_rc, start=1):
+        m = per == k
+        r0 = (first[m, 2] - first[m, 1])[first[m, 5] > 0]
+        r1 = (last[m, 2] - last[m, 1])[last[m, 5] > 0]
+        rows.append((t, int(m.sum()), int((last[m, 5] > 0).sum()), _rms(r0), _rms(r1),
+                     1.4826 * float(np.median(np.abs(r1 - np.median(r1)))) if r1.size else np.nan))  # fmt: skip
+    return np.array(rows), first, last
+
+
+def _rms(r):
+    return float(np.sqrt(np.mean(r**2))) if r.size else np.nan
+
+
+def results(pdir, out, z, vs, step):
+    a, dws = model_table(pdir, "DSurfTomo.inMeasure.dat")
+    base = np.interp(a[:, 2], z, vs)
+    np.savetxt(os.path.join(out, "vs_model.csv"), np.c_[a, 100 * (a[:, 3] / base - 1), dws],
+               fmt=("%.6f", "%.6f", "%.4f", "%.5f", "%.3f", "%.6g"), delimiter=",",
+               header="lon,lat,depth_km,vs_kms,dvs_percent,dws", comments="")  # fmt: skip
+    rows, first, last = residual_table(pdir)
+    np.savetxt(os.path.join(out, "residuals.csv"), rows, fmt=("%.6f", "%d", "%d", "%.6f", "%.6f", "%.6f"),
+               delimiter=",", header="period_s,travel_times,kept_last_iteration,rms_start_s,rms_final_s,"
+               "robust_sd_final_s", comments="")  # fmt: skip
+    k0, k1 = first[:, 5] > 0, last[:, 5] > 0
+    step.number("travel times", int(len(last)))
+    step.number("rms residual of the starting model (s)", round(_rms(first[k0, 2] - first[k0, 1]), 5))
+    step.number("rms residual of the final model (s)", round(_rms(last[k1, 2] - last[k1, 1]), 5))
+    step.number("Vs range of the model (km/s)", [round(float(a[:, 3].min()), 3), round(float(a[:, 3].max()), 3)])

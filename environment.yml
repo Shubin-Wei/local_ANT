@@ -1,23 +1,19 @@
-# The one environment of lant (Linux): conda env create -f environment.yml && conda activate lant
+# The environment of lant (Linux): conda env create -f environment.yml && conda activate lant
 # It installs lant itself from this checkout (pip -e .); then: lant check
 name: lant
 channels:
   - conda-forge
 dependencies:
   - python>=3.11
-  - numpy>=2
+  - numpy>=1.26
   - scipy
   - numba
   - h5py
   - obspy
   - matplotlib
   - pyyaml
-  - openpyxl          # Excel station tables
-  - gmt>=6.1          # maps and sections (plots.backend gmt)
+  - gmt>=6.1          # maps (optional: without it the maps are not drawn)
   - ghostscript
-  - pygmt             # plots.backend pygmt
-  - rasterio
-  - git               # provenance: the commit of the code that made a result
   - pytest
   - pip
   - pip:

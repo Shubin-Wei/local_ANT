@@ -1,8 +1,9 @@
-"""Running GMT 6 (modern mode) for the map and section figures.
+"""GMT 6 (modern mode) for the map figures.
 
-Every figure is one shell script run in a temporary directory: colour tables and grids are made before
-`gmt begin` (GMT 6.0 writes no file inside a session), the session writes <out>.<format> for every format of
-plots.formats.  On failure the script is kept and its path reported (set LANT_KEEP_GMT=1 to keep it always).
+A figure is one shell script run in a temporary folder.  Relief (plots.relief): auto uses GMT's remote
+@earth_relief_03s (downloaded and cached by GMT; needs internet), a file name uses that grid, null draws no relief.
+When the relief cannot be had the map is drawn without it and the log says so.  Set LANT_KEEP_GMT=1 to keep the
+scripts.
 """
 
 import os
@@ -11,16 +12,11 @@ import shutil
 import subprocess
 import tempfile
 
-SET = (
-    "gmt set FORMAT_GEO_MAP ddd.xxF FONT_ANNOT_PRIMARY {a}p,Helvetica FONT_LABEL {l}p,Helvetica MAP_FRAME_TYPE plain "
-    "MAP_FRAME_PEN 0.5p MAP_TICK_LENGTH_PRIMARY 0.07c MAP_ANNOT_OFFSET_PRIMARY 0.06c MAP_LABEL_OFFSET 0.12c PS_LINE_JOIN round"
-)
-# continuous colour tables of the figures: perturbations and checkerboards red (slow) - white (zero) - blue (fast),
-# GMT "polar" reversed (a common choice for checkerboard figures); Vs itself keeps plots.vs_cpt ("seis")
+import numpy as np
 
-PERT_CPT = "polar -I"
-CHECK_CPT = PERT_CPT
-ELEV_CPT = "#a8cfa0,#cfe0b0,#ece6bf,#e3cfa4,#cdb08a,#f4efe6"
+SET = ("gmt set FORMAT_GEO_MAP ddd.xxF FONT_ANNOT_PRIMARY 8p,Helvetica FONT_LABEL 9p,Helvetica MAP_FRAME_TYPE plain "
+       "MAP_FRAME_PEN 0.5p MAP_TICK_LENGTH_PRIMARY 0.07c MAP_ANNOT_OFFSET_PRIMARY 0.06c PS_LINE_JOIN round")  # fmt: skip
+CHECK_CPT = "polar -I"  # red (slow) - white - blue (fast)
 
 
 class GMTError(RuntimeError):
@@ -37,120 +33,88 @@ def available():
         return None
 
 
-def workdir():
-    return tempfile.mkdtemp(prefix="lant_gmt_")
-
-
-def run(tmp, pre, cmd, out, formats=("png",), dpi=300, font=(7, 8), backend=None):
-    from ..config import DEFAULTS
-
-    backend = backend or DEFAULTS["plots"]["backend"]
-    if backend == "pygmt":
-        from .pygmt_backend import render
-
-        try:
-            render(tmp, pre, cmd, formats, dpi, font)
-        except RuntimeError as exc:
-            raise GMTError(str(exc)) from exc
-        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-        # Rendering scratch and results may be on different filesystems. Copy
-        # every completed format beside the destination before atomic promotion.
-        with tempfile.TemporaryDirectory(prefix=".lant_figure_", dir=os.path.dirname(os.path.abspath(out))) as staged:
-            for fmt in formats:
-                shutil.copy2(os.path.join(tmp, "lant_figure." + fmt), os.path.join(staged, "figure." + fmt))
-            for fmt in formats:
-                os.replace(os.path.join(staged, "figure." + fmt), os.path.abspath(out) + "." + fmt)
-        if not os.environ.get("LANT_KEEP_GMT"):
-            shutil.rmtree(tmp)
-        return [out + "." + f for f in formats]
-    if backend != "gmt":
-        raise ValueError("unknown plotting backend: %s" % backend)
+def run(tmp, pre, cmd, out, dpi=300):
+    """Run the commands `pre` (before the session) and `cmd` (inside it) -> out.png."""
     if not available():
-        raise GMTError(
-            "GMT 6 is not installed or not on PATH (needed for the map and section figures): "
-            "`conda install -c conda-forge gmt`"
-        )
-    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-    script = os.path.join(tmp, "draw.sh")
-    # the figure is drawn under a plain name inside the scratch directory and moved to `out` afterwards, so that
-    # an output path with spaces or shell characters never reaches the GMT command line
+        raise GMTError("GMT 6 is not installed (conda install -c conda-forge gmt): map not drawn")
     q = shlex.quote
+    script = os.path.join(tmp, "draw.sh")
     with open(script, "w") as f:
-        f.write(
-            "set -e\nexport GMT_TMPDIR=%s GMT_USERDIR=%s\ncd %s\n%s\ngmt begin lant_figure %s A+m0.25c,E%d\n%s\n%s\n"
-            "gmt end\n"
-            % (
-                q(tmp),
-                q(tmp),
-                q(tmp),
-                "\n".join(pre),
-                ",".join(formats),
-                dpi,
-                SET.format(a=font[0], l=font[1]),
-                "\n".join(cmd),
-            )
-        )
+        f.write("set -e\nexport GMT_TMPDIR=%s GMT_USERDIR=%s\ncd %s\n%s\ngmt begin figure png A+m0.25c,E%d\n%s\n%s\n"
+                "gmt end\n" % (q(tmp), q(tmp), q(tmp), "\n".join(pre), dpi, SET, "\n".join(cmd)))  # fmt: skip
     r = subprocess.run(["bash", script], capture_output=True, text=True)
     if r.returncode != 0 or "ERROR" in r.stderr:
-        raise GMTError("GMT failed for %s:\n%s\n(script kept: %s)" % (out, r.stderr[-3000:], script))
-    for fmt in formats:
-        shutil.move(os.path.join(tmp, "lant_figure." + fmt), os.path.abspath(out) + "." + fmt)
+        raise GMTError("GMT failed for %s:\n%s\n(script: %s)" % (out, r.stderr[-2000:], script))
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    shutil.move(os.path.join(tmp, "figure.png"), out + ".png")
     if not os.environ.get("LANT_KEEP_GMT"):
         shutil.rmtree(tmp, ignore_errors=True)
-    return [out + "." + f for f in formats]
+    return out + ".png"
 
 
-RELIEF_NOTES = []  # why a figure was drawn without relief (for the figure report)
+def relief_source(setting):
+    if setting in (None, False, "none", "null"):
+        return None
+    return "@earth_relief_03s" if setting == "auto" else str(setting)
 
 
-def relief_cmds(cfg, tmp, W, E, S, N, palette="gray"):
-    """Commands that cut the relief grid (plots.topography, lant.plotting.relief) to the map, its hill shade and a
-    colour table.  Returns (commands, have_relief).  palette gray: the light grey under the model maps; elevation:
-    the coloured relief of the station map."""
-    from . import relief
-
+def relief_cmds(src, tmp, region, palette="gray"):
+    """Commands that cut the relief to the region, its shading and a colour table (pale grey under model maps,
+    coloured under the station map)."""
+    W, E, S, N = region
     pad = 0.01
-    topo, note = relief.grid(cfg, W - pad, E + pad, S - pad, N + pad, tmp)
-    if not topo:
-        if note not in RELIEF_NOTES:
-            RELIEF_NOTES.append(note)
-        return [], False
-    shade = 0.22 if palette == "elevation" else 0.5
     pre = [
         "gmt grdcut %s -R%.5f/%.5f/%.5f/%.5f -G%s/topo.nc"
-        % (shlex.quote(topo), W - pad, E + pad, S - pad, N + pad, tmp),
-        "gmt grdgradient %s/topo.nc -A315 -Nt%g -G%s/shade.nc" % (tmp, shade, tmp),
+        % (shlex.quote(src), W - pad, E + pad, S - pad, N + pad, tmp),
+        "gmt grdgradient %s/topo.nc -A315 -Nt%g -G%s/shade.nc" % (tmp, 0.22 if palette != "gray" else 0.5, tmp),
+        "read ZMIN ZMAX <<< \"$(gmt grdinfo -C %s/topo.nc | awk '{print $6, $7}')\"" % tmp,
     ]
     if palette == "gray":
-        # elevations mapped onto the pale end of the grey scale: light relief under semi-transparent values
-        pre.append(
-            "read ZMIN ZMAX <<< \"$(gmt grdinfo -C %s/topo.nc | awk '{print $6, $7}')\"; "
-            "gmt makecpt -Cgray -T$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{printf \"%%d/%%d\", a-2.5*(b-a)-1, b+0.3*(b-a)+1}') -Z "
-            "> %s/relief.cpt" % (tmp, tmp)
-        )
+        pre.append("gmt makecpt -Cgray -T$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{printf \"%%d/%%d\", a-2.5*(b-a)-1, "
+                   "b+0.3*(b-a)+1}') -Z > %s/relief.cpt" % tmp)  # fmt: skip
     else:
-        pre.append(
-            "read ZMIN ZMAX <<< \"$(gmt grdinfo -C %s/topo.nc | awk '{print $6, $7}')\"; "
-            "gmt makecpt -C%s -T$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{printf \"%%d/%%d\", a, (b>a)?b:a+1}') -Z > %s/relief.cpt"
-            % (tmp, ELEV_CPT, tmp)
-        )
-    if cfg["plots"]["backend"] == "pygmt":
-        pre[-1] = dict(
-            action="palette", grid=os.path.join(tmp, "topo.nc"), palette=palette, output=os.path.join(tmp, "relief.cpt")
-        )
-    return pre, True
+        pre.append("gmt makecpt -Cgeo -T$(awk -v a=$ZMIN -v b=$ZMAX 'BEGIN{printf \"%%d/%%d\", a, (b>a)?b:a+1}') -Z "
+                   "> %s/relief.cpt" % tmp)  # fmt: skip
+    return pre
+
+
+def draw(cfg, make, out, log=print):
+    """make(tmp, relief_src) -> (pre, cmd).  Drawn with relief if possible, else without (and said so)."""
+    src = relief_source(cfg["plots"]["relief"])
+    for attempt in [src, None] if src else [None]:
+        tmp = tempfile.mkdtemp(prefix="lant_gmt_")
+        pre, cmd = make(tmp, attempt)
+        try:
+            return run(tmp, pre, cmd, out, int(cfg["plots"]["dpi"]))
+        except GMTError as exc:
+            if attempt is None:
+                raise
+            log("  relief %s not available (%s): %s drawn without relief" % (attempt, str(exc).splitlines()[1:2],
+                                                                              os.path.basename(out)))  # fmt: skip
+
+
+def region(lon, lat, pad=0.1, min_pad=0.005, min_aspect=0.4):
+    """Map region around the points, the shorter side widened to min_aspect of the longer (a line is not a strip)."""
+    W, E, S, N = min(lon), max(lon), min(lat), max(lat)
+    px, py = max((E - W) * pad, min_pad), max((N - S) * pad, min_pad)
+    W, E, S, N = W - px, E + px, S - py, N + py
+    kx = np.cos(np.radians(0.5 * (S + N)))
+    wx, wy = (E - W) * kx, N - S
+    if wx < min_aspect * wy:
+        d = 0.5 * (min_aspect * wy - wx) / kx
+        W, E = W - d, E + d
+    elif wy < min_aspect * wx:
+        d = 0.5 * (min_aspect * wx - wy)
+        S, N = S - d, N + d
+    return W, E, S, N
 
 
 def mercator_height(width, W, E, S, N):
-    import numpy as np
-
     ys = lambda la: np.log(np.tan(np.pi / 4 + np.radians(la) / 2))
     return width * (ys(N) - ys(S)) / np.radians(E - W)
 
 
 def nice_step(span, n=4):
-    import numpy as np
-
     raw = span / n
     p = 10 ** np.floor(np.log10(raw))
     for m in (1, 2, 2.5, 5, 10):
@@ -160,11 +124,13 @@ def nice_step(span, n=4):
 
 
 def scale_km(W, E, S, N):
-    """A round scale-bar length of about a quarter of the map width (km) and the latitude it is drawn for."""
-    import numpy as np
-
     width_km = (E - W) * 111.195 * np.cos(np.radians(0.5 * (S + N)))
-    for v in (0.5, 1, 2, 5, 10, 20, 50, 100):
+    for v in (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100):
         if v >= width_km / 5:
-            return v, 0.5 * (S + N)
-    return 100, 0.5 * (S + N)
+            return v
+    return 100
+
+
+def geo_format(*steps):
+    nd = max([2] + [len(("%.6f" % s).rstrip("0").split(".")[1]) for s in steps])
+    return "--FORMAT_GEO_MAP=DF --FORMAT_FLOAT_OUT=%%.%df --FORMAT_FLOAT_MAP=%%.%df" % (nd, nd)

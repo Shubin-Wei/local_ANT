@@ -1,249 +1,87 @@
-# 参数说明
+# 参数
 
 中文 | [English](parameters.md)
 
-配置文件的每一个键：默认值、含义、默认值的依据。本文件由 `tools/make_parameter_doc.py` 根据 `lant/config.py`（默认值）和 `lant/params.py`（说明）生成；`lant init` 展开常用参数，`lant init --full` 列出全部参数及说明，步骤报告（`输出目录/.lant/steps/<步骤>.md`）给出每一步实际用的值，由规则推出的值还写出代入你的数据后的推导。
+配置文件里的每个设置、默认值和依据。带同样注释的模板是 `lant/config_template.yaml`（`lant init` 会写出一份填好的）。"约定"表示取值是一种选择，不是理论或文献给出的值，有理由时就改。
 
-## 1. 表格怎么读
+## 必填
 
-必填的只有三个键：`project.output_dir`、`data.raw_dir`、`data.station_file`。配置里写了的值总是优先。`auto` 表示按说明里的规则由数据推出。
-
-“依据”一栏说明默认值的来历：
-
-| 依据 | 含义 |
+| 键 | 含义 |
 |---|---|
-| 必填 | 只有你知道 |
-| 文献 | 数值或方法取自所引文献 |
-| 理论 | 由方法本身的关系得出（采样、滤波器宽度、远场相位） |
-| 规则 | 按写明的规则由你的数据推出；规则里的系数除注明文献者外是本项目的选择 |
-| 经验值 | 本项目的经验，没有查到文献取值。数据需要时可以改，改了要说明 |
-| 选择 | 由你定，没有对错 |
-| 技术 | 只影响速度、内存或文件，不影响结果 |
+| `output_dir` | 全部结果的文件夹，每步一个子文件夹 |
+| `data.raw_dir` | 连续记录的文件夹（ObsPy 能读的任何格式、任何目录结构） |
+| `data.station_file` | 带表头的台站表（`network station longitude latitude [elevation]`），或 StationXML |
+| `data.velocity_range_kms` | 本区 Rayleigh 波相速度的最慢和最快值（km/s） |
+| `cc.fs_hz`、`cc.fmin_hz`、`cc.fmax_hz`、`cc.maxlag_s`、`cc.segment_s` | 互相关设置；`lant init` 给建议值（规则见下） |
 
-流程在哪些地方停下来等你：`clean` 之后（名字有歧义、台站没有数据、坐标对不上、分量方向不明、台阵类型介于面状和线状之间、没有去响应且不知道仪器型号）、`stack` 之后（只在诊断列出候选时）、`reference` 之后（拾取的脊是不是基阶）、`inversion` 之后（起始模型、最深节点、速度上下限）。没有需要判断的事项时不停。
+## data
 
-## 2. 项目
+| 键 | 默认 | 含义与依据 |
+|---|---|---|
+| `channel` | `"*Z"` | 垂直分量的通道代码（通配符） |
+| `response` | `null` | 响应文件（StationXML、RESP、dataless SEED；文件或文件夹）：去响应到速度。仪器不全相同时需要；同一型号时互相干已使其不必要（方法第 2 节） |
+| `start_date`、`end_date` | `null` | 使用的第一天和最后一天（UTC） |
+| `exclude_stations` | `[]` | 不用的台站（台站表里的名字） |
 
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `name` | `my_array` | 选择 | 项目名（只用于图和记录） |
-| `array_type` | `auto` | 规则 | auto：按台站分布判断（台站分布的长宽比，小于 3 为面状，大于 10 为线状，介于两者之间时在 clean 交给你确认）；或直接写 surface / line |
-| `output_dir` | — | 必填 | 全部结果、图和记录都写在这里 |
-| `ai_assistant` | `null` | 选择 | 写进工程的唯一一份 AI 助手规则文件，含完整规则：codex 写 AGENTS.md，claude 写 CLAUDE.md，gemini 写 GEMINI.md；null 写 AGENTS.md（许多编程助手都读的公开约定）。已有文件不覆盖 |
+## cc（第 1 步）
 
-## 3. data：原始数据
+| 键 | 默认 | 含义与依据 |
+|---|---|---|
+| `fs_hz` | init | 降采样后的采样率，须能由每个原始采样率整数倍抽取。建议值：满足 `fmax_hz` ≤ 0.4 fs 的最低整数采样率（抗混叠低通在 0.8 倍奈奎斯特频率） |
+| `fmin_hz` | init | 频带下限。建议值：最长台对 r_max 为最快速度下的 2 个波长，f = 2 v_fast / r_max（两台法远场，Bensen et al. 2007；Luo et al. 2015），再按高斯滤波器半增益宽度下调，× (1 − √(ln 2/α)) |
+| `fmax_hz` | init | 频带上限。建议值：k ≤ π/Δr 时 F-J 谱没有空间假频，Δr 为台对距离的平均间隔（Wang et al. 2019 式 14）：f = v_slow / (2Δr)，× (1 + √(ln 2/α))；不超过最低原始采样率的 0.4 倍 |
+| `maxlag_s` | init | 时延窗。建议值：r_max / (0.6 v_slow) + 4 / fmin。0.6 为约定：频散层中群速度可远低于相速度；4 个周期留作到时之后的噪声窗 |
+| `segment_s` | init | 段长，须大于时延窗的两倍（循环相关）。建议值：max(2.5 maxlag, 10 / fmin) |
+| `overlap` | 0.5 | 段的重叠（Welch 平均；Seats et al. 2012） |
+| `max_over_std` | 10 | 最大振幅超过该台站日标准差这么多倍的段不用（NoisePy，Jiang & Denolle 2020）；0 为不用 |
+| `substack_hours` | 24 | 子叠加长度，即刀切误差的组（至少需要 3 组）。记录不足 3 天时 `lant init` 建议更短的 |
+| `max_distance_km` | `null` | 只计算这一距离以内的台对（超大台阵省内存和磁盘） |
 
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `raw_dir` | — | 必填 | 原始数据目录，递归搜索；目录结构和文件名不限 |
-| `format` | `auto` | 技术 | auto：由 ObsPy 逐个文件识别格式（MSEED、SAC、GSE2、SEG2 等）；或写一个 ObsPy 格式名 |
-| `file_patterns` | `['*']` | 技术 | 尝试读取的文件名模式 |
-| `ignore_patterns` | `['*.txt', '*.csv', '*.xml', '*.json', '*.yaml', '*.yml', ...` | 技术 | 不读的文件名模式 |
-| `station_file` | — | 必填 | 台站表，常见形式都可以（CSV、文本、Excel、StationXML） |
-| `component` | `Z` | 选择 | Z：垂直分量互相关（Rayleigh 波）；目前只支持这一种 |
-| `channel` | `auto` | 规则 | auto：按通道名或 SAC 头段找每个台的垂直通道；名字看不出来时写模式，如 "*3" |
-| `network_default` | `null` | 选择 | 记录头段没有台网代码时用的台网代码 |
-| `rename` | `{}` | 选择 | 自动对不上时手工指定：{头段里的名字: 台站表里的名字} |
-| `day_start_utc_hour` | `auto` | 规则 | 处理日从这个 UTC 整点开始；auto：长于 12 小时的记录里有 60 % 以上从同一整点开始就取它，否则取 0 |
-| `day_label` | `utc_start` | 选择 | 处理日的标签：utc_start，或固定时差如 "UTC+8" |
-| `velocity_range_kms` | `[0.1, 5.0]` | 选择 | 本区 Rayleigh 波相速度的大致范围 [慢, 快]（km/s），决定时延窗、频带和 F-J 扫描范围。默认值覆盖软土到硬岩；范围写窄一些可以省计算时间（reference 步骤会报告实测速度） |
-| `response` | `null` | 选择 | 仪器响应文件或目录（StationXML、dataless SEED、RESP）：给了就在 clean 去响应（Bensen et al. 2007）。不给时全部台站必须是同一型号 |
-| `line` | `null` | 选择 | 台站表有测线列时：本项目处理哪条测线（一条测线一个项目） |
-| `min_trace_length_s` | `0.0` | 经验值 | 短于这个长度的记录片段不用 |
-| `exclude_stations` | `[]` | 选择 | 整个不用的台站（你已知仪器或耦合有问题） |
-| `start_date` | `null` | 选择 | 使用的第一个处理日（YYYY-MM-DD） |
-| `end_date` | `null` | 选择 | 使用的最后一个处理日（YYYY-MM-DD） |
+## disp（第 2 步）
 
-## 4. clean：清洗（`01_clean`）
+| 键 | 默认 | 含义与依据 |
+|---|---|---|
+| `fmin_hz`、`fmax_hz` | `null` | 测量频带；`null`：互相关频带向内收，使端点滤波器的半增益点在带内，f_c (1 ∓ √(ln 2/α)) |
+| `per_octave` | 12 | 每倍频程的测量频率数（约定） |
+| `reference` | `fj` | `fj`（本台阵 F-J 谱）、`model`（一维 Vs 模型）、`file`（一条曲线），见方法第 4 节 |
+| `reference_file` | `null` | `model`：`depth_km Vs_km/s`；`file`：`frequency_Hz c_km/s` |
+| `fj_band_hz` | `null` | F-J 拾取的频段（`null`：全部频率） |
+| `alpha` | 5 | 高斯滤波器宽度，exp(−α((f′−f)/f)²)（FTAN；局部尺度的约定值） |
+| `group_window` | 0.3 | 群到时在参考群速度 ±30 % 内搜索（约定） |
+| `snr_min` | 5 | 到时的最低信噪比（文献常用 5–15） |
+| `min_wavelengths` | 2 | 最短路径（波长数）（Bensen et al. 2007：3；Luo et al. 2015：1–2） |
+| `max_jackknife_rel` | 0.02 | 刀切标准差与 c 之比的上限（约定；`null` 为不用） |
+| `reference_error` | 0.1 | 参考曲线最大误差的假定值；只在路径不超过 1/(2 × 此值) 个波长处确定整周数（理论：分支间距的一半） |
+| `slip_cycles` | 0.3 | 相位跳动超过这么多周时曲线结束（AFTAN） |
+| `min_points` | 6 | 接受曲线的最少连续频点数（约定） |
 
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `write_archive` | `true` | 技术 | 写出清洗后的日文件（大小与原始数据相当）；false：后面的步骤直接读原始文件 |
-| `encoding` | `FLOAT32` | 技术 | 归档 miniSEED 的编码 |
-| `min_free_disk_factor` | `1.2` | 技术 | 剩余磁盘小于归档估计大小的这个倍数时拒绝写 |
+## inv（第 3 步）
 
-## 5. correlation：逐小时互相干（`02_ccf`）
+| 键 | 默认 | 含义与依据 |
+|---|---|---|
+| `grid_km` | `null` | 水平节点间距；`null`：实测波长中位数 / 3（横向分辨率约一个波长，用三个节点采样） |
+| `depths_km` | `null` | 深度节点；`null`：从 0 起步长 max(最短波长/4, 深度/4)，到超过最长波长一半为止（Foti et al. 2018 第 4.2.3 节）；最后一个节点是固定半空间 |
+| `start_model_file` | `null` | `depth_km Vs_km/s`；`null`：对中位数曲线做一维反演 |
+| `per_octave` | 4 | 每倍频程使用的周期数（测量周期的子集） |
+| `iterations` | 6 | 三维反演迭代次数 |
+| `weight` | 0.5 | 平滑权重（走时均方根拟合差（s）与均方根粗糙度（km/s）之比；数据项和模型项取均值，数值不随数据量和节点数变化）。在 lant 加高斯噪声的合成反演检验上选取（最优 0.35–0.5）；越大越平滑 |
+| `damping` | 0.1 | 向起始模型的阻尼，使没有射线的节点留在起始模型附近 |
+| `outlier_mad` | 3 | 偏离本周期残差中位数超过 k × 1.4826 MAD 的走时剔除（Leys et al. 2013：3 为"非常保守"） |
+| `vs_min_kms`、`vs_max_kms` | `null` | Vs 上下限；`null`：起始模型最慢 Vs 的 0.6 倍和最快的 1.4 倍（约定） |
 
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `fs_max` | `50.0` | 选择 | 最高处理采样率（Hz）；频带上限为 0.4 fs / (1 + sqrt(ln 2 / alpha))：小孔径、高频台阵可调高 |
-| `fs` | `auto` | 规则 | 降采样后的采样率；auto：不超过 fs_max、且每种原始采样率都能整数倍降到的最高整数采样率 |
-| `seg_len_s` | `auto` | 规则 | 分段长度；auto：max(2 × maxlag（循环相关）, 10 个最长周期) |
-| `seg_step_s` | `auto` | 文献 | 分段步长；auto：段长的一半（50 % 重叠，Seats et al. 2012） |
-| `maxlag_s` | `auto` | 规则 | 时延窗；auto：最长台距 / (0.6 × 最慢速度) + 4 个最长周期（最慢的到时之后留一段噪声算信噪比） |
-| `fmin_hz` | `auto` | 规则 | 互相关频带下限；auto：最长台对在最慢速度下为 2 个波长的频率，再放宽到该频率高斯滤波器的半增益点 |
-| `fmax_hz` | `auto` | 理论 | 互相关频带上限；auto：dispersion.fmax_hz 放宽到其高斯滤波器的半增益点，不超过 0.4 fs（抗混叠滤波） |
-| `max_distance_km` | `null` | 选择 | 只对不超过这个距离的台对做互相关（不写：全部台对）；用于台对放不进内存的超大台阵 |
-| `smooth_bins` | `1` | 文献 | 相干分母在频率上的平滑点数；1 = 不平滑（Xu et al. 2021 的互相干） |
-| `max_over_std` | `10.0` | 文献 | 分段峰值超过该台站日标准差的这个倍数就丢弃（NoisePy 的 max_over_std，Jiang & Denolle 2020） |
-| `remove_1s_comb` | `auto` | 文献 | 逐小时扣除按 1 s 折叠出的波形（记录器每秒一次的相干噪声，Takagi et al. 2015）；auto：只对 clean 检出该信号的台站做（折叠记录的 F 检验）；true：全部台站；false：不做 |
+## checker
 
-## 6. stack：叠加与台站诊断（`03_stack`）
+| 键 | 默认 | 含义与依据 |
+|---|---|---|
+| `amplitude` | 0.1 | 起始模型的 ±10 % |
+| `noise` | `auto` | 按周期取三维模型剩余残差的稳健标准差（s）（Rawlinson & Spakman 2016：噪声与数据相当）；或给秒数 |
 
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `block_hours` | `auto` | 规则 | 刀切用的子叠加长度；auto：24、12、8、6、4、3、2、1 小时中能让中位台站至少有 8 个子叠加的最长者 |
-| `station_qc.enabled` | `true` | 选择 | 台站诊断：列出相关系数或时移与其余不同的台站子叠加（不经你同意不会剔除） |
-| `station_qc.partners` | `20` | 经验值 | 每个台站通过它与最近的这么多个台站组成的台对来比较 |
-| `station_qc.min_partners` | `5` | 经验值 | 判断一个台站子叠加至少需要的有数据台对数（不足：不判断，并在报告里写明） |
-| `exclude_station_days` | `[]` | 选择 | 你要剔除的台站日：[台站, YYYYDDD]、[台站, "YYYYDDD-"] 等 |
-| `exclude_station_hours` | `[]` | 选择 | 你要剔除的台站小时：[台站, YYYYDDD, 小时] |
-| `exclude_candidates` | `false` | 选择 | 同时剔除诊断列出的候选（由 `lant confirm stack --exclude-candidates` 设置） |
+## plots、cores
 
-## 7. reference：参考曲线（`04_reference`）
-
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `source` | `fj` | 文献 | fj：本台阵的频率—贝塞尔谱（Wang et al. 2019）；file：你给的曲线（AFTAN 和 Yao 的 EGFAnalysisTimeFreq 也接受参考曲线） |
-| `file` | `null` | 选择 | 借用的曲线：lant 写的 npz，或文本 “频率_Hz 相速度_km/s” |
-| `zone_km` | `null` | 选择 | 不写：全台阵一条参考曲线；写边长（km）：按路径中点落在哪个方形分区，每个分区各做一条 F-J 曲线，用于台阵内结构变化强的情况；分区曲线不清楚时用全台阵曲线 |
-| `fj_mode` | `max_peak` | 经验值 | max_peak：取最强的脊（面状台阵）；track_fundamental：从一个无歧义的起点跟踪脊（线状台阵） |
-| `normal_dispersion` | `true` | 选择 | track_fundamental：曲线不得随频率升高；有速度倒转、脊确实上升时设 false |
-| `fj_rmax_lambda` | `5.0` | 经验值 | 每个频率的 F-J 谱只用不超过这么多个波长的台对 |
-| `fj_c_nominal` | `auto` | 规则 | 把 fj_rmax_lambda 换算成距离用的速度；auto：先用全部台对做一遍并拾取曲线，第二遍用这条曲线（共两遍） |
-| `fj_cmin` | `auto` | 规则 | 扫描的最慢速度；auto：0.5 × data.velocity_range_kms 的下限 |
-| `fj_cmax` | `auto` | 规则 | 扫描的最快速度；auto：1.5 × data.velocity_range_kms 的上限 |
-| `fj_dc` | `auto` | 规则 | 扫描的速度步长；auto：不超过 max(fj_cmin / 200, 扫描宽度 / 3000) 的 1-2-2.5-5 系列步长 |
-| `fj_nfft` | `auto` | 技术 | 谱的 FFT 长度；auto：不小于 4 倍时延窗的 2 的幂，至少 8192 |
-| `fj_fit_fmax` | `auto` | 规则 | 参与拟合的拾取的最高频率；auto：最长一串清楚拾取的上端 |
-| `track_start_band_hz` | `auto` | 规则 | 脊跟踪的起点频带；auto：拾取最清楚的那个倍频程 |
-
-## 8. dispersion：频散测量与质量控制（`05_dispersion`）
-
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `fmin_hz` | `auto` | 规则 | 最低测量频率；auto：最长台对等于 qc.lam_c 个参考曲线波长的频率 |
-| `fmax_hz` | `auto` | 理论 | 最高测量频率；auto：0.4 fs / (1 + sqrt(ln 2 / alpha))，即高斯滤波器仍在抗混叠频带内的最高频率；数据实际能到多高由质控决定 |
-| `per_octave` | `12` | 文献 | 每倍频程的测量频点数，对数等间隔（Xu et al. 2021） |
-| `vmin` | `auto` | 规则 | 速度轴下限；auto：0.6 × 频带内参考曲线的最慢速度 |
-| `vmax` | `auto` | 规则 | 速度轴上限；auto：1.3 × 最快速度 |
-| `dv` | `auto` | 规则 | 速度轴步长；auto：不超过 vmin / 100 的 1-2-2.5-5 系列步长 |
-| `alpha` | `5.0` | 文献 | 高斯滤波器 exp(-alpha ((f - fc) / fc)^2) 的相对宽度，同 FTAN（Bensen et al. 2007）；越大越窄 |
-| `phase_constant` | `pi/4` | 理论 | 因果 J0 互相关约定用 π/4；负时间导数 EGF 约定需另计相移，不能直接套用相位符号 |
-| `min_dist_km` | `0.0` | 选择 | 短于此的台对不测（0：只按 lam_min） |
-| `lam_min` | `1.0` | 文献 | 路径短于这么多个参考波长就不测（Luo et al. 2015：1 个波长可以够） |
-| `anchor_max_lambda` | `3.5` | 经验值 | 在路径长为 lam_min 到这么多个波长的地方定周数（周数少，参考曲线不至于差一周） |
-| `njack` | `5` | 经验值 | 子叠加的分组刀切组数；auto：数据量不少于最满子叠加 25 % 的子叠加个数 |
-| `min_jackknife_groups` | `3` | 经验值 | 有数据的组少于此数：没有误差估计，该点被拒 |
-| `chunk` | `20` | 技术 | 每个任务的台对数 |
-| `side_off_bands` | `''` | 选择 | 不应用旁瓣规则的频带 'lo-hi,...' |
-| `qc.snr_c` | `6.0` | 文献 | 拾取到时处的信噪比（峰值 / 尾部噪声均方根）；文献用 4–10（Bensen et al. 2007 对全球数据用 10） |
-| `qc.jk_c_rel` | `0.02` | 经验值 | 允许的刀切标准误差，相对于速度 |
-| `qc.ucons_c` | `0.25` | 经验值 | 实测群速度与相速度曲线推出的群速度之间允许的不一致（0 = 关） |
-| `qc.side_c` | `1.0` | 经验值 | 竞争包络峰相对于拾取峰的允许高度 |
-| `qc.dev_pre` | `0.3` | 经验值 | 群速度拾取相对于参考的允许偏离（0 = 关） |
-| `qc.lam_c` | `2.0` | 文献 | 接受的点要求路径不短于这么多个自身波长（Bensen et al. 2007 用 3；Luo et al. 2015 表明 1 可以够） |
-| `qc.min_run` | `6` | 经验值 | 接受的点必须连成至少这么多个频点的一段 |
-| `qc.snr_g` | `4.0` | 经验值 | 第一道门：一个频率的最大信噪比要达到此值 |
-
-## 9. export：交给反演的曲线（`05_dispersion/curves.csv`）
-
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `tmin_s` | `auto` | 规则 | 导出的最短周期；auto：1 / dispersion.fmax_hz |
-| `tmax_s` | `auto` | 规则 | 导出的最长周期；auto：1 / dispersion.fmin_hz |
-| `one_segment` | `true` | 文献 | 每个台对只留一段连续曲线，取最长的（同 Yao 的 EGFAnalysisTimeFreq 的拾取方式） |
-| `curve_figures` | `30` | 选择 | 画多少张单台对图：按台距均匀选这么多张，外加异常的（0 不画，-1 全画） |
-
-## 10. inversion：DSurfTomo 反演（`06_inversion`）
-
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `wave` | `rayleigh_phase` | 选择 | rayleigh_phase（只支持这一种） |
-| `median_min_pairs` | `50` | 经验值 | 一个周期进入一维模型平均曲线所需的台对数 |
-| `depth_sequence_km` | `auto` | 规则 | 深度节点；auto：步长 max(最短波长 / 4, 深度 / 4)，到最长波长的一半为止（经验法则，Foti et al. 2018） |
-| `fine_step_km` | `0.0` | 选择 | 在 fine_zmax_km 以浅每隔这么多 km 加一个深度节点（0 = 不加） |
-| `fine_zmax_km` | `0.0` | 选择 | 见 fine_step_km |
-| `grid_spacing_deg` | `auto` | 规则 | 网格间距 [纬, 经]；auto（由 inversion 步骤给出）：两个方向都取测量波长 c T 中位数 / 3（用户定的规则；横向分辨约为一个波长） |
-| `line_strip_cells` | `null` | 经验值 | 线状台阵：台站两侧沿垂线方向各保留的网格数 |
-| `start_model.source` | `invert` | 选择 | invert：由本台阵平均曲线反演一维模型；file：深度、Vs 两列的文件 |
-| `start_model.file` | `null` | 选择 | 你自己的起始模型（两列：深度 km、Vs km/s） |
-| `start_model.smooth` | `0.01` | 经验值 | 一维反演：模型曲率的权重 |
-| `start_model.damp` | `0.05` | 经验值 | 一维反演：阻尼 |
-| `start_model.iterations` | `14` | 经验值 | 一维反演：迭代次数 |
-| `start_model.minthk` | `3` | 技术 | 一维正演：每个节点间隔的子层数 |
-| `weight` | `1.0` | 经验值 | lant 正则化的平滑权重（methods.zh.md 第 8.4 节）：模型本身的 Laplacian（按参数个数取均值）与走时残差均方之比，不随走时条数和节点数变化（单位 s/(km/s)）；默认 1，在 lant 的面状合成算例上标定（与真实模型的误差最小；测线未标定） |
-| `vmin` | `auto` | 规则 | Vs 下限；auto：0.6 × 起始模型最慢的 Vs |
-| `vmax` | `auto` | 规则 | Vs 上限；auto：1.4 × 最快的 Vs |
-| `iterations` | `6` | 经验值 | 三维反演的迭代次数（每次重算射线、深度核并做一次最小二乘更新）；6，即标定平滑权重时用的次数（methods.zh.md 第 8.4 节）：正则化约束模型本身时模型会稳定下来，面阵合成例第 3 次以后残差变化不到 1 % |
-| `per_octave` | `4` | 规则 | 三维反演每倍频程的周期数：取测量周期中落在这个更粗的、过 1 Hz 的网格上的那些（每 dispersion.per_octave / 此值 个取 1 个）。测量所用的高斯滤波器（dispersion.alpha）在约一个倍频程上取平均：相隔 1/12 倍频程的两个滤波器共有 exp(−α x²/2) = 99 % 的能量（x = 2^(1/12) − 1，α = 5），相隔 1/4 倍频程仍有 92 %，略去的周期几乎不带独立信息，而走时和深度核的计算量与周期数成正比 |
-| `outlier_mad` | `3.0` | 文献 | 残差偏离本周期残差中位数超过这个值 × 1.4826 MAD 的走时在迭代中不用（中位数绝对偏差，Rousseeuw & Croux 1993；3 为“非常保守”，Leys et al. 2013；按周期，因为走时误差随周期增大） |
-| `noise` | `auto` | 规则 | 棋盘合成走时所加的高斯噪声：数字为各走时的比例（DSurfTomo 的 noiselevel），列表 [[周期 s, 标准差 s], ...] 为各周期的噪声；auto：按周期取主工程最终模型残差的 1.4826 MAD（秒），使合成数据与实际数据拟合后剩下的误差一样大（Rawlinson & Spakman 2016；按周期，因为相位误差随周期增大而不随路径增长）；这时棋盘在主工程之后运行 |
-
-## 11. checks：棋盘、对照、预检
-
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `checkerboards` | `auto` | 规则 | 水平棋盘 [{name, cell_km}]，每个都是完整反演；cell_km 为图案的半周期；auto（由 inversion 步骤给出）：三个，格子为测量波长 c T 中位数的 1、2、3 倍（横向分辨受主要波长限制，Yao et al. 2006；多尺度检验，Rawlinson & Spakman 2016；1、2、3 倍为用户的选择）；线阵沿测线 |
-| `vertical` | `auto` | 规则 | 随深度变化的棋盘 [{name, cell_km, reversal_depths_km}]；auto（由 inversion 步骤给出）：一个，格子为 2 倍波长中位数，在波长中位数 / 3 处变号一次（Rayleigh 相速度最敏感的深度，Fang et al. 2015 的经验法则）；该深度上下没有都可更新的深度节点时不做 |
-| `amplitude` | `0.1` | 经验值 | 棋盘扰动幅度，各深度一维 Vs 的比例 |
-| `controls` | `[start_grad0.05]` | 经验值 | 对照反演：reg_x<f> 平滑权重乘以 f（看模型对权重选择的稳定性），reg_w<w> 给定权重，start_grad<f> 换起始模型 |
-| `precheck.min_kept` | `0.5` | 经验值 | 第一次迭代中剔除规则（inversion.outlier_mad）保留的数据少于这个比例时，该工程判为无效 |
-| `iteration_residuals` | `false` | 选择 | 同时评估每次迭代的模型（每次一遍正演） |
-
-## 12. plots：出图
-
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `backend` | `gmt` | 选择 | gmt：参考命令接口；pygmt：独立 Python GMT C API 绘图；两者均保留 GMT 依赖 |
-| `formats` | `[png]` | 选择 | 图的格式；仅支持 [png] |
-| `dpi` | `300` | 选择 | png 图的分辨率 |
-| `topography` | `auto` | 选择 | 地图的地形底图；auto：从 GMT 数据服务器取 SRTM 1 角秒瓦片（Farr et al. 2007），存在 ~/.cache/lant/srtm1（只请求瓦片名；地图宽度不超过 3 度）；也可写网格文件或 GMT 远程网格；null：不画地形 |
-| `vs_range` | `auto` | 规则 | 色标范围；auto：台站下方模型的第 2–98 百分位，取到 0.1 km/s |
-| `vs_cpt` | `seis` | 选择 | GMT 色标 |
-| `slice_depths_km` | `auto` | 规则 | 切片深度；auto：从更新过的深度节点里均匀取至多 8 个 |
-| `sections` | `auto` | 规则 | 剖面 [{name, start, end}]；auto：过台阵中心沿两个主轴各一条（面状），或沿测线（线状） |
-| `section_zmax_km` | `null` | 选择 | 剖面深度（默认：最深的更新节点） |
-| `contour_step` | `auto` | 规则 | 等值线间隔；auto：约为色标范围的十分之一 |
-| `font_scale` | `1.0` | 选择 | 字号系数 |
-| `pair_example` | `null` | 选择 | 单台对图（叠加时长、频散）画哪些台对：一个台对名或列表；默认在曲线较长的台对中按距离的 20 % / 50 % / 80 % 分位数取三对 |
-| `ccf_bands_hz` | `[]` | 选择 | 互相关走时图的显示频段 [[下限_Hz, 上限_Hz], ...]；[] 使用默认分频。只影响重画；频段须在已保存的互相关计算频带内 |
-| `ccf_stack_band_hz` | `null` | 选择 | 逐小时叠加诊断图的显示频段 [下限_Hz, 上限_Hz]；null 使用该台对的测量频段。只影响重画 |
-| `ccf_maxlag_s` | `null` | 选择 | 图中显示的最大绝对时延（秒），不超过已保存的时延窗；null 按到时确定。只影响重画 |
-
-## 13. resources：计算资源
-
-| 键 | 默认值 | 依据 | 含义 |
-|---|---|---|---|
-| `cores` | `auto` | 技术 | 每一步的核数；auto：max(1, 0.8 × (可用 CPU 数 − 1 分钟负载))，负载里扣掉本次运行自己造成的部分（“空闲”指别人没在用的核），每一步、每个反演工程开始时重算；并行任务还受“估计峰值不超过可用内存一半”限制（lant/resources.py）；写整数则照用 |
-
-
-## 14. 线状台阵不同的默认值
-
-线状台阵（`project.array_type: line`，或 `auto` 判断为线状）使用：
-
-- `data.min_trace_length_s`: `600.0`
-- `reference.fj_mode`: `track_fundamental`
-- `dispersion.njack`: `auto`
-- `inversion.median_min_pairs`: `20`
-- `inversion.line_strip_cells`: `1.0`
-
-## 参考文献
-
-- Aster, R. C., Borchers, B., & Thurber, C. H. (2018). *Parameter Estimation and Inverse Problems* (3rd ed.), chapter 4. Elsevier.
-- Bensen, G. D., et al. (2007). Processing seismic ambient noise data to obtain reliable broad-band surface wave dispersion measurements. *GJI*, 169, 1239–1260. doi:10.1111/j.1365-246X.2007.03374.x
-- Brocher, T. M. (2005). Empirical relations between elastic wavespeeds and density in the Earth's crust. *BSSA*, 95, 2081–2092. doi:10.1785/0120050077
-- Constable, S. C., Parker, R. L., & Constable, C. G. (1987). Occam's inversion. *Geophysics*, 52, 289–300. doi:10.1190/1.1442303
-- Fang, H., Yao, H., Zhang, H., Huang, Y.-C., & van der Hilst, R. D. (2015). Direct inversion of surface wave dispersion for three-dimensional shallow crustal structure based on ray tracing. *GJI*, 201, 1251–1263. doi:10.1093/gji/ggv080
-- Farr, T. G., et al. (2007). The Shuttle Radar Topography Mission. *Rev. Geophys.*, 45, RG2004. doi:10.1029/2005RG000183
-- Foti, S., et al. (2018). Guidelines for the good practice of surface wave analysis. *Bull. Earthquake Eng.*, 16, 2367–2420. doi:10.1007/s10518-017-0206-7
-- Herrin, E., & Goforth, T. (1977). Phase-matched filters: application to the study of Rayleigh waves. *BSSA*, 67, 1259–1275.
-- Jiang, C., & Denolle, M. A. (2020). NoisePy: a new high-performance Python tool for ambient-noise seismology. *SRL*, 91, 1853–1866. doi:10.1785/0220190364
-- Jing, J., et al. (2025). Ambient noise seismic tomography of Tonglushan skarn-type Cu-Fe-Au deposit in Eastern China. *Ore Geology Reviews*, 184, 106718. doi:10.1016/j.oregeorev.2025.106718
-- Lévêque, J.-J., Rivera, L., & Wittlinger, G. (1993). On the use of the checker-board test to assess the resolution of tomographic inversions. *GJI*, 115, 313–318.
-- Levshin, A. L., & Ritzwoller, M. H. (2001). Automated detection, extraction, and measurement of regional surface waves. *Pure Appl. Geophys.*, 158, 1531–1545. doi:10.1007/978-3-0348-8264-4_11
-- Leys, C., Ley, C., Klein, O., Bernard, P., & Licata, L. (2013). Detecting outliers: do not use standard deviation around the mean, use absolute deviation around the median. *J. Exp. Soc. Psychol.*, 49, 764–766. doi:10.1016/j.jesp.2013.03.013
-- Lin, F.-C., Moschetti, M. P., & Ritzwoller, M. H. (2008). Surface wave tomography of the western United States from ambient seismic noise: Rayleigh and Love wave phase velocity maps. *GJI*, 173, 281–298. doi:10.1111/j.1365-246X.2008.03720.x
-- Luo, Y., Yang, Y., Xu, Y., Xu, H., Zhao, K., & Wang, K. (2015). On the limitations of interstation distances in ambient noise tomography. *GJI*, 201, 652–661. doi:10.1093/gji/ggv043
-- Morozov, V. A. (1966). On the solution of functional equations by the method of regularization. *Soviet Math. Dokl.*, 7, 414–417.
-- Rawlinson, N., & Spakman, W. (2016). On the use of sensitivity tests in seismic tomography. *GJI*, 205, 1221–1243. doi:10.1093/gji/ggw084
-- Seats, K. J., Lawrence, J. F., & Prieto, G. A. (2012). Improved ambient noise correlation functions using Welch's method. *GJI*, 188, 513–523. doi:10.1111/j.1365-246X.2011.05263.x
-- Sens-Schönfelder, C. (2008). Synchronizing seismic networks with ambient noise. *GJI*, 174, 966–970. doi:10.1111/j.1365-246X.2008.03842.x
-- Shapiro, N. M., & Singh, S. K. (1999). A systematic error in estimating surface-wave group-velocity dispersion curves and a procedure for its correction. *BSSA*, 89, 1138–1142.
-- Shaw, P. R., & Orcutt, J. A. (1985). Waveform inversion of seismic refraction data and applications to young Pacific crust. *Geophys. J. R. astr. Soc.*, 82, 375–414.
-- Stehly, L., Campillo, M., & Shapiro, N. M. (2007). Traveltime measurements from noise correlation: stability and detection of instrumental time-shifts. *GJI*, 171, 223–230. doi:10.1111/j.1365-246X.2007.03492.x
-- Takagi, R., Nishida, K., Aoki, Y., et al. (2015). A single bit matters: coherent noise of seismic data loggers. *SRL*, 86(3), 901–907. doi:10.1785/0220150030
-- Taylor, J. R. (1997). *An Introduction to Error Analysis* (2nd ed.), chapter 6 (Chauvenet's criterion). University Science Books.
-- Wang, J., Wu, G., & Chen, X. (2019). Frequency-Bessel transform method for effective imaging of higher-mode Rayleigh dispersion curves from ambient seismic noise data. *JGR Solid Earth*, 124, 3708–3723. doi:10.1029/2018JB016595
-- Xu, Y., Lebedev, S., Meier, T., Bonadio, R., & Bean, C. J. (2021). Optimized workflows for high-frequency seismic interferometry using dense arrays. *GJI*, 227, 875–897. doi:10.1093/gji/ggab260
-- Yao, H., van der Hilst, R. D., & de Hoop, M. V. (2006). Surface-wave array tomography in SE Tibet from ambient seismic noise and two-station analysis – I. Phase velocity maps. *GJI*, 166, 732–744. doi:10.1111/j.1365-246X.2006.03028.x
+| 键 | 默认 | 含义 |
+|---|---|---|
+| `plots.relief` | `auto` | 地图底下的地形：`auto` 用 GMT 的 `@earth_relief_03s`（需要联网；取不到时画不带地形的图）、地形网格文件，或 `null` |
+| `plots.vs_range_kms` | `null` | Vs 色标范围（`null`：台站下方模型的 2–98 % 分位） |
+| `plots.slice_depths_km` | `null` | 平面切片的深度（`null`：最多 8 个深度节点） |
+| `plots.dpi` | 300 | PNG 图的分辨率 |
+| `cores` | `auto` | `auto`：空闲 CPU 的 80 %（共享机器上给别人留余量）；或给数字 |

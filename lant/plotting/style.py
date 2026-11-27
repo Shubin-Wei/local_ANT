@@ -1,4 +1,4 @@
-"""Shared matplotlib style of the non-map figures (journal style: serif STIX type, ticks inside, no titles)."""
+"""Shared matplotlib style of the figures that are not maps (journal style: serif STIX type, ticks inside)."""
 
 import matplotlib
 
@@ -54,13 +54,21 @@ def apply(scale=1.0):
     )
 
 
-def save(fig, out, cfg):
+def log_axis(axis):
+    """Logarithmic axis labelled with plain numbers (0.5, 1, 2, 5 ...) instead of powers of ten."""
+    from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
+
+    axis.axes.set_xscale("log") if axis is axis.axes.xaxis else axis.axes.set_yscale("log")
+    axis.set_major_locator(LogLocator(subs=(1.0, 2.0, 5.0)))
+    axis.set_major_formatter(FuncFormatter(lambda v, _: "%g" % v))
+    axis.set_minor_formatter(NullFormatter())
+
+
+def save(fig, out, dpi=300):
+    """out without extension -> out.png."""
     import os
 
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-    files = []
-    for f in cfg["plots"]["formats"]:
-        fig.savefig(out + "." + f, dpi=cfg["plots"]["dpi"])
-        files.append(out + "." + f)
+    fig.savefig(out + ".png", dpi=dpi)
     plt.close(fig)
-    return files
+    return out + ".png"

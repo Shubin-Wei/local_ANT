@@ -4,28 +4,21 @@
 
 ## Reporting a problem
 
-Open an issue with the bug template. It asks for what makes a problem reproducible without your data:
-
-- `lant --version` and the output of `lant check`;
-- the command, and what it printed;
-- `lant status -c CONFIG --json`, and the report of the failed step (`OUT/.lant/steps/<step>.md`);
-- the end of `OUT/.lant/lant.log`.
-
-Do not attach raw records or station coordinates you may not share; a small example that shows the problem is the most useful.
+Open an issue with the bug template: `lant --version`, `lant check`, the command, and the `log.txt` of the step that failed. Do not attach data you may not share; a small example that shows the problem is the most useful.
 
 ## Changing the code
 
-Follow the [development rules](docs/engineering.md) and the code section of [AGENTS.md](AGENTS.md): one purpose per commit, defaults only in `lant/config.py` with their basis in `lant/params.py`, every document in English and Chinese, the forward port compatible with DSurfTomo, intentional inversion departures documented and compared, and no method or threshold without a source.
+- One purpose per commit; formatting in its own commit.
+- One responsibility per module; about 500 lines is the point to check whether a module holds several.
+- Every method or default needs a source (literature or theory), or is labelled "convention" in docs/parameters.md. Nothing for one particular data set.
+- No silent failures: errors say what is wrong and what to change.
+- A changed setting or method: update `lant/config_template.yaml` and the documents (English and Chinese), and `docs/history.md`.
 
 Before a pull request:
 
 ```bash
 pip install -e ".[dev]"
-ruff check lant tests tools
-ruff format --check lant tests tools
-python tools/make_parameter_doc.py --check
+ruff check lant tests
+ruff format --check lant tests
 python -m pytest tests
-python tests/smoke_records.py make --out DIR && python tests/smoke_records.py run --dir DIR   # the chain runs
 ```
-
-A change of a computation needs the same-input comparison of the deterministic products (stack, measurements, solver inputs) against the previous version, and a note in `docs/history.md`.
