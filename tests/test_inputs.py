@@ -128,3 +128,13 @@ def test_init_suggestions_and_written_file(tmp_path):
     cfg = config.load(str(path))
     assert cfg["clean"]["fs_hz"] == v["clean.fs_hz"] and cfg["data"]["velocity_range_kms"] == [1.0, 3.0]
     assert "lant init:" in path.read_text() and set(cfg) - {"_file"} == set(config.defaults())
+
+
+def test_example_configuration_is_complete_and_valid():
+    import os
+
+    path = os.path.join(os.path.dirname(__file__), "..", "example.yaml")
+    cfg = config.load(path)
+    assert set(cfg) - {"_file"} == set(config.defaults())
+    for check in (config.check_clean, config.check_cc, config.check_disp, config.check_inv):
+        check(cfg)

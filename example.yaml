@@ -1,0 +1,91 @@
+# Example configuration, as `lant init` writes it for an areal array of 400 nodes over about 6 x 6 km, records
+# at 250 Hz, and Rayleigh phase velocities of 0.5-3 km/s (lant init -o example.yaml --raw /data/raw
+# --stations /data/stations.txt --out /data/out --velocity 0.5 3.0).  Lines "# lant init:" give the rule of each
+# suggested number.  For your own array run lant init: the numbers depend on the station layout and the records.
+
+# lant configuration.  This file is also the list of every setting and its default: a key that is not in it is an
+# error.  `lant init` writes a copy with the numbers it suggests for your array (and how it got them).
+# Paths may be absolute or relative to this file.  The basis of every default: docs/parameters.md.
+
+output_dir: /data/out         # REQUIRED: every result goes here, one folder per step (1_clean, 2_cc, ...)
+
+data:
+  raw_dir: /data/raw          # REQUIRED: continuous records, any format ObsPy reads, any folder layout
+  station_file: /data/stations.txt # REQUIRED: table with a header line: network station longitude latitude [elevation]
+                              #   (CSV or whitespace separated; the network column may be left out), or StationXML
+  channel: '*Z'               # channel codes of the vertical component (shell pattern, e.g. "*Z", "DPZ", "*3")
+  response: null              # StationXML / RESP / dataless SEED file or folder: the responses are removed
+                              #   (pre-filter flat over cc.fmin_hz-cc.fmax_hz).  Leave null only when every
+                              #   station has the same instrument model.
+  start_date: null            # YYYY-MM-DD: first UTC day used (null: from the first record)
+  end_date: null              # YYYY-MM-DD: last UTC day used (null: to the last record)
+  exclude_stations: []        # NET.STA names left out
+  velocity_range_kms: [0.5, 3.0] # REQUIRED: [slowest, fastest] Rayleigh phase velocity expected in the area (km/s).
+                              #   Used for the suggested lag window and as the velocity axis of the measurement.
+
+clean:                        # step 1: station-days cut, cleaned and decimated (lant clean)
+  # lant init: lowest whole-number rate reachable from the raw rates [250.0] with fmax <= 0.4 fs
+  fs_hz: 10.0                 # REQUIRED: sampling rate after decimation (Hz); a whole fraction of every raw rate
+
+cc:                           # step 2: cross-correlation (lant cc)
+  # lant init: 2 x v_fast 3 km/s / longest pair 8.553 km = 0.7015 Hz, x (1 - 0.372)
+  fmin_hz: 0.44               # REQUIRED: lower edge of the correlation band (Hz)
+  # lant init: v_slow 0.5 km/s / (2 x median station spacing 0.1584 km) = 1.578 Hz, x (1 + 0.372); at most 0.4 x the lowest raw rate (100 Hz)
+  fmax_hz: 2.17               # REQUIRED: upper edge (Hz); at most 0.4 x clean.fs_hz (anti-alias filter)
+  # lant init: longest pair 8.553 km / (0.6 x 0.5 km/s) + 4 / fmin
+  maxlag_s: 38.0              # REQUIRED: lags kept, -maxlag..+maxlag (s)
+  # lant init: max(2.5 x maxlag, 10 / fmin), up to 10 s
+  segment_s: 100.0            # REQUIRED: length of the segments that are correlated (s); at least 2 x maxlag_s
+  overlap: 0.5                # overlap of consecutive segments (Welch averaging, Seats et al. 2012)
+  max_over_std: 10.0          # a segment whose peak exceeds this x the std of its station-day is not used
+                              #   (removes earthquakes and glitches; NoisePy, Jiang & Denolle 2020); 0: off
+  # lant init: the records span 720.0 h: the longest sub-stack giving at least 3 for the jackknife
+  substack_hours: 24          # length of the sub-stacks kept for the error estimate (24: one per day)
+  max_distance_km: null       # correlate only pairs up to this distance (null: all pairs)
+
+disp:                         # step 3: phase velocities (lant disp)
+  fmin_hz: null               # measurement band (null: the correlation band)
+  fmax_hz: null
+  per_octave: 12              # measurement frequencies per octave
+  reference: fj               # reference curve: fj (this array's F-J spectrum) | model (1-D Vs model) | file
+  reference_file: null        # model: two columns depth_km Vs_km/s (nodes, linear in between);
+                              #   file: two columns frequency_Hz phase_velocity_km/s
+  fj_band_hz: null            # fj: [lo, hi] band where the F-J fundamental-mode ridge is picked (null: whole band)
+  alpha: 5.0                  # Gaussian filter width: exp(-alpha ((f - fc) / fc)^2) (constant relative width)
+  group_window: 0.3           # the group arrival is searched within +-30 % of the reference group velocity
+  snr_min: 5.0                # signal-to-noise ratio of the arrival at least this
+  min_wavelengths: 2.0        # path at least this many wavelengths (Bensen et al. 2007: 3; Luo et al. 2015: 1-2)
+  max_jackknife_rel: 0.02     # jackknife standard deviation at most this fraction of c (null: not used); a pair
+                              #   with fewer than 3 sub-stacks has no error estimate and is then rejected
+  reference_error: 0.1        # largest relative error of the reference assumed where the cycle count is set: the
+                              #   count is taken only where the path is at most 1 / (2 x this) wavelengths long
+  slip_cycles: 0.3            # the phase is followed from frequency to frequency; a jump larger than this
+                              #   fraction of a cycle ends the curve
+  min_points: 6               # a curve needs at least this many consecutive frequencies
+
+inv:                          # step 4: 3-D inversion (lant inv)
+  data: phase                 # travel times inverted: phase | group | both (Rayleigh phase and/or group velocity)
+  grid_km: null               # horizontal node spacing (null: median measured wavelength / 3)
+  depths_km: null             # depth nodes, from 0 (null: rule from the average curve, see the log)
+  start_model_file: null      # two columns depth_km Vs_km/s (null: 1-D inversion of the median curve)
+  per_octave: 4               # periods per octave used in the inversion (a subset of the measured ones)
+  iterations: 6               # iterations of the 3-D inversion
+  weight: 0.5                 # smoothing weight (rms travel-time misfit in s per rms roughness in km/s)
+  damping: 0.1                # damping towards the starting model (same units as weight)
+  outlier_mad: 3.0            # travel times further than this x 1.4826 MAD from the median residual are not used
+  vs_min_kms: null            # Vs bounds (null: 0.6 x the slowest and 1.4 x the fastest Vs of the start model)
+  vs_max_kms: null
+
+checker:                      # resolution test (lant checker --size KM)
+  amplitude: 0.1              # +-10 % of the starting model
+  noise: auto                 # auto: per period, the robust spread of the residuals of the 3-D model (s); or a
+                              #   number (s)
+
+plots:
+  relief: auto                # auto: GMT remote relief (@earth_relief, needs internet; skipped if unavailable)
+                              #   | a grid file | null: no relief
+  vs_range_kms: null          # colour range of Vs [lo, hi] (null: 2-98 % of the model under the stations)
+  slice_depths_km: null       # depths of the map slices (null: up to 8 depth nodes)
+  dpi: 300
+
+cores: auto                   # auto: 80 % of the idle cores; or a number

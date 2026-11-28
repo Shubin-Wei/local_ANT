@@ -8,7 +8,7 @@
 
 [中文](README.zh.md) | English
 
-lant (`local_ANT`) is a command-line tool for high-frequency ambient-noise imaging with dense (nodal) arrays, areal or linear. It takes continuous vertical-component records and a station table, and gives Rayleigh-wave phase velocities between station pairs and a 3-D Vs model. The steps are run one at a time; each writes the settings it used, the values it derived (with their rules), a log and figures to check before the next step.
+lant (`local_ANT`) is a command-line tool for high-frequency ambient-noise imaging with dense (nodal) arrays, areal or linear. It takes continuous vertical-component records and a station table, and gives Rayleigh-wave phase and group velocities between station pairs and a 3-D Vs model. The steps are run one at a time; each writes the settings it used, the values it derived (with their rules), a log and figures to check before the next step.
 
 ## Steps
 
@@ -16,8 +16,8 @@ lant (`local_ANT`) is a command-line tool for high-frequency ambient-noise imagi
 |---|---|---|---|
 | `lant clean` | cuts the records into UTC days per station; removes the median and, if given, the instrument response; low-pass and decimation | Bensen et al. (2007) | `1_clean` |
 | `lant cc` | segments (those with gaps or large amplitudes left out), cross-coherence of every station pair, linear stack | Bensen et al. (2007); Seats et al. (2012); Xu et al. (2021) | `2_cc` |
-| `lant disp` | reference curve (array F-J spectrum, a 1-D model or a curve file); two-station phase velocities with jackknife errors and quality control | Wang et al. (2019); Levshin & Ritzwoller (2001); Lin et al. (2008) | `3_disp` |
-| `lant inv` | 1-D starting model; direct 3-D inversion of the travel times with ray tracing | Fang et al. (2015) (DSurfTomo, in Python) | `4_inv` |
+| `lant disp` | reference curve (array F-J spectrum, a 1-D model or a curve file); two-station phase and group velocities with jackknife errors and quality control | Wang et al. (2019); Levshin & Ritzwoller (2001); Lin et al. (2008) | `3_disp` |
+| `lant inv` | 1-D starting model; direct 3-D inversion of the phase and/or group travel times with ray tracing | Fang et al. (2015) (the method of DSurfTomo) | `4_inv` |
 | `lant checker` | checkerboard resolution test | Rawlinson & Spakman (2016) | `5_checker_*` |
 
 ## Install
@@ -44,7 +44,7 @@ You need:
 
 ```bash
 lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --velocity 0.3 3.0
-# read my.yaml (lant init wrote suggested values and their rules into it), then:
+# read my.yaml (lant init wrote suggested values and their rules into it; example.yaml is one), then:
 lant clean -c my.yaml     # check 1_clean/figures
 lant cc    -c my.yaml     # check 2_cc/figures
 lant disp  -c my.yaml     # check 3_disp/figures/fj_reference.png above all

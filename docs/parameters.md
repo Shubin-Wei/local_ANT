@@ -65,14 +65,15 @@ Every setting of the configuration file, its default and its basis. The template
 
 | Key | Default | Meaning and basis |
 |---|---|---|
+| `data` | `phase` | travel times inverted: `phase`, `group` or `both` (Rayleigh phase and/or group velocities of `3_disp/dispersion.csv`) |
 | `grid_km` | `null` | horizontal node spacing; `null`: median measured wavelength / 3 (lateral resolution ≈ one wavelength, three nodes sample it) |
 | `depths_km` | `null` | depth nodes; `null`: from 0 in steps of max(shortest λ/4, depth/4) to past half the longest λ (Foti et al. 2018 §4.2.3); the last node is a fixed half-space |
-| `start_model_file` | `null` | `depth_km Vs_km/s`; `null`: 1-D inversion of the median curve |
+| `start_model_file` | `null` | `depth_km Vs_km/s`; `null`: 1-D inversion of the median curves of the data used |
 | `per_octave` | 4 | periods per octave used (a subset of the measured ones) |
 | `iterations` | 6 | iterations of the 3-D inversion |
-| `weight` | 0.5 | smoothing weight (rms travel-time misfit in s per rms roughness in km/s; data and model terms are means, so the value does not depend on the number of data or nodes). Chosen on lant's synthetic inversion tests with Gaussian noise (best 0.35–0.5); larger is smoother |
-| `damping` | 0.1 | damping towards the starting model; keeps nodes without rays near the starting model |
-| `outlier_mad` | 3 | rejection beyond k × 1.4826 MAD of the residuals of a period (Leys et al. 2013: 3 "very conservative") |
+| `weight` | 0.5 | smoothing weight (rms travel-time misfit in s per rms roughness in km/s; data and model terms are means, so the value does not depend on the number of data or nodes; not the weight of a DSurfTomo.in). Convention; in synthetic inversions with Gaussian noise 0.35–0.5 recovered the model best; larger is smoother |
+| `damping` | 0.1 | damping towards the starting model (a mean over the parameters, like `weight`); keeps nodes without rays near the starting model. Convention |
+| `outlier_mad` | 3 | rejection beyond k × 1.4826 MAD of the residuals of a period, phase and group apart (Leys et al. 2013: 3 "very conservative") |
 | `vs_min_kms`, `vs_max_kms` | `null` | Vs bounds; `null`: 0.6 × slowest and 1.4 × fastest Vs of the starting model (convention) |
 
 ## checker

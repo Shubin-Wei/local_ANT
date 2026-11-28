@@ -4,7 +4,7 @@
 
 本文逐步说明每一步计算什么、为什么这样算、依据是什么。配置里每个数的默认值和依据见 [parameters.zh.md](parameters.zh.md)；怎样运行见 [tutorial.zh.md](tutorial.zh.md)。
 
-lant 做背景噪声面波成像的基本流程。凡是约定取值而不是理论推出的，文中都写明。
+凡是约定取值而不是理论推出的，文中都标为“约定”。
 
 ## 1. 为什么噪声互相关能得到面波
 
@@ -65,13 +65,14 @@ c 等于某个模式的相速度时最大。与开源的 CC-FJpy（Li et al. 202
 
 参考群速度：U = c / (1 − d ln c / d ln f)（Bensen et al. 2007 式 7）。
 
-## 5. 两台法相速度（`lant disp` 后半）
+## 5. 两台法相速度和群速度（`lant disp` 后半）
 
 对每个台对、每个测量频率 f（每倍频程 `disp.per_octave` 个）：
 
 1. **对称分量**：正时延与反转后的负时延的平均（Bensen et al. 2007）。
 2. **窄带滤波**：高斯滤波器 G(f′) = exp[−α ((f′ − f)/f)²]（相对带宽不变，FTAN；Levshin & Ritzwoller 2001），α = `disp.alpha`。
 3. **群到时** t_g：包络在 r/((1+w)U_ref) 到 r/((1−w)U_ref) 之间的最大值，w = `disp.group_window`；最大值落在窗边上时不算到时。**信噪比**：t_g 处的包络除以窗后两个周期起到时延窗末尾（至少是时延窗最后 15 %）的滤波信号均方根。
+   **群速度** U = r / t_g。到时归属于滤波信号在 t_g 处的瞬时频率（该处相位的导数），而不是滤波器的中心频率（Levshin et al. 1972；Bensen et al. 2007）；在每一段连续有到时的频率内，把群到时从瞬时频率按 ln f 插值回测量频率，不跨越缺口。
 4. **相位匹配滤波**（Herrin & Goforth 1977；FTAN）：频谱乘以 exp(iΨ)，Ψ(ω) = ∫ t_g dω，消去到时的频散，再在 f 附近按高斯权求和得到相位 Φ(f)。直接在 t_g 读窄带信号的相位，在滤波带内群延迟随频率变化时会有偏差。
 5. **相位走时**：
 
@@ -83,39 +84,44 @@ c 等于某个模式的相速度时最大。与开源的 CC-FJpy（Li et al. 202
    ω_k t_k = ω_(k−1) t_(k−1) + ½ (t_g,k + t_g,k−1)(ω_k − ω_(k−1))，
 
    在比测量网格密 4 倍的频率上递推；相位跳动超过 `disp.slip_cycles` 周时该段结束。
-7. **误差**：对 `lant cc` 的子叠加做逐个删除的刀切法（每次去掉一个子叠加；Efron & Stein 1981），σ² = (g−1)/g Σ (c_i − c̄)²。它只反映随时间的可重复性，不包括参考曲线、整周数和噪声方向性的误差。
-8. **质量控制**（门限都在 `disp` 里）：
+7. **误差**：对 `lant cc` 的子叠加做逐个删除的刀切法（每次去掉一个子叠加；Efron & Stein 1981），σ² = (g−1)/g Σ (c_i − c̄)²，U 同样。它只反映随时间的可重复性，不包括参考曲线、整周数和噪声方向性的误差。
+8. **质量控制**（门限都在 `disp` 里），c 和 U 分别做（整周数和相位递推只涉及 c）：
 
 | 判据 | 默认 | 依据 |
 |---|---|---|
 | 信噪比 ≥ `snr_min` | 5 | 文献常用 5–15（Bensen et al. 2007 对长周期数据用 10） |
 | 路径 ≥ `min_wavelengths` 个波长（λ = c/f，用实测 c） | 2 | 远场近似：Bensen et al.（2007）用 3；Luo et al.（2015）表明相速度 1–2 个波长即可；精确 J₀ 互相关的单元测试：3 个波长以上误差在 1.5 % 以内，5 个以上在 0.4 % 以内 |
-| σ ≤ `max_jackknife_rel` × c | 2 % | 约定取值；设为 `null` 即不用 |
+| σ ≤ `max_jackknife_rel` × c（或 × U） | 2 % | 约定取值；设为 `null` 即不用 |
 | 只留一段连续、至少 `min_points` 个频点 | 6 | 每个台对一段（EGFAnalysisTimeFreq 手册，Yao 等）；长度为约定取值 |
 
-每个被拒的值都记下原因（`measurements.h5` 的位掩码 `reason`，名称见 `lant.dispersion.REASONS`）。`median_vs_reference.csv` 逐频率比较接受值的中位数与参考：恒定偏离好几个百分点说明参考曲线（因而整周数）可能有错。
+每个被拒的值都记下原因（`measurements.h5` 中 c 的位掩码 `reason`、U 的位掩码 `reason_u`，名称见 `lant.dispersion.REASONS`）。`median_vs_reference.csv` 逐频率比较接受值的中位数与参考：恒定偏离好几个百分点说明参考曲线（因而整周数）可能有错。
+
+**在精确互相关上的精度**（频散介质的 J₀ 谱，`tests/test_measurement.py`）：c 在 5 个波长以上 95 % 误差在 0.4 % 以内，3–5 个波长在 1.5 % 以内；U 的 95 % 误差在 1 % 以内，α = 5 时中位偏差约 +0.5 %（宽滤波器在频散波上的包络极大位置；α 越大偏差越小）。
 
 ## 6. 三维反演（`lant inv`）
 
-**数据**：落在过 1 Hz、每倍频程 `inv.per_octave` 个的网格上的周期的接受值（相邻测量频率的高斯滤波器重叠 90 % 以上，少用一些周期信息不减，而计算时间与周期数成正比）。
+**数据**：相速度、群速度或两者（`inv.data`：`phase`、`group`、`both`）在过 1 Hz、每倍频程 `inv.per_octave` 个的网格上的周期的接受值（相邻测量频率的高斯滤波器重叠 90 % 以上，少用一些周期信息不减，而计算时间与周期数成正比）。
 
-**起始模型**：每个周期取各台对相速度的中位数（该周期至少要有 max(5, min(50, 台对数/4)) 个台对）。深度节点从 0 开始，步长 max(最短波长/4, 深度/4)，到超过最长波长一半的第一个节点为止（常用的探测深度估计，Foti et al. 2018 第 4.2.3 节），最后一个节点是固定的半空间。一维模型用对 ln Vs 的阻尼、平滑高斯—牛顿反演，平滑作用于模型本身的曲率（Shaw & Orcutt 1985；Constable et al. 1987），结果不随迭代次数漂移。也可以给模型文件（`inv.start_model_file`）。
+**起始模型**：所用的每类速度，每个周期取各台对的中位数（该周期至少要有 max(5, min(50, 台对数/4)) 个台对）。波长（速度 × 周期）用相速度算，只用群速度时用群速度算。深度节点从 0 开始，步长 max(最短波长/4, 深度/4)，到超过最长波长一半的第一个节点为止（常用的探测深度估计，Foti et al. 2018 第 4.2.3 节），最后一个节点是固定的半空间。一维模型用对 ln Vs 的阻尼、平滑高斯—牛顿反演拟合所用的平均曲线，平滑作用于模型本身的曲率（Shaw & Orcutt 1985；Constable et al. 1987），结果不随迭代次数漂移。也可以给模型文件（`inv.start_model_file`）。
 
-**正演**：Vp 和密度由 Vs 按 Brocher（2005）换算；相速度和深度核来自 DSurfTomo 的 surfdisp96，逐句移植为 Python（`lant/inversion/dsurf_disp96.py`；Herrmann 2013，Fang et al. 2015）。由模型给参考曲线时用的也是这一套。
+**正演**：Vp 和密度由 Vs 按 Brocher（2005）换算；相速度、群速度及其深度核来自 DSurfTomo 的 surfdisp96（Herrmann 2013；Fang et al. 2015），数值与原版 Fortran 相同（`lant/inversion/dsurf_disp96.py`）。由模型给参考曲线时用的也是这一套。
 
-**三维直接反演**（Fang et al. 2015，DSurfTomo 的方法，Python 移植在 `lant/inversion/dsurf_*.py`）：未知量是三维网格上的 Vs（水平间距 `inv.grid_km`，默认为实测波长中位数的三分之一：面波的横向分辨率约为一个波长）。每轮迭代在当前相速度图里用快速行进法追踪每个周期的射线，计算深度核，求 Vs 的更新量：
+**三维直接反演**（Fang et al. 2015，DSurfTomo 的方法；`lant/inversion/dsurf_*.py`）：未知量是三维网格上的 Vs（水平间距 `inv.grid_km`，默认为实测波长中位数的三分之一：面波的横向分辨率约为一个波长）。每轮迭代在当前相速度图或群速度图里用快速行进法追踪每个周期的射线，计算深度核，求 Vs 的更新量：
 
   min (1/N) ‖W(G Δm − r)‖² + (w²/n) ‖L(m + Δm − m₀)‖² + (d²/n) ‖m + Δm − m₀‖²
 
-r 为走时残差，G 为走时导数，W 为剔除规则给的 0/1 权，N 为保留的走时条数，n 为参数个数，L 为整个网格的 7 点 Laplacian（每个节点用它实有的邻点），m₀ 为起始模型，w = `inv.weight`，d = `inv.damping`。与 DSurfTomo 有意不同的三点：
+r 为走时残差，G 为走时导数，W 为剔除规则给的 0/1 权，N 为保留的走时条数，n 为参数个数，L 为整个网格的 7 点 Laplacian（每个节点用它实有的邻点），m₀ 为起始模型，w = `inv.weight`，d = `inv.damping`。与 DSurfTomo 的不同：
 
 - 平滑和阻尼作用于模型本身而不是每轮更新量（Occam 的 "jumping" 形式；Constable et al. 1987），结果与迭代次数无关；
 - 数据项和模型项取均值，同一权重对任何数据量和节点数含义相同；
-- 每轮最小二乘问题用双精度 LSMR 解到收敛（Fong & Saunders 2011，列归一化见 Paige & Saunders 1982）。
+- 每轮最小二乘问题用双精度 LSMR 解到收敛（Fong & Saunders 2011，列归一化见 Paige & Saunders 1982）；
+- 群速度走时的射线和导数 −ds/U² 与走时本身一样在群速度图里计算，使 G 正是所算走时的导数；DSurfTomo 在相速度图里取射线和导数。
 
-**剔除**：残差偏离本周期残差中位数超过 `inv.outlier_mad` × 1.4826 MAD 的走时权重置 0（Rousseeuw & Croux 1993；k = 3 为"非常保守"，Leys et al. 2013）。按周期分别算，因为相位误差换成走时误差与周期成正比。
+由于前两点，`inv.weight` 和 `inv.damping` 的数值与 DSurfTomo.in 里的不可比。
 
-`4_inv/dsurftomo/` 里的工程是 DSurfTomo 的文件格式，原版程序可以直接运行。
+**剔除**：残差偏离本周期残差中位数超过 `inv.outlier_mad` × 1.4826 MAD 的走时权重置 0（Rousseeuw & Croux 1993；k = 3 为"非常保守"，Leys et al. 2013）。按周期（相速度和群速度分开）分别算，因为相位误差换成走时误差与周期成正比。
+
+`4_inv/dsurftomo/` 里的工程是 DSurfTomo 的文件格式，原版程序可以直接运行（用原版自己的正则化）。
 
 ## 7. 分辨率检验（`lant checker`）
 
@@ -128,6 +134,7 @@ r 为走时残差，G 为走时导数，W 为剔除规则给的 0/1 权，N 为�
 - 不考虑地形，距离按椭球面计算。
 - Vp、密度按 Brocher（2005）随 Vs 变化；实际 Vp/Vs 不同时 Vs 有系统偏差。
 - 刀切误差不是完整的误差。
+- 群速度带有滤波器宽度造成的偏差（精确数据上 α = 5 时约 +0.5 %）；`inv.data: both` 时相速度和群速度走时因此不完全一致。
 - 模型只能在棋盘检验能恢复的尺寸和深度上解释。
 
 ## 参考文献
@@ -146,6 +153,7 @@ r 为走时残差，G 为走时导数，W 为剔除规则给的 0/1 权，N 为�
 - Herrmann, R. B. (2013). Computer programs in seismology: an evolving tool for instruction and research. *SRL*, 84, 1081–1088. doi:10.1785/0220110096
 - Jiang, C., & Denolle, M. A. (2020). NoisePy: a new high-performance Python tool for ambient-noise seismology. *SRL*, 91, 1853–1866. doi:10.1785/0220190364
 - Lévêque, J.-J., Rivera, L., & Wittlinger, G. (1993). On the use of the checker-board test to assess the resolution of tomographic inversions. *GJI*, 115, 313–318.
+- Levshin, A. L., Pisarenko, V. F., & Pogrebinsky, G. A. (1972). On a frequency-time analysis of oscillations. *Annales de Géophysique*, 28, 211–218.
 - Levshin, A. L., & Ritzwoller, M. H. (2001). Automated detection, extraction, and measurement of regional surface waves. *PAGEOPH*, 158, 1531–1545.
 - Leys, C., et al. (2013). Detecting outliers: do not use standard deviation around the mean, use absolute deviation around the median. *J. Exp. Soc. Psychol.*, 49, 764–766. doi:10.1016/j.jesp.2013.03.013
 - Li, Z., Zhou, J., Wu, G., Wang, J., et al. (2021). CC-FJpy: a Python package for extracting overtone surface-wave dispersion from seismic ambient-noise cross correlation. *SRL*, 92, 3179–3186. doi:10.1785/0220210042

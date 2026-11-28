@@ -8,7 +8,7 @@
 
 中文 | [English](README.md)
 
-lant（`local_ANT`）是用于密集（节点）台阵（面状或测线）高频背景噪声成像的命令行工具。输入垂直分量连续记录和台站表，输出台对间的 Rayleigh 波相速度和三维 Vs 模型。各步分开运行；每一步写出所用的设置、推出的值及其规则、日志和图，检查后再做下一步。
+lant（`local_ANT`）是用于密集（节点）台阵（面状或测线）高频背景噪声成像的命令行工具。输入垂直分量连续记录和台站表，输出台对间的 Rayleigh 波相速度、群速度和三维 Vs 模型。各步分开运行；每一步写出所用的设置、推出的值及其规则、日志和图，检查后再做下一步。
 
 ## 步骤
 
@@ -16,8 +16,8 @@ lant（`local_ANT`）是用于密集（节点）台阵（面状或测线）高�
 |---|---|---|---|
 | `lant clean` | 按台站把记录切成 UTC 日；去中位数，给了响应文件时去仪器响应；低通后降采样 | Bensen et al. (2007) | `1_clean` |
 | `lant cc` | 分段（去掉含缺数和振幅过大的段）、每个台对的互相干、线性叠加 | Bensen et al. (2007)；Seats et al. (2012)；Xu et al. (2021) | `2_cc` |
-| `lant disp` | 参考曲线（台阵 F-J 谱、一维模型或曲线文件）；两台法相速度、刀切误差和质量控制 | Wang et al. (2019)；Levshin & Ritzwoller (2001)；Lin et al. (2008) | `3_disp` |
-| `lant inv` | 一维起始模型；基于射线追踪的走时三维直接反演 | Fang et al. (2015)（DSurfTomo 的 Python 实现） | `4_inv` |
+| `lant disp` | 参考曲线（台阵 F-J 谱、一维模型或曲线文件）；两台法相速度和群速度、刀切误差和质量控制 | Wang et al. (2019)；Levshin & Ritzwoller (2001)；Lin et al. (2008) | `3_disp` |
+| `lant inv` | 一维起始模型；基于射线追踪的相速度和/或群速度走时三维直接反演 | Fang et al. (2015)（DSurfTomo 的方法） | `4_inv` |
 | `lant checker` | 棋盘分辨率检验 | Rawlinson & Spakman (2016) | `5_checker_*` |
 
 ## 安装
@@ -44,7 +44,7 @@ lant check
 
 ```bash
 lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --velocity 0.3 3.0
-# 先读一遍 my.yaml（lant init 写入了建议值及其规则），然后：
+# 先读一遍 my.yaml（lant init 写入了建议值及其规则；example.yaml 是一个示例），然后：
 lant clean -c my.yaml     # 检查 1_clean/figures
 lant cc    -c my.yaml     # 检查 2_cc/figures
 lant disp  -c my.yaml     # 尤其检查 3_disp/figures/fj_reference.png

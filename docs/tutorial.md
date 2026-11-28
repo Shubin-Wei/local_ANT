@@ -32,7 +32,7 @@ You need:
 lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --velocity 0.3 3.0
 ```
 
-`lant init` reads the record headers and writes `my.yaml` with suggested numbers for the sampling rate, the correlation band, the lag window and the segment length. Above each suggestion it writes the rule and the numbers of your array that gave it (for example `2 x v_fast 3 km/s / longest pair 9.8 km = ...`). Open the file and read it: every setting has a comment. Change what you know better (e.g. `data.response` if your stations do not all have the same instrument).
+`lant init` reads the record headers and writes `my.yaml` with suggested numbers for the sampling rate, the correlation band, the lag window and the segment length. Above each suggestion it writes the rule and the numbers of your array that gave it (for example `2 x v_fast 3 km/s / longest pair 9.8 km = ...`). Open the file and read it: every setting has a comment. Change what you know better (e.g. `data.response` if your stations do not all have the same instrument). [`example.yaml`](../example.yaml) shows a complete configuration written by `lant init`.
 
 ## 1. Cleaning the records: `lant clean -c my.yaml`
 
@@ -58,9 +58,9 @@ Check:
 
 Results: `stack.h5` (the stack), `days/*.h5` (sub-stacks of each day). `lant export-sac -c my.yaml -o DIR` writes the stack as SAC files for other programs.
 
-## 3. Phase velocities: `lant disp -c my.yaml`
+## 3. Phase and group velocities: `lant disp -c my.yaml`
 
-What it does: the reference curve, then the phase velocity of every pair with its jackknife error, and quality control (methods, sections 4–5).
+What it does: the reference curve, then the phase and group velocities of every pair with their jackknife errors, and quality control (methods, sections 4–5).
 
 Check, in this order:
 
@@ -70,16 +70,16 @@ Check, in this order:
 
    then run `lant disp` again. The purple diamonds are the median of the measured phase velocities: they should lie on the reference.
 2. **`median_vs_reference.csv`**: a deviation of several percent that does not change with frequency means the reference, and so the cycle count, is wrong.
-3. **`figures/curves.png`** and **`figures/rejections.png`**: how many pairs measure each frequency, and why the others were rejected (reason names in methods, section 5).
+3. **`figures/curves.png`**, **`figures/rejections.png`** (phase) and **`figures/group_curves.png`**, **`figures/group_rejections.png`** (group): how many pairs measure each frequency, and why the others were rejected (reason names in methods, section 5).
 4. **`figures/pair_*.png`**: three example pairs: is the group arrival on the envelope maximum, does the phase velocity follow the reference?
 
 Do not loosen the quality control to get more points: the numbers in `disp` have the bases listed in [parameters.md](parameters.md).
 
-Results: `dispersion.csv` (the accepted values, one row per pair and frequency; the input of `lant inv`), `measurements.h5` (all values and the reasons of every rejection), `reference.csv`, `fj.h5`.
+Results: `dispersion.csv` (the accepted values, one row per pair and frequency, columns `c_kms` and `u_kms`, a rejected one left empty; the input of `lant inv`), `measurements.h5` (all values and the reasons of every rejection), `reference.csv`, `fj.h5`.
 
 ## 4. 3-D inversion: `lant inv -c my.yaml`
 
-What it does: the average curve, the depth nodes and the 1-D starting model, the grid, and the direct 3-D inversion (methods, section 6). The derived numbers (depth nodes, grid spacing, Vs bounds) are printed and kept in `params.yaml`; to change one, write it into `inv` and run again.
+What it does: the average curves, the depth nodes and the 1-D starting model, the grid, and the direct 3-D inversion of the phase travel times, the group travel times or both (`inv.data`; methods, section 6). The derived numbers (depth nodes, grid spacing, Vs bounds) are printed and kept in `params.yaml`; to change one, write it into `inv` and run again.
 
 Check:
 

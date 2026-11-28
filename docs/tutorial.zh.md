@@ -32,7 +32,7 @@
 lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --velocity 0.3 3.0
 ```
 
-`lant init` 读记录头，写出 `my.yaml`，给出采样率、互相关频带、时延窗和段长的建议值，每个建议值上方写明规则和代入的本台阵数字（例如 `2 x v_fast 3 km/s / longest pair 9.8 km = ...`）。打开文件读一遍，每个设置都有注释；你更清楚的就改（例如台站仪器不全相同时填 `data.response`）。
+`lant init` 读记录头，写出 `my.yaml`，给出采样率、互相关频带、时延窗和段长的建议值，每个建议值上方写明规则和代入的本台阵数字（例如 `2 x v_fast 3 km/s / longest pair 9.8 km = ...`）。打开文件读一遍，每个设置都有注释；你更清楚的就改（例如台站仪器不全相同时填 `data.response`）。[`example.yaml`](../example.yaml) 是 `lant init` 写出的一份完整配置示例。
 
 ## 1. 数据清洗：`lant clean -c my.yaml`
 
@@ -58,9 +58,9 @@ lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --v
 
 结果：`stack.h5`（叠加）、`days/*.h5`（每天的子叠加）。`lant export-sac -c my.yaml -o 目录` 把叠加写成 SAC 文件，供其他软件使用。
 
-## 3. 相速度：`lant disp -c my.yaml`
+## 3. 相速度和群速度：`lant disp -c my.yaml`
 
-做什么：参考曲线，然后每个台对的相速度及其刀切误差，质量控制（方法第 4–5 节）。
+做什么：参考曲线，然后每个台对的相速度、群速度及其刀切误差，质量控制（方法第 4–5 节）。
 
 按顺序检查：
 
@@ -70,16 +70,16 @@ lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --v
 
    然后重跑 `lant disp`。紫色菱形是实测相速度的中位数，应落在参考曲线上。
 2. **`median_vs_reference.csv`**：偏离好几个百分点且不随频率变，说明参考曲线（因而整周数）有错。
-3. **`figures/curves.png`** 和 **`figures/rejections.png`**：每个频率有多少台对测到，其余的被拒原因（原因名称见方法第 5 节）。
+3. **`figures/curves.png`**、**`figures/rejections.png`**（相速度）和 **`figures/group_curves.png`**、**`figures/group_rejections.png`**（群速度）：每个频率有多少台对测到，其余的被拒原因（原因名称见方法第 5 节）。
 4. **`figures/pair_*.png`**：三个示例台对：群到时是否在包络极大上，相速度是否沿参考曲线。
 
 不要为了多出点而放宽质控：`disp` 里的数字及其依据见 [parameters.zh.md](parameters.zh.md)。
 
-结果：`dispersion.csv`（接受的值，每行一个台对和频率，是 `lant inv` 的输入）、`measurements.h5`（全部值及每个被拒值的原因）、`reference.csv`、`fj.h5`。
+结果：`dispersion.csv`（接受的值，每行一个台对和频率，`c_kms` 和 `u_kms` 两列，被拒的一项留空；是 `lant inv` 的输入）、`measurements.h5`（全部值及每个被拒值的原因）、`reference.csv`、`fj.h5`。
 
 ## 4. 三维反演：`lant inv -c my.yaml`
 
-做什么：平均曲线、深度节点和一维起始模型、网格，以及三维直接反演（方法第 6 节）。推出的数字（深度节点、网格间距、Vs 上下限）会打印出来并记在 `params.yaml` 里；要改哪个，就写进 `inv` 再重跑。
+做什么：平均曲线、深度节点和一维起始模型、网格，以及相速度走时、群速度走时或两者的三维直接反演（`inv.data`；方法第 6 节）。推出的数字（深度节点、网格间距、Vs 上下限）会打印出来并记在 `params.yaml` 里；要改哪个，就写进 `inv` 再重跑。
 
 检查：
 

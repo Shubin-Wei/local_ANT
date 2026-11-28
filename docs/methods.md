@@ -4,7 +4,7 @@
 
 This page says what every step computes, why, and on what it rests. Each number in the configuration is listed with its basis in [parameters.md](parameters.md); how to run the steps is in [tutorial.md](tutorial.md).
 
-lant does the basic processing chain of ambient-noise surface-wave tomography. Where a choice is a convention rather than a result of theory, it is said so.
+A value that is a choice rather than a result of theory is marked "convention".
 
 ## 1. Why correlations of noise give surface waves
 
@@ -65,13 +65,14 @@ largest where c is the phase velocity of a mode. As in the open-source CC-FJpy (
 
 Reference group velocity: U = c / (1 − d ln c / d ln f) (Bensen et al. 2007, eq. 7).
 
-## 5. Two-station phase velocity (`lant disp`, part 2)
+## 5. Two-station phase and group velocities (`lant disp`, part 2)
 
 For each pair and each measurement frequency f (`disp.per_octave` per octave):
 
 1. **Symmetric component**: average of the positive lags and the time-reversed negative lags (Bensen et al. 2007).
 2. **Narrow-band filters**: Gaussian, G(f′) = exp[−α ((f′ − f)/f)²] (constant relative width, FTAN; Levshin & Ritzwoller 2001), α = `disp.alpha`.
 3. **Group arrival** t_g: the maximum of the envelope between r/((1+w)U_ref) and r/((1−w)U_ref), w = `disp.group_window`. A maximum on the edge of this window is not an arrival. **SNR**: the envelope at t_g divided by the rms of the filtered signal from two periods after the window to the end of the lag window (at least its last 15 %).
+   **Group velocity** U = r / t_g. The arrival time belongs to the instantaneous frequency of the filtered signal at t_g (the phase derivative there), not to the centre of the filter (Levshin et al. 1972; Bensen et al. 2007); within each run of consecutive arrivals the group times are interpolated (in ln f) from the instantaneous frequencies back onto the measurement frequencies, never across a gap.
 4. **Phase-matched filter** (Herrin & Goforth 1977; FTAN): the spectrum is multiplied by exp(iΨ), Ψ(ω) = ∫ t_g dω, which removes the dispersion of the arrival; the Gaussian-weighted sum around f gives its phase Φ(f). Reading the phase of the narrow-band signal at t_g instead is biased when the group delay changes inside the filter band.
 5. **Phase travel time**:
 
@@ -83,39 +84,44 @@ For each pair and each measurement frequency f (`disp.per_octave` per octave):
    ω_k t_k = ω_(k−1) t_(k−1) + ½ (t_g,k + t_g,k−1)(ω_k − ω_(k−1)),
 
    on a grid four times denser than the measurement grid; a jump of more than `disp.slip_cycles` of a cycle ends the run.
-7. **Error**: delete-one-group jackknife over the sub-stacks of `lant cc` (each sub-stack left out in turn; Efron & Stein 1981): σ² = (g−1)/g Σ (c_i − c̄)². It measures the repeatability over time only: not the errors of the reference, of the cycle count or of uneven noise.
-8. **Quality control** (all thresholds are in `disp`):
+7. **Error**: delete-one-group jackknife over the sub-stacks of `lant cc` (each sub-stack left out in turn; Efron & Stein 1981): σ² = (g−1)/g Σ (c_i − c̄)², and the same for U. It measures the repeatability over time only: not the errors of the reference, of the cycle count or of uneven noise.
+8. **Quality control** (all thresholds are in `disp`), for c and U separately (the cycle count and the phase tracking concern c only):
 
 | Criterion | Default | Basis |
 |---|---|---|
 | SNR ≥ `snr_min` | 5 | common choice 5–15 (Bensen et al. 2007 use 10 for their long-period data) |
 | path ≥ `min_wavelengths` × λ (λ = c/f, measured c) | 2 | far-field approximation: Bensen et al. (2007) use 3; Luo et al. (2015) show that 1–2 wavelengths suffice for phase velocities; the unit test on exact J₀ correlations: within 1.5 % from 3 wavelengths, 0.4 % beyond 5 |
-| σ ≤ `max_jackknife_rel` × c | 2 % | convention; `null` switches it off |
+| σ ≤ `max_jackknife_rel` × c (or × U) | 2 % | convention; `null` switches it off |
 | one run of at least `min_points` frequencies | 6 | one segment per pair (EGFAnalysisTimeFreq manual, Yao et al.); length a convention |
 
-Every rejected value keeps its reasons (bit mask `reason` in `measurements.h5`; names in `lant.dispersion.REASONS`). `median_vs_reference.csv` compares the median of the accepted values with the reference at each frequency: a constant offset of several percent means the reference, and so the cycle count, may be wrong.
+Every rejected value keeps its reasons (bit masks `reason` for c and `reason_u` for U in `measurements.h5`; names in `lant.dispersion.REASONS`). `median_vs_reference.csv` compares the median of the accepted values with the reference at each frequency: a constant offset of several percent means the reference, and so the cycle count, may be wrong.
+
+**Accuracy on exact correlations** (J₀ spectra of a dispersive medium, `tests/test_measurement.py`): c within 0.4 % (95 %) beyond 5 wavelengths and 1.5 % at 3–5 wavelengths; U within 1 % (95 %), with a median bias of about +0.5 % at α = 5 (the envelope maximum of a wide filter in a dispersive wave; a larger α reduces it).
 
 ## 6. 3-D inversion (`lant inv`)
 
-**Data.** The accepted phase velocities at the periods on the 1/`inv.per_octave`-octave grid through 1 Hz (neighbouring measurement frequencies overlap by more than 90 % in the Gaussian filters, so fewer periods carry the same information and the computing time scales with their number).
+**Data.** The accepted phase velocities, group velocities or both (`inv.data`: `phase`, `group`, `both`) at the periods on the 1/`inv.per_octave`-octave grid through 1 Hz (neighbouring measurement frequencies overlap by more than 90 % in the Gaussian filters, so fewer periods carry the same information and the computing time scales with their number).
 
-**Starting model.** The median phase velocity of each period over the pairs (a period needs max(5, min(50, pairs/4)) pairs). Depth nodes from 0, in steps of max(shortest wavelength/4, depth/4), to the first node past half the longest wavelength (the usual estimate of the investigation depth, Foti et al. 2018, sect. 4.2.3); the last node is a fixed half-space. The 1-D model is a damped, smoothed Gauss–Newton inversion of ln Vs; the smoothing acts on the curvature of the model itself (Shaw & Orcutt 1985; Constable et al. 1987), so the result does not depend on the number of iterations. Or a model file (`inv.start_model_file`).
+**Starting model.** The median velocity of each period over the pairs, for each kind used (a period needs max(5, min(50, pairs/4)) pairs). Wavelengths (velocity × period) come from the phase velocities, or from the group velocities when only these are used. Depth nodes from 0, in steps of max(shortest wavelength/4, depth/4), to the first node past half the longest wavelength (the usual estimate of the investigation depth, Foti et al. 2018, sect. 4.2.3); the last node is a fixed half-space. The 1-D model is a damped, smoothed Gauss–Newton inversion of ln Vs that fits the average curves used; the smoothing acts on the curvature of the model itself (Shaw & Orcutt 1985; Constable et al. 1987), so the result does not depend on the number of iterations. Or a model file (`inv.start_model_file`).
 
-**Forward calculation.** Vp and density from Vs by Brocher (2005); phase velocities and depth kernels from DSurfTomo's surfdisp96, ported to Python statement by statement (`lant/inversion/dsurf_disp96.py`; Herrmann 2013, Fang et al. 2015). The same calculation gives the reference curve from a model.
+**Forward calculation.** Vp and density from Vs by Brocher (2005); phase and group velocities and their depth kernels from DSurfTomo's surfdisp96 (Herrmann 2013; Fang et al. 2015), with the same numbers as the original Fortran (`lant/inversion/dsurf_disp96.py`). The same calculation gives the reference curve from a model.
 
-**Direct 3-D inversion** (Fang et al. 2015, the method of DSurfTomo, ported to Python in `lant/inversion/dsurf_*.py`): the unknowns are Vs on a 3-D grid (horizontal spacing `inv.grid_km`, default the median measured wavelength/3: lateral resolution of surface waves is about a wavelength). Each iteration traces the rays of every period in the current phase-velocity maps with the fast-marching method, computes the depth kernels, and solves for the update of Vs:
+**Direct 3-D inversion** (Fang et al. 2015, the method of DSurfTomo; `lant/inversion/dsurf_*.py`): the unknowns are Vs on a 3-D grid (horizontal spacing `inv.grid_km`, default the median measured wavelength/3: lateral resolution of surface waves is about a wavelength). Each iteration traces the rays of every period in the current phase- or group-velocity maps with the fast-marching method, computes the depth kernels, and solves for the update of Vs:
 
   min (1/N) ‖W(G Δm − r)‖² + (w²/n) ‖L(m + Δm − m₀)‖² + (d²/n) ‖m + Δm − m₀‖²
 
-r: travel-time residuals; G: travel-time derivatives; W: 0/1 weights of the rejection; N kept travel times; n parameters; L: 7-point Laplacian of the whole grid (every node with its neighbours); m₀: starting model; w = `inv.weight`, d = `inv.damping`. Three points differ from DSurfTomo, on purpose:
+r: travel-time residuals; G: travel-time derivatives; W: 0/1 weights of the rejection; N kept travel times; n parameters; L: 7-point Laplacian of the whole grid (every node with its neighbours); m₀: starting model; w = `inv.weight`, d = `inv.damping`. Differences from DSurfTomo:
 
 - smoothing and damping act on the model, not on each update (Occam's "jumping" form; Constable et al. 1987), so that the result does not depend on the number of iterations;
 - data and model terms are means, so the same weight means the same for any number of data and nodes;
-- the least-squares problem is solved to convergence in double precision (LSMR, Fong & Saunders 2011, with column scaling, Paige & Saunders 1982).
+- the least-squares problem is solved to convergence in double precision (LSMR, Fong & Saunders 2011, with column scaling, Paige & Saunders 1982);
+- for group travel times the ray and the derivative −ds/U² are taken in the group-velocity map, like the time itself, so that G is the derivative of the computed times; DSurfTomo takes them in the phase-velocity map.
 
-**Rejection**: a travel time further than `inv.outlier_mad` × 1.4826 MAD from the median residual of its period gets weight 0 (Rousseeuw & Croux 1993; k = 3 is "very conservative", Leys et al. 2013). Per period, because a phase error becomes a travel-time error proportional to the period.
+Because of the first two points, the values of `inv.weight` and `inv.damping` are not those of a DSurfTomo.in.
 
-The project in `4_inv/dsurftomo/` is in DSurfTomo's file format and runs unchanged with the original program.
+**Rejection**: a travel time further than `inv.outlier_mad` × 1.4826 MAD from the median residual of its period gets weight 0 (Rousseeuw & Croux 1993; k = 3 is "very conservative", Leys et al. 2013). Per period (and for phase and group apart), because a phase error becomes a travel-time error proportional to the period.
+
+The project in `4_inv/dsurftomo/` is in DSurfTomo's file format and runs with the original program (with DSurfTomo's own regularization).
 
 ## 7. Resolution test (`lant checker`)
 
@@ -128,6 +134,7 @@ Checkerboard test (Lévêque et al. 1993): the starting model times 1 + a sin(π
 - Topography is ignored: distances are on the ellipsoid.
 - Vp and density follow Vs by Brocher (2005); a different Vp/Vs biases Vs.
 - The jackknife error is not a full error.
+- Group velocities carry the bias of the filter width (about +0.5 % at α = 5 on exact data); with `inv.data: both` the phase and group times are then not quite consistent.
 - The model can be interpreted only at the sizes and depths the checkerboards recover.
 
 ## References
@@ -145,6 +152,7 @@ Checkerboard test (Lévêque et al. 1993): the starting model times 1 + a sin(π
 - Herrmann, R. B. (2013). Computer programs in seismology: an evolving tool for instruction and research. *SRL*, 84, 1081–1088. doi:10.1785/0220110096
 - Jiang, C., & Denolle, M. A. (2020). NoisePy: a new high-performance Python tool for ambient-noise seismology. *SRL*, 91, 1853–1866. doi:10.1785/0220190364
 - Lévêque, J.-J., Rivera, L., & Wittlinger, G. (1993). On the use of the checker-board test to assess the resolution of tomographic inversions. *GJI*, 115, 313–318.
+- Levshin, A. L., Pisarenko, V. F., & Pogrebinsky, G. A. (1972). On a frequency-time analysis of oscillations. *Annales de Géophysique*, 28, 211–218.
 - Levshin, A. L., & Ritzwoller, M. H. (2001). Automated detection, extraction, and measurement of regional surface waves. *PAGEOPH*, 158, 1531–1545.
 - Leys, C., et al. (2013). Detecting outliers: do not use standard deviation around the mean, use absolute deviation around the median. *J. Exp. Soc. Psychol.*, 49, 764–766. doi:10.1016/j.jesp.2013.03.013
 - Li, Z., Zhou, J., Wu, G., Wang, J., et al. (2021). CC-FJpy: a Python package for extracting overtone surface-wave dispersion from seismic ambient-noise cross correlation. *SRL*, 92, 3179–3186. doi:10.1785/0220210042
