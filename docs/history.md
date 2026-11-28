@@ -10,6 +10,7 @@ Earlier versions: see the git tags (`v1.5.0`, `v2.0.0` – `v2.0.2`) and their d
 
 - `cc.fs_hz` is now `clean.fs_hz`; `record_index.csv`, `stations_used.csv` and the station map moved to `1_clean`.
 - Result folders renumbered: `1_clean`, `2_cc`, `3_disp`, `4_inv`, `5_checker_*`.
+- Suggested upper frequency (`lant init`): the spatial sampling theorem, station spacing at most half the wavelength, f = v_slow / (2 × median station spacing). The rule of 3.0.0 (mean interval of the pair distances) gave hundreds of hertz for arrays with many pairs.
 - `lant cc` uses `data.exclude_stations` and `data.start_date` / `end_date` on the cleaned days; it stops if they were cleaned at another rate or with a response pre-filter narrower than the correlation band.
 
 ## 3.0.0 (2026-11-27)

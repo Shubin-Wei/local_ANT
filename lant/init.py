@@ -6,9 +6,10 @@ gives; each one is written into the file with the rule that gave it, and every o
   fmin  two-station measurements need the path to be at least disp.min_wavelengths (2) wavelengths long (Bensen
         et al. 2007; Luo et al. 2015): the longest pair r_max measures down to f = 2 v_fast / r_max; the correlation
         band starts lower by the half-gain width of the Gaussian filter, x (1 - sqrt(ln 2 / alpha));
-  fmax  the F-J spectrum of the reference is free of spatial aliasing for k <= pi / dr, dr the sampling interval of
-        the interstation distances (Wang et al. 2019, eq. 14; here their mean interval, (r_max - r_min) / (pairs - 1)):
-        f = v_slow / (2 dr), widened by x (1 + sqrt(ln 2 / alpha)); at most 0.4 x the lowest raw sampling rate;
+  fmax  spatial sampling theorem: the stations sample a wave without aliasing when their spacing is at most half
+        its wavelength (e.g. Rost & Thomas 2002), here the median distance to the nearest station dx:
+        f = v_slow / (2 dx), widened by x (1 + sqrt(ln 2 / alpha)); time sampling: at most 0.4 x the lowest raw
+        sampling rate (the anti-alias low-pass is at 0.8 x Nyquist);
   fs    the lowest whole-number rate reachable from every raw rate by an integer factor with fmax <= 0.4 fs (the
         anti-alias low-pass is at 0.8 x Nyquist);
   maxlag  r_max / (0.6 v_slow) + 4 / fmin: the group velocity of strongly dispersive layers can be well below the
@@ -47,12 +48,11 @@ def suggest(table, rates, vrange, min_wavelengths=2.0):
     fmin = float("%.3g" % (f_lo * (1 - HALF)))
     out["cc.fmin_hz"] = (fmin, "%g x v_fast %g km/s / longest pair %.3f km = %.4g Hz, x (1 - %.3f)"
                          % (min_wavelengths, v1, rmax, f_lo, HALF))  # fmt: skip
-    dr = (rmax - float(d.min())) / max(1, d.size - 1)
-    f_hi = v0 / (2 * dr) if dr > 0 else np.inf
+    f_hi = v0 / (2 * dnn) if dnn > 0 else np.inf
     raw_cap = 0.4 * min(rates)
     fmax = float("%.3g" % min(f_hi * (1 + HALF), raw_cap))
-    out["cc.fmax_hz"] = (fmax, "v_slow %g km/s / (2 x mean interval of the pair distances %.4g km) = %.4g Hz, x (1 + "
-                         "%.3f); at most 0.4 x the lowest raw rate (%g Hz)" % (v0, dr, f_hi, HALF, raw_cap))  # fmt: skip
+    out["cc.fmax_hz"] = (fmax, "v_slow %g km/s / (2 x median station spacing %.4g km) = %.4g Hz, x (1 + %.3f); at "
+                         "most 0.4 x the lowest raw rate (%g Hz)" % (v0, dnn, f_hi, HALF, raw_cap))  # fmt: skip
     if fmax <= fmin * 1.5:
         raise ValueError(
             "the suggested band %.3g-%.3g Hz is too narrow: the array is small for velocities up to %g km/s "

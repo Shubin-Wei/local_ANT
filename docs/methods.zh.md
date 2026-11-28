@@ -59,7 +59,7 @@ lant 两处用到这一关系：台阵 F-J 谱（第 4 节）和两台法相位�
 
   I(ω, c) = ∫ C(r, ω) J₀(ωr/c) r dr，
 
-c 等于某个模式的相速度时最大。与开源的 CC-FJpy（Li et al. 2021）处理噪声数据的做法相同，C 取叠加互相关频谱的实部，积分用按台距排序的梯形公式（双精度，使用全部有数据的台对）。k ≤ π/Δr 时谱没有空间假频，Δr 为台对距离的采样间隔（Wang et al. 2019 式 14）；`lant init` 建议的频带上限就按这一条。
+c 等于某个模式的相速度时最大。与开源的 CC-FJpy（Li et al. 2021）处理噪声数据的做法相同，C 取叠加互相关频谱的实部，积分用按台距排序的梯形公式（双精度，使用全部有数据的台对）。k ≤ π/Δr 时谱没有空间假频，Δr 为台对距离的采样间隔（Wang et al. 2019 式 14）。
 
 **拾取**（`fj`）：在 `disp.fj_band_hz`（默认全部频率）内每个频率取 `data.velocity_range_kms` 范围内的最大值，用 ln f 的三次多项式拟合 ln c，只在拾取覆盖的频段内有定义（不外推）。不管用哪种参考，F-J 谱都会算出来并与所用参考画在一起供核对：**参考曲线必须沿基阶**（每个频率最慢的那条脊）。拾到高阶时，所有整周数都会错，相速度全部系统偏高。这一点 lant 不替你判断，请看 `3_disp/figures/fj_reference.png`。
 
@@ -153,6 +153,7 @@ r 为走时残差，G 为走时导数，W 为剔除规则给的 0/1 权，N 为�
 - Luo, Y., Yang, Y., Xu, Y., Xu, H., Zhao, K., & Wang, K. (2015). On the limitations of interstation distances in ambient noise tomography. *GJI*, 201, 652–661. doi:10.1093/gji/ggv043
 - Paige, C. C., & Saunders, M. A. (1982). LSQR: an algorithm for sparse linear equations and sparse least squares. *ACM TOMS*, 8, 43–71. doi:10.1145/355984.355989
 - Rawlinson, N., & Spakman, W. (2016). On the use of sensitivity tests in seismic tomography. *GJI*, 205, 1221–1243. doi:10.1093/gji/ggw084
+- Rost, S., & Thomas, C. (2002). Array seismology: methods and applications. *Reviews of Geophysics*, 40(3), 1008. doi:10.1029/2000RG000100
 - Rousseeuw, P. J., & Croux, C. (1993). Alternatives to the median absolute deviation. *JASA*, 88, 1273–1283. doi:10.1080/01621459.1993.10476408
 - Schimmel, M., Stutzmann, E., & Gallart, J. (2011). Using instantaneous phase coherence for signal extraction from ambient noise data at a local to a global scale. *GJI*, 184, 494–506. doi:10.1111/j.1365-246X.2010.04861.x
 - Seats, K. J., Lawrence, J. F., & Prieto, G. A. (2012). Improved ambient noise correlation functions using Welch's method. *GJI*, 188, 513–523. doi:10.1111/j.1365-246X.2011.05263.x

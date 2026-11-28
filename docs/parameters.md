@@ -35,7 +35,7 @@ Every setting of the configuration file, its default and its basis. The template
 | Key | Default | Meaning and basis |
 |---|---|---|
 | `fmin_hz` | init | lower band edge. Suggested: the longest pair r_max is 2 wavelengths at the fastest velocity, f = 2 v_fast / r_max (two-station far field, Bensen et al. 2007; Luo et al. 2015), lowered by the half-gain width of the Gaussian filter, × (1 − √(ln 2/α)) |
-| `fmax_hz` | init | upper band edge. Suggested: the F-J spectrum is free of spatial aliasing for k ≤ π/Δr, Δr the mean interval of the pair distances (Wang et al. 2019 eq. 14): f = v_slow / (2Δr), × (1 + √(ln 2/α)); at most 0.4 × the lowest raw rate |
+| `fmax_hz` | init | upper band edge. Suggested: spatial sampling theorem, the station spacing at most half the wavelength (e.g. Rost & Thomas 2002), with Δx the median distance to the nearest station: f = v_slow / (2Δx), × (1 + √(ln 2/α)); time sampling: at most 0.4 × the lowest raw rate |
 | `maxlag_s` | init | lag window. Suggested: r_max / (0.6 v_slow) + 4 / fmin. 0.6: convention, group velocities in dispersive layers lie well below the phase velocity; 4 periods give the noise window after the arrival |
 | `segment_s` | init | segment length. Must exceed 2 × maxlag (circular correlation). Suggested: max(2.5 maxlag, 10 / fmin) |
 | `overlap` | 0.5 | overlap of segments (Welch averaging; Seats et al. 2012) |

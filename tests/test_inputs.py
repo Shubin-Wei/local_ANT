@@ -112,14 +112,19 @@ def test_cleaned_day_file(tmp_path):
 def test_init_suggestions_and_written_file(tmp_path):
     rng = np.random.default_rng(3)
     table = {"S%d" % k: dict(lon=100 + 0.05 * a, lat=30 + 0.05 * b) for k, (a, b) in enumerate(rng.random((30, 2)))}
-    sug, geom = init.suggest(table, [100.0, 250.0], (0.3, 3.0))
+    sug, geom = init.suggest(table, [100.0, 250.0], (1.0, 3.0))
     v = {k: x for k, (x, _) in sug.items()}
-    assert v["clean.fs_hz"] in (10.0, 25.0, 50.0) and v["cc.fmax_hz"] <= 0.4 * v["clean.fs_hz"] + 1e-9
+    dx = geom["median_spacing_km"]  # spatial sampling: the station spacing is half the shortest wavelength
+    assert abs(v["cc.fmax_hz"] / (1.0 / (2 * dx) * (1 + init.HALF)) - 1) < 0.01
+    fs = v["clean.fs_hz"]  # the lowest whole rate reachable from both raw rates with fmax <= 0.4 fs
+    assert 100 % fs == 0 and 250 % fs == 0 and v["cc.fmax_hz"] <= 0.4 * fs + 1e-9 < 0.4 * 25
+    with pytest.raises(ValueError, match="too narrow"):  # a velocity range too wide for this small array
+        init.suggest(table, [100.0, 250.0], (0.3, 3.0))
     assert v["cc.segment_s"] >= 2 * v["cc.maxlag_s"] and 0 < v["cc.fmin_hz"] < v["cc.fmax_hz"]
     path = tmp_path / "c.yaml"
-    values = {"output_dir": str(tmp_path), "data.velocity_range_kms": [0.3, 3.0]}
+    values = {"output_dir": str(tmp_path), "data.velocity_range_kms": [1.0, 3.0]}
     values.update(v)
     init.write(str(path), values, {k: r for k, (_, r) in sug.items()})
     cfg = config.load(str(path))
-    assert cfg["clean"]["fs_hz"] == v["clean.fs_hz"] and cfg["data"]["velocity_range_kms"] == [0.3, 3.0]
+    assert cfg["clean"]["fs_hz"] == v["clean.fs_hz"] and cfg["data"]["velocity_range_kms"] == [1.0, 3.0]
     assert "lant init:" in path.read_text() and set(cfg) - {"_file"} == set(config.defaults())
