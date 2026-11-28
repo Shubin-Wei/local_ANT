@@ -56,7 +56,7 @@ def apply(scale=1.0):
 
 def log_axis(axis):
     """Logarithmic axis labelled with plain numbers (0.5, 1, 2, 5 ...) instead of powers of ten."""
-    from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
+    from matplotlib.ticker import FuncFormatter, NullFormatter
 
     axis.axes.set_xscale("log") if axis is axis.axes.xaxis else axis.axes.set_yscale("log")
     axis.set_major_locator(_PlainLogLocator())
