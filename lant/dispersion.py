@@ -298,16 +298,22 @@ def _chunk(idx):
             continue
         pos, neg = branches(x[q : q + 1], fs, maxlag)
         sym = 0.5 * (pos + neg)[0]
-        sets = []
-        for s in range(subs.shape[0]):  # delete-one-group stacks
-            w = cnt[q] - wts[s, q]
-            if wts[s, q] > 0 and w > 0:
-                y = (total[q] - wts[s, q] * subs[s, q]) / w
-                p2, n2 = branches(y[None, :], fs, maxlag)
-                sets.append(0.5 * (p2 + n2)[0])
-        res.append(measure_pair(sym, np.array(sets).reshape(len(sets), -1), dist[q], fs, G["freqs"], G["c_ref"],
-                                G["u_ref"], G["p"]))  # fmt: skip
+        sets = delete_one_stacks(total[q], cnt[q], subs[:, q], wts[:, q], fs, maxlag, sym.size)
+        res.append(measure_pair(sym, sets, dist[q], fs, G["freqs"], G["c_ref"], G["u_ref"], G["p"]))
     return idx, res
+
+
+def delete_one_stacks(total, count, subs, wts, fs, maxlag, nt):
+    """Symmetric components of the stacks without one sub-stack each -> [g, nt] (g = 0 when the pair's data come
+    from fewer than two sub-stacks).  total: the stack times its segment count; subs, wts: the sub-stacks and their
+    segment counts."""
+    sets = []
+    for s in range(len(subs)):
+        w = count - wts[s]
+        if wts[s] > 0 and w > 0:
+            p2, n2 = branches(((total - wts[s] * subs[s]) / w)[None, :], fs, maxlag)
+            sets.append(0.5 * (p2 + n2)[0])
+    return np.array(sets) if sets else np.zeros((0, nt))
 
 
 def _substacks(idx):

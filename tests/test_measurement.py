@@ -184,3 +184,15 @@ def test_matched_phase_reads_a_delayed_pulse():
 def test_smooth_curve_needs_picks(bad):
     with pytest.raises(RuntimeError):
         fj.smooth_curve(np.array([1.0, 2.0, 3.0]), np.array([np.nan, np.nan, 2.0 + bad]))
+
+
+def test_delete_one_stacks_of_a_pair_with_one_sub_stack():
+    """A pair whose data all come from one sub-stack has no delete-one stack (and so no jackknife error)."""
+    nlag = 2 * int(MAXLAG * FS) + 1
+    x = np.random.default_rng(0).standard_normal(nlag)
+    subs = np.array([x, np.zeros(nlag), np.zeros(nlag)])
+    sets = D.delete_one_stacks(10 * x, 10.0, subs, np.array([10.0, 0.0, 0.0]), FS, MAXLAG, int(MAXLAG * FS) + 1)
+    assert sets.shape == (0, int(MAXLAG * FS) + 1)
+    sets = D.delete_one_stacks(10 * x + 5 * x, 15.0, np.array([x, x, np.zeros(nlag)]), np.array([10.0, 5.0, 0.0]), FS,
+                               MAXLAG, int(MAXLAG * FS) + 1)  # fmt: skip
+    assert sets.shape[0] == 2 and np.allclose(sets[0], sets[1])
