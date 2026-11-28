@@ -31,20 +31,23 @@ def availability(table, out, dpi=300):
     days, names = rows[0][1:], [r[0] for r in rows[1:]]
     h = np.array([[float(v) for v in r[1:]] for r in rows[1:]])
     ns, nd = h.shape
-    fig, ax = plt.subplots(figsize=(min(16, 4 + 0.18 * nd), min(14, 2.5 + 0.12 * ns)), constrained_layout=True)
-    im = ax.imshow(h, aspect="auto", interpolation="nearest", cmap="viridis", vmin=0, vmax=24,
+    fig = plt.figure(figsize=(min(11.0, 5.0 + 0.16 * nd), min(9.0, 3.2 + 0.035 * ns)))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 4], width_ratios=[40, 1], hspace=0.06, wspace=0.03)
+    ax0, ax, cax = fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[1, 0]), fig.add_subplot(gs[1, 1])
+    ax0.bar(np.arange(nd), (h > 0).sum(axis=0), width=0.8, color="0.45")
+    ax0.set_xlim(-0.5, nd - 0.5)
+    ax0.set_ylabel("Stations")
+    ax0.tick_params(labelbottom=False)
+    im = ax.imshow(h, aspect="auto", interpolation="nearest", cmap="Blues", vmin=0, vmax=24,
                    extent=(-0.5, nd - 0.5, ns - 0.5, -0.5))  # fmt: skip
-    step = max(1, nd // 15)
-    ax.set_xticks(range(0, nd, step))
-    ax.set_xticklabels([days[k] for k in range(0, nd, step)], rotation=60, ha="right")
-    if ns <= 80:
+    every = max(1, int(np.ceil(nd / 12)))
+    ax.set_xticks(range(0, nd, every))
+    ax.set_xticklabels([days[k][5:] for k in range(0, nd, every)])
+    ax.set_xlabel("UTC day (%s\u2013%s)" % (days[0], days[-1]))
+    if ns <= 50:
         ax.set_yticks(range(ns))
-        ax.set_yticklabels(names, fontsize=6 if ns > 40 else 8)
+        ax.set_yticklabels(names, fontsize=8)
     else:
-        ax.set_ylabel("station (%d, sorted by name)" % ns)
-    ax.set_xlabel("UTC day")
-    fig.colorbar(im, ax=ax, label="hours of cleaned data", shrink=0.8)
-    ax.set_title(
-        "Cleaned data (stations: %d, days: %d, median %.1f h per station-day)" % (ns, nd, np.median(h)), fontsize=10
-    )
+        ax.set_ylabel("Station (%d, sorted by name)" % ns)
+    fig.colorbar(im, cax=cax, label="Hours of cleaned data", ticks=[0, 6, 12, 18, 24])
     style.save(fig, out, dpi)

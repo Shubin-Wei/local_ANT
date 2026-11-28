@@ -53,8 +53,8 @@ What it does: reads the cleaned days, cuts them into segments, leaves out segmen
 Check:
 
 - **`log.txt`**: stations, pairs and days used, days that were reused.
-- **`figures/ccf_section.png`**: correlations against distance. Surface waves are a moveout between the two dashed lines (the velocity range). Seen on both sides of zero lag when the noise comes from all directions; mostly on one side when it comes from one direction.
-- **`figures/ccf_time_*.png`**: the sub-stacks of three pairs, in time order. The arrival should be stable. A sub-stack that differs points at a station problem on that day (clock, instrument) or a strong local source. Leave such a station out with `data.exclude_stations`, or such days with `data.start_date` / `end_date`, and run the step again.
+- **`figures/ccf_<band>Hz.png`**: correlations against distance, one figure per sub-band of the correlation band (image above, wiggles averaged in distance bins below). Surface waves are a moveout between the two dashed lines (the velocity range). Seen on both sides of zero lag when the noise comes from all directions; mostly on one side when it comes from one direction.
+- **`figures/ccf_time_*.png`**: three pairs: the stack with its signal window (grey) and noise window (blue), the sub-stacks in time order, and the signal-to-noise ratio of the stack of the first n sub-stacks. The arrival should be stable and the ratio should grow with n. A sub-stack that differs points at a station problem on that day (clock, instrument) or a strong local source. Leave such a station out with `data.exclude_stations`, or such days with `data.start_date` / `end_date`, and run the step again.
 
 Results: `stack.h5` (the stack), `days/*.h5` (sub-stacks of each day). `lant export-sac -c my.yaml -o DIR` writes the stack as SAC files for other programs.
 
@@ -72,8 +72,8 @@ Check, in this order:
 
    On a line array the F-J spectrum is often unclear (few pairs, unevenly spread distances). Then use a 1-D model or a curve from a nearby areal array or from the literature (`disp.reference: model` or `file`).
 2. **`median_vs_reference.csv`**: a deviation of 20 % or more, or one that jumps between frequencies, means wrong cycle counts (the reference is wrong); a steady offset of a few percent is a real difference from the reference.
-3. **`figures/curves.png`**, **`figures/rejections.png`** (phase) and **`figures/group_curves.png`**, **`figures/group_rejections.png`** (group): how many pairs measure each frequency, and why the others were rejected (reason names in methods, section 5).
-4. **`figures/pair_*.png`**: three example pairs: is the group arrival on the envelope maximum, does the phase velocity follow the reference?
+3. **`figures/phase_curves.png`**, **`figures/group_curves.png`**: every accepted curve with the median and standard deviation; **`figures/rejections.png`**: how many pairs are accepted at each frequency, and why the others were rejected (reason names in methods, section 5).
+4. **`figures/pair_*.png`**: three example pairs: the correlation with the window between the two velocities, the phase-velocity image (its crests are the possible cycle counts) and the group-velocity image. The accepted phase velocities should lie on one crest and the group velocities on the energy maximum.
 
 Do not loosen the quality control to get more points: the numbers in `disp` have the bases listed in [parameters.md](parameters.md).
 
@@ -88,7 +88,7 @@ Check:
 - **`figures/start_model.png`**: does the starting model fit the average curve?
 - **`figures/residuals.png`** and `residuals.csv`: the residuals of the final model should be smaller than those of the starting model; the rms per period tells where the model fits worse.
 - **`figures/paths.png`**: where the data are.
-- **`figures/slices.png`**, **`figures/profiles.png`**: the model. Interpret it only where the resolution test recovers the anomalies.
+- **`figures/slices.png`**, **`figures/sections.png`**: the model in depth slices and along the two sections drawn on the slices. Interpret it only where the resolution test recovers the anomalies.
 
 Results: `vs_model.csv` (lon, lat, depth, Vs, dVs in % of the starting model, DWS: 0 means no data at that node), `start_model.csv`, `average_curve.csv`, `residuals.csv`, and `dsurftomo/` (the project in DSurfTomo's format, which the original DSurfTomo also runs).
 

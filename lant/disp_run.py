@@ -92,12 +92,12 @@ def run(cfg):
         if nsub < 3 and cfg["disp"]["max_jackknife_rel"] is not None:
             raise C.ConfigError("%d sub-stacks: the jackknife needs at least 3; use shorter cc.substack_hours (and run "
                                 "lant cc again) or set disp.max_jackknife_rel to null" % nsub)  # fmt: skip
-        step.say("measuring %d pairs (%d jackknife groups: the sub-stacks)" % (len(use), nsub))
+        step.say("measuring %d pairs, %d with data (%d jackknife groups: the sub-stacks)" % (len(cnt), len(use), nsub))
         p = settings(cfg)
         m = D.measure_all(stack, day_files, freqs, ref["c"], ref["u"], p, n_cores, step.say)
         with h5py.File(step.path("measurements.h5.tmp"), "w") as h:
             for k, v in m.items():
-                h[k] = v.astype(np.float32) if k != "reason" else v
+                h[k] = v if k.startswith("reason") else v.astype(np.float32)
             h["freqs"], h["c_ref"], h["u_ref"] = freqs, ref["c"], ref["u"]
             h["sta1"], h["sta2"], h["dist_km"] = np.array(sta1, "S"), np.array(sta2, "S"), dist_all
             h.attrs.update({k: ("none" if v is None else v) for k, v in p.items()})
@@ -109,8 +109,8 @@ def run(cfg):
         med = write_medians(step.path("median_vs_reference.csv"), ok, ok_u, m, freqs, ref)
         counts = D.reason_counts(m["reason"][cnt > 0])
         counts_u = D.reason_counts(m["reason_u"][cnt > 0])
-        step.say("rejections of c (values with each reason; a value can have several): %s" % counts)
-        step.say("rejections of U: %s" % counts_u)
+        step.say("rejected phase velocities (a value can have several reasons): %s" % _reasons(counts))
+        step.say("rejected group velocities: %s" % _reasons(counts_u))
         step.number("pairs measured", int(len(use)))
         step.number("pairs with a phase-velocity curve", int(ok.any(axis=1).sum()))
         step.number("accepted phase velocities", int(ok.sum()))
@@ -123,6 +123,10 @@ def run(cfg):
         from .plotting import disp_figures
 
         disp_figures.make(cfg, step, ref, m, ok, ok_u, freqs, dist_all, sta1, sta2)
+
+
+def _reasons(counts):
+    return ", ".join("%s %d" % (k.replace("_", " "), v) for k, v in counts.items() if v) or "none"
 
 
 def _n_substacks(path):

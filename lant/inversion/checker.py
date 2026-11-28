@@ -73,8 +73,9 @@ def run(cfg, size, flip=None):
                  % (size, 100 * amp, "" if flip is None else ", sign reversed below %g km" % flip,
                     1e3 * np.nanmin(sd), 1e3 * np.nanmax(sd), cfg["checker"]["noise"]))  # fmt: skip
         from . import dsurf_main
+        from .run import Progress
 
-        dsurf_main.run(pdir, "DSurfTomo.in", n_cores, dws_file="dws.txt")
+        dsurf_main.run(pdir, "DSurfTomo.in", n_cores, dws_file="dws.txt", screen=Progress(step.say))
         rec = recovery(pdir, z, vs1d)
         np.savetxt(step.path("recovery.csv"), rec, fmt=("%.4f", "%d", "%.3f", "%.3f"), delimiter=",",
                    header="depth_km,nodes_with_data,correlation,slope", comments="")  # fmt: skip

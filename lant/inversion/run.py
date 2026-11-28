@@ -149,9 +149,31 @@ def solve(pdir, n_cores, step):
     from . import dsurf_main
 
     step.say("3-D inversion (%d threads); DSurfTomo's own log: %s/DSurfTomo.in.log" % (n_cores, PROJECT))
-    timings = dsurf_main.run(pdir, "DSurfTomo.in", n_cores, dws_file="dws.txt")
+    timings = dsurf_main.run(pdir, "DSurfTomo.in", n_cores, dws_file="dws.txt", screen=Progress(step.say))
     step.number("iterations", len(timings))
     step.number("travel times rejected in the last iteration", timings[-1]["rejected"])
+
+
+class Progress:
+    """Screen of dsurf_main for lant: one line per iteration (the full screen output is in DSurfTomo.in.log)."""
+
+    def __init__(self, say):
+        self.say, self.buf, self.it = say, "", 0
+
+    def write(self, text):
+        self.buf += text
+        while "\n" in self.buf:
+            line, self.buf = self.buf.split("\n", 1)
+            if "th iteration" in line:
+                self.it = int(line.split("th")[0])
+            elif "rms of residual" in line:
+                mean, std = line.split(":")[1].split()[:2]
+                self.say(
+                    "  iteration %d: residuals after weighting, mean %s, standard deviation %s" % (self.it, mean, std)
+                )
+
+    def flush(self):
+        pass
 
 
 def model_table(pdir, name):

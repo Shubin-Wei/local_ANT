@@ -53,8 +53,8 @@ lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --v
 检查：
 
 - **`log.txt`**：用到的台站、台对和天数，复用的天。
-- **`figures/ccf_section.png`**：互相关随台距排列。面波表现为两条虚线（速度范围）之间的时距同相轴。噪声来自各个方向时零时延两侧都有；来自一个方向时主要在一侧。
-- **`figures/ccf_time_*.png`**：三个台对按时间排列的子叠加，到时应稳定。某个子叠加明显不同，说明当天某台有问题（钟差、仪器）或有强的局部源。可用 `data.exclude_stations` 去掉该台，或用 `data.start_date` / `end_date` 去掉这些天，再重跑这一步。
+- **`figures/ccf_<频段>Hz.png`**：互相关随台距排列，互相关频带分成几个子频段各画一张（上为图像，下为按台距分组平均的波形）。面波表现为两条虚线（速度范围）之间的时距同相轴。噪声来自各个方向时零时延两侧都有；来自一个方向时主要在一侧。
+- **`figures/ccf_time_*.png`**：三个台对：叠加波形及其信号窗（灰）和噪声窗（蓝），按时间排列的子叠加，以及前 n 个子叠加的叠加信噪比。到时应稳定，信噪比应随 n 增大。某个子叠加明显不同，说明当天某台有问题（钟差、仪器）或有强的局部源。可用 `data.exclude_stations` 去掉该台，或用 `data.start_date` / `end_date` 去掉这些天，再重跑这一步。
 
 结果：`stack.h5`（叠加）、`days/*.h5`（每天的子叠加）。`lant export-sac -c my.yaml -o 目录` 把叠加写成 SAC 文件，供其他软件使用。
 
@@ -72,8 +72,8 @@ lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --v
 
    测线台阵的 F-J 谱常常不清楚（台对少、台距分布不均）。这时用附近面阵或文献给出的一维模型或曲线（`disp.reference: model` 或 `file`）。
 2. **`median_vs_reference.csv`**：偏离达 20 % 以上，或在相邻频率间跳动，说明整周数有错（参考曲线有错）；稳定的几个百分点偏离是与参考的真实差别。
-3. **`figures/curves.png`**、**`figures/rejections.png`**（相速度）和 **`figures/group_curves.png`**、**`figures/group_rejections.png`**（群速度）：每个频率有多少台对测到，其余的被拒原因（原因名称见方法第 5 节）。
-4. **`figures/pair_*.png`**：三个示例台对：群到时是否在包络极大上，相速度是否沿参考曲线。
+3. **`figures/phase_curves.png`**、**`figures/group_curves.png`**：所有接受的曲线及其中位数和标准差；**`figures/rejections.png`**：每个频率接受了多少台对，其余的被拒原因（原因名称见方法第 5 节）。
+4. **`figures/pair_*.png`**：三个示例台对：互相关及两个速度之间的窗口，相速度图像（波峰对应各种可能的整周数）和群速度图像。接受的相速度应落在同一条波峰上，群速度应在能量极大上。
 
 不要为了多出点而放宽质控：`disp` 里的数字及其依据见 [parameters.zh.md](parameters.zh.md)。
 
@@ -88,7 +88,7 @@ lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --v
 - **`figures/start_model.png`**：起始模型是否拟合平均曲线。
 - **`figures/residuals.png`** 和 `residuals.csv`：最终模型的残差应比起始模型小；按周期的均方根说明哪里拟合较差。
 - **`figures/paths.png`**：数据覆盖在哪里。
-- **`figures/slices.png`**、**`figures/profiles.png`**：模型。只在分辨率检验能恢复异常的地方解释。
+- **`figures/slices.png`**、**`figures/sections.png`**：模型的深度切片，以及沿切片上所画两条剖面线的剖面。只在分辨率检验能恢复异常的地方解释。
 
 结果：`vs_model.csv`（经度、纬度、深度、Vs、相对起始模型的 dVs（%）、DWS：0 表示该节点没有数据）、`start_model.csv`、`average_curve.csv`、`residuals.csv`，以及 `dsurftomo/`（DSurfTomo 格式的工程，原版 DSurfTomo 也能直接运行）。
 

@@ -100,6 +100,7 @@ SMOOTH = 0.01  # weight of the curvature of the 1-D model (km/s of misfit per un
 DAMP = 0.05  # damping of each Gauss-Newton step
 ITERATIONS = 14
 MAX_STEP = 0.15  # largest change of ln Vs per step
+CONVERGED = 1e-5  # stop when no step changes ln Vs by more
 
 
 def invert1d(T, d, z, log=print, group=False):
@@ -131,5 +132,8 @@ def invert1d(T, d, z, log=print, group=False):
         dm = np.clip(np.linalg.lstsq(A, b, rcond=None)[0], -MAX_STEP, MAX_STEP)
         vs = vs * np.exp(dm)
         hist.append(float(np.sqrt(np.mean(r**2))))
-        log("  1-D iteration %2d: rms misfit %.4f km/s, Vs %.3f-%.3f km/s" % (it + 1, hist[-1], vs.min(), vs.max()))
+        if np.abs(dm).max() < CONVERGED:
+            break
+    log("  1-D inversion: %d iterations, rms misfit %.4f km/s, Vs %.3f-%.3f km/s" % (len(hist), hist[-1], vs.min(),
+                                                                                    vs.max()))  # fmt: skip
     return vs, velocity(z, vs, T, group), hist

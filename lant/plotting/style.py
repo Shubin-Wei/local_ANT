@@ -1,12 +1,14 @@
 """Shared matplotlib style of the figures that are not maps (journal style: serif STIX type, ticks inside)."""
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
 
 RED, BLUE, GREY = "#d62728", "#1f77b4", "0.55"
+FAST, SLOW = "#e8201a", "#00a0d8"  # lines of the fastest and slowest velocity on correlations
 ENERGY = LinearSegmentedColormap.from_list(
     "energy", ["#ffffff", "#cfe6fa", "#8cc8f0", "#ffe94a", "#ff9a1f", "#e8201a", "#8c0a0a"]
 )
@@ -34,24 +36,65 @@ PERTURBATION = LinearSegmentedColormap.from_list("vs_anomaly", ["#c50000", "#fff
 
 
 def apply(scale=1.0):
+    """Journal style: serif (STIX) type, ticks inside on all four sides, no frame around legends."""
     plt.rcParams.update(
         {
             "font.family": "STIXGeneral",
             "mathtext.fontset": "stix",
-            "font.size": 12 * scale,
-            "axes.labelsize": 13 * scale,
-            "xtick.labelsize": 11 * scale,
-            "ytick.labelsize": 11 * scale,
-            "legend.fontsize": 11 * scale,
+            "font.size": 13 * scale,
+            "axes.labelsize": 15 * scale,
+            "xtick.labelsize": 13 * scale,
+            "ytick.labelsize": 13 * scale,
+            "legend.fontsize": 12 * scale,
+            "legend.frameon": False,
             "xtick.direction": "in",
             "ytick.direction": "in",
             "xtick.top": True,
             "ytick.right": True,
-            "axes.linewidth": 0.8,
+            "xtick.major.size": 5,
+            "ytick.major.size": 5,
+            "xtick.minor.size": 2.5,
+            "ytick.minor.size": 2.5,
+            "xtick.major.pad": 6,
+            "axes.linewidth": 0.9,
             "savefig.bbox": "tight",
             "savefig.pad_inches": 0.05,
         }
     )
+
+
+def period_axis(ax):
+    """Period (s) on the top axis of a logarithmic frequency axis."""
+    sec = ax.secondary_xaxis(
+        "top", functions=(lambda x: 1 / np.clip(x, 1e-6, None), lambda x: 1 / np.clip(x, 1e-6, None))
+    )
+    lo, hi = sorted(1 / np.array(ax.get_xlim()))
+    ticks = [v for v in nice_log_ticks(lo, hi)]
+    sec.set_xticks(ticks)
+    sec.set_xticklabels(["%g" % v for v in ticks])
+    sec.minorticks_off()
+    sec.tick_params(direction="in")
+    sec.set_xlabel("Period (s)", labelpad=8)
+    ax.tick_params(axis="x", which="both", top=False)
+    return sec
+
+
+def nice_log_ticks(lo, hi):
+    """1, 2, 5 x 10^n within [lo, hi]; 1-9 x 10^n when that leaves fewer than three."""
+    for subs in ((1, 2, 5), range(1, 10)):
+        t = [m * 10.0**e for e in range(int(np.floor(np.log10(lo))) - 1, int(np.ceil(np.log10(hi))) + 1) for m in subs]
+        t = [v for v in t if lo * 0.999 <= v <= hi * 1.001]
+        if len(t) >= 3:
+            return t
+    return t
+
+
+def freq_axis(ax, f):
+    """Logarithmic frequency axis over the frequencies f, labelled 0.5, 1, 2, 5 ...; period on the top axis."""
+    log_axis(ax.xaxis)
+    ax.set_xlim(f[0] / 1.02, f[-1] * 1.02)
+    ax.set_xlabel("Frequency (Hz)")
+    period_axis(ax)
 
 
 def log_axis(axis):
@@ -59,6 +102,15 @@ def log_axis(axis):
     from matplotlib.ticker import FuncFormatter, NullFormatter
 
     axis.axes.set_xscale("log") if axis is axis.axes.xaxis else axis.axes.set_yscale("log")
+    axis.set_major_locator(_PlainLogLocator())
+    axis.set_major_formatter(FuncFormatter(lambda v, _: "%g" % v))
+    axis.set_minor_formatter(NullFormatter())
+
+
+def plain_log(axis):
+    """Plain numbers on an axis that is already logarithmic."""
+    from matplotlib.ticker import FuncFormatter, NullFormatter
+
     axis.set_major_locator(_PlainLogLocator())
     axis.set_major_formatter(FuncFormatter(lambda v, _: "%g" % v))
     axis.set_minor_formatter(NullFormatter())

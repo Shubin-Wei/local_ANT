@@ -14,7 +14,7 @@
 - 结果文件夹：`1_clean`、`2_cc`、`3_disp`、`4_inv`、`5_checker_*`。
 - 建议的采样率和频带上限（`lant init`）：`clean.fs_hz` 取每个原始采样率都能整数倍抽取到的最高整数采样率，`cc.fmax_hz` = 0.4 × `clean.fs_hz`（奈奎斯特采样定理）。3.0.0 的规则（台对距离的平均间隔）在台对很多时会给出几百赫兹。
 - `lant cc` 对清洗后的数据使用 `data.exclude_stations` 和 `data.start_date` / `end_date`；清洗时的采样率不同，或去响应的预滤波窄于互相关频带时，会停下并说明。
-- `lant disp` 新增图 `group_curves.png`、`group_rejections.png`。`lant inv` 的 `average_curve.csv`、`start_fit.csv`、`residuals.csv` 增加 `velocity` 列（phase 或 group）。
+- 图按期刊图的样式重画：互相关按子频段出图，时延轴随台阵定（`ccf_<频段>Hz.png`）；每个台对画叠加、子叠加和信噪比随叠加的变化（`ccf_time_*.png`）；频散曲线画中位数和标准差（`phase_curves.png`、`group_curves.png`）；相速度和群速度的剔除统计合为一张 `rejections.png`；示例台对画互相关、相速度和群速度图像；射线、切片、剖面（`sections.png`，取代 `profiles.png`）和棋盘用 GMT 画。`lant inv` 的 `average_curve.csv`、`start_fit.csv`、`residuals.csv` 增加 `velocity` 列（phase 或 group）。
 - `example.yaml`：`lant init` 写出的一份完整配置。
 - 某列模型中有 Vs 随深度减小时，频散求根的步长从 0.005 km/s 改为 0.0005 km/s。原步长下可能跳到高阶模式或找不到根（三维反演因此停下）。
 - 台对的数据全部来自一个子叠加时，`lant disp` 不再出错停下。

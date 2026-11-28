@@ -14,7 +14,7 @@ import tempfile
 
 import numpy as np
 
-SET = ("gmt set FORMAT_GEO_MAP ddd.xxF FONT_ANNOT_PRIMARY 8p,Helvetica FONT_LABEL 9p,Helvetica MAP_FRAME_TYPE plain "
+SET = ("gmt set FORMAT_GEO_MAP ddd.xxF FONT_ANNOT_PRIMARY 9p,Helvetica FONT_LABEL 10p,Helvetica FONT_TITLE 11p,Helvetica MAP_FRAME_TYPE plain "
        "MAP_FRAME_PEN 0.5p MAP_TICK_LENGTH_PRIMARY 0.07c MAP_ANNOT_OFFSET_PRIMARY 0.06c PS_LINE_JOIN round")  # fmt: skip
 CHECK_CPT = "polar -I"  # red (slow) - white - blue (fast)
 
