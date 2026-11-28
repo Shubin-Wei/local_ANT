@@ -1,4 +1,4 @@
-"""Two-station Rayleigh phase velocity of every pair (lant disp, with lant.reference).
+"""Two-station Rayleigh phase and group velocities of every pair (lant disp, with lant.reference).
 
 For each pair of the stack, at the measurement frequencies f (disp.per_octave per octave):
   1. symmetric component: the average of the positive and the time-reversed negative lags (Bensen et al. 2007);
@@ -7,6 +7,10 @@ For each pair of the stack, at the measurement frequencies f (disp.per_octave pe
      disp.group_window, U_ref the reference group velocity; a maximum on the edge of this window is no arrival;
      signal-to-noise ratio: the envelope at t_g over the rms of the filtered signal after the window (two periods
      after its end to the end of the lag window, at least the last 15 %);
+     group velocity: t_g belongs to the instantaneous frequency of the filtered signal at the arrival, not to the
+     centre of the filter (Levshin et al. 1972; Bensen et al. 2007); within each run of consecutive arrivals the
+     group times are interpolated (in ln f) from the instantaneous frequencies back onto the measurement
+     frequencies, U = dist / t_g;
   4. phase by the phase-matched filter (Herrin & Goforth 1977; FTAN): the spectrum is multiplied by exp(i Psi),
      Psi(w) = integral of t_g dw, which takes the dispersion out of the arrival, and the Gaussian-weighted sum
      around f gives its phase Phi(f); the phase travel time t_p = -(Phi - pi/4) / (2 pi f) + N / f, where pi/4 is
@@ -18,12 +22,14 @@ For each pair of the stack, at the measurement frequencies f (disp.per_octave pe
      (AFTAN), on a grid four times finer than the measurement grid; a jump of more than disp.slip_cycles of a cycle
      ends the run;
   6. error: delete-one-group jackknife over the sub-stacks of the cc step (each sub-stack left out in turn; Efron &
-     Stein 1981), sigma^2 = (g - 1) / g sum (c_i - mean)^2; it measures the repeatability over time only;
-  7. quality control (every threshold in disp): SNR >= snr_min; path >= min_wavelengths wavelengths of the measured
-     c (Bensen et al. 2007; Luo et al. 2015); sigma <= max_jackknife_rel c; then of the accepted frequencies the
-     longest consecutive run, at least min_points long, is the pair's curve (one segment per pair, as the manual
-     of EGFAnalysisTimeFreq advises).
-Every rejected value keeps its reasons (REASONS, a bit mask).
+     Stein 1981), sigma^2 = (g - 1) / g sum (c_i - mean)^2, for c and for U; it measures the repeatability over
+     time only;
+  7. quality control (every threshold in disp), for c and U separately: SNR >= snr_min; path >= min_wavelengths
+     wavelengths (Bensen et al. 2007; Luo et al. 2015); sigma <= max_jackknife_rel x the velocity; then of the
+     accepted frequencies the longest consecutive run, at least min_points long, is the pair's curve (one segment
+     per pair, as the manual of EGFAnalysisTimeFreq advises).  The cycle count and the phase tracking concern c
+     only; U needs no cycle count.
+Every rejected value keeps its reasons (REASONS, a bit mask): reason for c, reason_u for U.
 """
 
 import numpy as np
@@ -88,6 +94,52 @@ def group_arrival(env, fs, dist, u_ref, window):
     return (j + frac) / fs, j
 
 
+def instantaneous_frequency(an, j, fs):
+    """Instantaneous frequency (Hz) of a narrow-band analytic signal at sample j: central difference of its phase."""
+    return float(np.angle(an[j + 1] * np.conj(an[j - 1]))) * fs / (4 * np.pi)
+
+
+def group_times(freqs, f_inst, tg):
+    """Group times measured at the instantaneous frequencies f_inst, interpolated in ln f onto freqs within each run
+    of consecutive arrivals (never across a gap, never beyond the run) -> [nf], NaN where not covered."""
+    out = np.full(len(freqs), np.nan)
+    ok = np.isfinite(tg) & np.isfinite(f_inst) & (f_inst > 0)
+    for k0, k1 in runs_of(ok):
+        if k1 - k0 < 2:
+            continue
+        fi, t = f_inst[k0:k1], tg[k0:k1]
+        o = np.argsort(fi)
+        fi, t = fi[o], t[o]
+        inside = (freqs >= fi[0]) & (freqs <= fi[-1])
+        out[inside] = np.interp(np.log(freqs[inside]), np.log(fi), t)
+    return out
+
+
+def _arrivals(an, fs, dist, u_ref, window, ks):
+    """Group times and instantaneous frequencies at the filter indices ks of one analytic bank [nf, nt]."""
+    tg, fi = np.full(an.shape[0], np.nan), np.full(an.shape[0], np.nan)
+    env = np.abs(an)
+    for k in ks:
+        t, j = group_arrival(env[k], fs, dist, u_ref[k], window)
+        if j > 0:
+            tg[k], fi[k] = t, instantaneous_frequency(an[k], j, fs)
+    return tg, fi
+
+
+def _one_run(ok, snr, min_points, reason):
+    """Keep the longest run of ok (at least min_points); mark the others in reason."""
+    R = REASONS
+    runs = [(k0, k1) for k0, k1 in runs_of(ok) if k1 - k0 >= min_points]
+    for k0, k1 in runs_of(ok):
+        if k1 - k0 < min_points:
+            reason[k0:k1] |= R["short_run"]
+    if len(runs) > 1:
+        best = max(runs, key=lambda r: (r[1] - r[0], np.nanmean(snr[r[0] : r[1]])))
+        for k0, k1 in runs:
+            if (k0, k1) != best:
+                reason[k0:k1] |= R["not_longest_run"]
+
+
 def track(tp0, ffine, tg, dist, c_ref, slip):
     """Cycle count at ffine[0] from the reference, then followed upwards -> phase travel times (NaN after a slip)."""
     T = 1.0 / ffine
@@ -105,10 +157,10 @@ def track(tp0, ffine, tg, dist, c_ref, slip):
 
 def measure_pair(sym, subsets, dist, fs, freqs, c_ref, u_ref, p):
     """One pair.  sym: one-sided symmetric component of the stack; subsets: those of the delete-one-group stacks
-    [g, nt]; p: the disp settings.  -> dict of arrays over freqs: c, u, snr, sigma, reason."""
+    [g, nt]; p: the disp settings.  -> dict of arrays over freqs: c, sigma, reason (phase), u, u_sigma, reason_u
+    (group), snr."""
     nf = len(freqs)
-    out = dict(c=np.full(nf, np.nan), u=np.full(nf, np.nan), snr=np.full(nf, np.nan), sigma=np.full(nf, np.nan),
-               reason=np.zeros(nf, np.int32))  # fmt: skip
+    out = empty_result(nf)
     R = REASONS
     have_ref = np.isfinite(c_ref) & np.isfinite(u_ref)
     out["reason"][~have_ref] |= R["no_reference"]
@@ -119,19 +171,21 @@ def measure_pair(sym, subsets, dist, fs, freqs, c_ref, u_ref, p):
     nt = sym.size
     t = np.arange(nt) / fs
     tg = np.full(nf, np.nan)
+    f_inst = np.full(nf, np.nan)
     for k in np.where(have_ref & ~short)[0]:
         tg[k], j = group_arrival(env[k], fs, dist, u_ref[k], p["group_window"])
         if j < 0:
             out["reason"][k] |= R["no_arrival"]
             continue
+        f_inst[k] = instantaneous_frequency(an[k], j, fs)
         t_end = dist / ((1 - p["group_window"]) * u_ref[k]) + 2.0 / freqs[k]
         m = t > min(t_end, 0.85 * t[-1])
         noise = np.sqrt(np.mean(np.real(an[k, m]) ** 2)) + 1e-30
         out["snr"][k] = env[k, j] / noise
-        out["u"][k] = dist / tg[k]
         if out["snr"][k] < p["snr_min"]:
             out["reason"][k] |= R["snr"]
     usable = out["reason"] == 0
+    _group(out, sym, subsets, dist, fs, freqs, u_ref, p, tg, f_inst, usable)
     po = int(round(1.0 / np.log2(freqs[1] / freqs[0])))
     for k0, k1 in runs_of(usable):
         if k1 - k0 < p["min_points"]:
@@ -165,16 +219,46 @@ def measure_pair(sym, subsets, dist, fs, freqs, c_ref, u_ref, p):
             bad = ok & ~(out["sigma"] <= p["max_jackknife_rel"] * out["c"])
             out["reason"][bad] |= R["jackknife"]
     ok = np.isfinite(out["c"]) & (out["reason"] == 0)
-    runs = [(k0, k1) for k0, k1 in runs_of(ok) if k1 - k0 >= p["min_points"]]
-    for k0, k1 in runs_of(ok):
-        if k1 - k0 < p["min_points"]:
-            out["reason"][k0:k1] |= R["short_run"]
-    if len(runs) > 1:
-        best = max(runs, key=lambda r: (r[1] - r[0], np.nanmean(out["snr"][r[0] : r[1]])))
-        for k0, k1 in runs:
-            if (k0, k1) != best:
-                out["reason"][k0:k1] |= R["not_longest_run"]
+    _one_run(ok, out["snr"], p["min_points"], out["reason"])
     return out
+
+
+def empty_result(nf, reason=0):
+    return dict(c=np.full(nf, np.nan), sigma=np.full(nf, np.nan), reason=np.full(nf, reason, np.int32),
+                u=np.full(nf, np.nan), u_sigma=np.full(nf, np.nan), reason_u=np.full(nf, reason, np.int32),
+                snr=np.full(nf, np.nan))  # fmt: skip
+
+
+def _group(out, sym, subsets, dist, fs, freqs, u_ref, p, tg, f_inst, usable):
+    """Group velocity U and its quality control (step 3 and 7 for U), into out["u"], out["u_sigma"],
+    out["reason_u"]."""
+    R = REASONS
+    reason = out["reason"].copy()  # the reasons common to c and U so far
+    tgc = np.where(usable, tg, np.nan)
+    tgu = group_times(freqs, np.where(usable, f_inst, np.nan), tgc)
+    covered = np.isfinite(tgu)
+    reason[covered] &= R["no_reference"] | R["path_short"]  # inside a run of good arrivals: it has a group time
+    reason[~covered & (reason == 0)] |= R["no_arrival"]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        u = dist / tgu
+    out["u"] = u
+    if len(subsets) >= 3 and covered.any():
+        ks = np.where(usable)[0]
+        an = analytic_bank(np.asarray(subsets), fs, freqs, p["alpha"])
+        uj = np.empty((len(subsets), len(freqs)))
+        for g in range(len(subsets)):
+            tj, fj_ = _arrivals(an[g], fs, dist, u_ref, p["group_window"], ks)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                uj[g] = dist / group_times(freqs, fj_, tj)
+        g = len(subsets)
+        with np.errstate(invalid="ignore"):
+            out["u_sigma"] = np.sqrt((g - 1) / g * np.sum((uj - uj.mean(0)) ** 2, axis=0))
+    if p["max_jackknife_rel"] is not None:
+        with np.errstate(invalid="ignore"):
+            bad = covered & (reason == 0) & ~(out["u_sigma"] <= p["max_jackknife_rel"] * u)
+        reason[bad] |= R["jackknife"]
+    _one_run(covered & (reason == 0), out["snr"], p["min_points"], reason)
+    out["reason_u"] = reason
 
 
 def accepted(reason, c):
@@ -210,9 +294,7 @@ def _chunk(idx):
     res = []
     for q in range(len(idx)):
         if cnt[q] == 0:
-            nf = len(G["freqs"])
-            res.append(dict(c=np.full(nf, np.nan), u=np.full(nf, np.nan), snr=np.full(nf, np.nan),
-                            sigma=np.full(nf, np.nan), reason=np.full(nf, REASONS["no_data"], np.int32)))  # fmt: skip
+            res.append(empty_result(len(G["freqs"]), REASONS["no_data"]))
             continue
         pos, neg = branches(x[q : q + 1], fs, maxlag)
         sym = 0.5 * (pos + neg)[0]
@@ -273,8 +355,9 @@ def measure_all(stack_path, day_files, freqs, c_ref, u_ref, p, n_cores, log=prin
     size = max(1, min(50, npair // (4 * n_cores) or 1, int(2e8 // (8 * max(1, nsub) * nlag))))
     chunks = [np.arange(i, min(npair, i + size)) for i in range(0, npair, size)]
     nf = len(freqs)
-    out = {k: np.full((npair, nf), np.nan) for k in ("c", "u", "snr", "sigma")}
+    out = {k: np.full((npair, nf), np.nan) for k in ("c", "sigma", "u", "u_sigma", "snr")}
     out["reason"] = np.zeros((npair, nf), np.int32)
+    out["reason_u"] = np.zeros((npair, nf), np.int32)
     done = 0
     with Pool(max(1, min(n_cores, len(chunks))), initializer=_init, initargs=(shared,)) as pool:
         for idx, res in pool.imap_unordered(_chunk, chunks):

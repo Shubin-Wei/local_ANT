@@ -1,5 +1,5 @@
-"""1-D models: Rayleigh phase velocities of a node model, the average curve, depth nodes, and the 1-D inversion that
-gives the starting model of the 3-D inversion.
+"""1-D models: Rayleigh phase and group velocities of a node model, the average curves, depth nodes, and the 1-D
+inversion that gives the starting model of the 3-D inversion.
 
 Node model: Vs at depth nodes, linear in between, the last node a half-space (DSurfTomo's model; Fang et al. 2015);
 Vp and density from Vs by Brocher (2005), as DSurfTomo does.  The phase velocities come from DSurfTomo's own
@@ -14,9 +14,9 @@ MAX_LAYERS = 200  # NL of refineGrid2LayerMdl: every node interval becomes minth
 MINTHK = 3  # sublayers per node interval for the depth kernels (DSurfTomo's manual default; its range 2-5)
 
 
-def phase_velocity(depths, vs, periods, minthk=MINTHK):
-    """Fundamental Rayleigh phase velocity (km/s) of the node model at the periods (s), in the order given; 0 where
-    surfdisp96 finds no root."""
+def phase_velocity(depths, vs, periods, minthk=MINTHK, igr=0):
+    """Fundamental Rayleigh phase (igr = 0) or group (igr = 1) velocity (km/s) of the node model at the periods (s),
+    in the order given; 0 where surfdisp96 finds no root."""
     from .dsurf_disp96 import column_phase
 
     z = np.asarray(depths, np.float32)
@@ -32,7 +32,19 @@ def phase_velocity(depths, vs, periods, minthk=MINTHK):
         raise ValueError("at most %d depth nodes (DSurfTomo's layer limit)" % ((MAX_LAYERS - 1) // (minthk + 1) + 1))
     order = np.argsort(t, kind="stable")  # surfdisp96 solves the periods in increasing order
     out = np.empty(t.size)
-    out[order] = column_phase(z, v, np.float32(minthk), np.ascontiguousarray(t[order]))
+    out[order] = column_phase(z, v, np.float32(minthk), np.ascontiguousarray(t[order]), igr)
+    return out
+
+
+def velocity(depths, vs, periods, group):
+    """Phase velocities where group is False, group velocities where it is True (in the order given)."""
+    group = np.broadcast_to(np.asarray(group, bool), np.shape(periods))
+    t = np.asarray(periods, float)
+    out = np.empty(t.size)
+    for igr in (0, 1):
+        m = group == bool(igr)
+        if m.any():
+            out[m] = phase_velocity(depths, vs, t[m], igr=igr)
     return out
 
 
@@ -45,10 +57,11 @@ def read_node_model(path):
 
 
 def average_curve(period, velocity, min_pairs):
-    """Median phase velocity of each period over the pairs that have one -> rows (period, c, pairs)."""
+    """Median velocity of each period over the pairs that have one -> rows (period, velocity, pairs)."""
     rows = []
-    for t in np.unique(period):
-        v = velocity[period == t]
+    ok = np.isfinite(velocity)
+    for t in np.unique(period[ok]):
+        v = velocity[ok & (period == t)]
         if v.size >= min_pairs:
             rows.append((float(t), float(np.median(v)), int(v.size)))
     return np.array(rows).reshape(-1, 3)
@@ -89,20 +102,22 @@ ITERATIONS = 14
 MAX_STEP = 0.15  # largest change of ln Vs per step
 
 
-def invert1d(T, d, z, log=print):
-    """Gauss-Newton on m = ln Vs of the node model at depths z fitting the phase velocities d at periods T.
+def invert1d(T, d, z, log=print, group=False):
+    """Gauss-Newton on m = ln Vs of the node model at depths z fitting the velocities d at periods T (phase
+    velocities, or group velocities where group is True).
 
     Each step minimises |G dm - r|^2 + SMOOTH^2 |R (m + dm)|^2 + DAMP^2 |dm|^2: the curvature of the model itself is
     smoothed ("jumping", Shaw & Orcutt 1985; Constable et al. 1987), so the result does not drift with the number of
-    iterations.  Start: Vs = 1.087 x the phase velocity of the shortest period (a Poisson half-space has
-    c = 0.92 Vs).  The Jacobian is a forward difference of 1 % in Vs.  -> (vs, predicted c, rms per iteration)."""
+    iterations.  Start: Vs = 1.087 x the velocity of the shortest period (a Poisson half-space has c = U = 0.92 Vs).
+    The Jacobian is a forward difference of 1 % in Vs.  -> (vs, predicted velocities, rms per iteration)."""
     z = np.asarray(z, float)
+    group = np.broadcast_to(np.asarray(group, bool), np.shape(T))
     nz = len(z)
     vs = np.full(nz, 1.087 * d[np.argmin(T)])
     R = curvature_operator(z)
     hist = []
     for it in range(ITERATIONS):
-        g = phase_velocity(z, vs, T)
+        g = velocity(z, vs, T, group)
         if np.any(g <= 0):
             raise RuntimeError("1-D forward calculation failed at the periods %s" % T[g <= 0])
         r = d - g
@@ -110,11 +125,11 @@ def invert1d(T, d, z, log=print):
         for j in range(nz):
             v2 = vs.copy()
             v2[j] *= 1.01
-            G[:, j] = (phase_velocity(z, v2, T) - g) / 0.01
+            G[:, j] = (velocity(z, v2, T, group) - g) / 0.01
         A = np.vstack([G, SMOOTH * R, DAMP * np.eye(nz)])
         b = np.concatenate([r, -SMOOTH * (R @ np.log(vs)), np.zeros(nz)])
         dm = np.clip(np.linalg.lstsq(A, b, rcond=None)[0], -MAX_STEP, MAX_STEP)
         vs = vs * np.exp(dm)
         hist.append(float(np.sqrt(np.mean(r**2))))
         log("  1-D iteration %2d: rms misfit %.4f km/s, Vs %.3f-%.3f km/s" % (it + 1, hist[-1], vs.min(), vs.max()))
-    return vs, phase_velocity(z, vs, T), hist
+    return vs, velocity(z, vs, T, group), hist

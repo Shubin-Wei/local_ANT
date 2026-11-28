@@ -1,7 +1,7 @@
 """DSurfTomo-compatible forward model: predicted times and sensitivity matrix.
 
 Follows the forward part of CalSurfG in DSurfTomo a651faf (MIT) for fundamental
-Rayleigh phase velocities: depth kernels of every grid column, then for each
+Rayleigh phase and group velocities: depth kernels of every grid column, then for each
 period and source gridder, the refined-source fast marching, srtimes and rpaths
 of every receiver, and the row assembly. Rows come in CalSurfG's order (period
 block, source, receiver). The 2-D kernels are in dsurf_bspline, dsurf_fmm,
@@ -185,17 +185,22 @@ def forward(project, real=np.float32, workers=1, kernels=None, derivatives=True,
     if not isinstance(workers, int) or workers < 1:
         raise ValueError("workers must be a positive integer")
     c, m = project.control, project.measurements
-    if c.kmax_rg or c.kmax_lc or c.kmax_lg:
-        raise NotImplementedError("only Rayleigh phase velocities (kmaxRg = kmaxLc = kmaxLg = 0) are supported")
+    if c.kmax_lc or c.kmax_lg:
+        raise NotImplementedError("only Rayleigh waves (kmaxLc = kmaxLg = 0) are supported")
     seconds = {}
     start = time.perf_counter()
     if kernels is None:
-        kernels = depth_kernels(project.depths, project.vs, c.periods_rc, c.minthk, workers)
+        kernels = dsurf_kernels.depth_kernels(project.depths, project.vs, c.periods_all, c.minthk, workers,
+                                              nrc=len(c.periods_rc))  # fmt: skip
     seconds["depth_kernels"] = time.perf_counter() - start
     rows, k, s, first, count, kk, ss, rr = _sources(m)
     if not len(rows):
         raise ValueError("no measurements")
-    velocity_index = m.period[k, s] - 1  # CalSurfG: velf = pvRc(:, periods(srcnum, knumi))
+    # CalSurfG: velf = pvRc(:, periods(srcnum, knumi)) or pvRg(...): here the velocity map of period block knumi.
+    # lant: for group data the travel time, the ray and its derivative are all taken in the group-velocity map, so
+    # that G is the derivative of the computed times; CalSurfG traces the ray and forms the derivative
+    # (-ds / v^2) in the phase-velocity map while the time comes from the group map.
+    velocity_index = k
     used = np.unique(velocity_index)
     start = time.perf_counter()
     velv = np.zeros((len(used),) + kernels.phase.shape[1:], real)

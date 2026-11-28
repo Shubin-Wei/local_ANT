@@ -75,10 +75,58 @@ def test_rows_follow_calsurfg_order_and_uniform_times(tmp_path, real):
 
 def test_rejects_other_wave_types(tmp_path):
     folder = write_project(tmp_path / "p")
-    text = (folder / "surfdata.dat").read_text().replace("1 2 0", "1 2 1", 1)
+    text = (folder / "surfdata.dat").read_text().replace("1 2 0", "1 1 0", 1)  # Love
     (folder / "surfdata.dat").write_text(text)
     with pytest.raises(NotImplementedError, match="Rayleigh phase"):
         dsurf_input.read_project(folder)
+
+
+def write_group_project(folder):
+    """The same pairs with the second period as Rayleigh group velocity (kind 1, period index 1 of kmaxRg)."""
+    write_project(folder)
+    text = (folder / "surfdata.dat").read_text().replace(" 2 2 0\n", " 1 2 1\n")
+    (folder / "surfdata.dat").write_text(text)
+    ctl = (folder / "DSurfTomo.in").read_text()
+    ctl = ctl.replace(
+        "2                                c: kmaxRc\n0.3 0.8\n0                                c: kmaxRg",
+        "1                                c: kmaxRc\n0.3\n1                                c: kmaxRg\n0.8",
+    )
+    (folder / "DSurfTomo.in").write_text(ctl)
+    return folder
+
+
+def test_group_blocks_follow_the_phase_blocks(tmp_path):
+    project = dsurf_input.read_project(write_group_project(tmp_path / "p"))
+    c, m = project.control, project.measurements
+    assert list(c.periods_rc) == [0.3] and list(c.periods_rg) == [0.8] and list(c.periods_all) == [0.3, 0.8]
+    assert m.nsrc1.tolist() == [3, 3]  # knum 1: phase, knum 2: group
+
+
+def test_group_rows_are_the_derivative_of_the_group_times(tmp_path):
+    """G of the group travel times is d(time)/d(Vs) of the times the forward computes (all in the group-velocity
+    map): a 1 % change of one node's Vs changes the times as G predicts, to the second-order ray-path effect."""
+    from lant.inversion import dsurf_kernels
+
+    project = dsurf_input.read_project(write_group_project(tmp_path / "p"))
+    c = project.control
+    k0 = dsurf_kernels.depth_kernels(project.depths, project.vs, c.periods_all, c.minthk, nrc=len(c.periods_rc))
+    base = forward.forward(project, real=np.float64, kernels=k0)
+    G = base.jacobian.toarray()
+    group = base.rows[:, 0] == 2
+    col = int(np.argmax(np.abs(G[group]).sum(axis=0)))  # the parameter the group rays sense most
+    nvx, nvz = c.nx - 2, c.ny - 2
+    kz, rest = divmod(col, nvz * nvx)
+    j, i = divmod(rest, nvx)
+    vs = project.vs.copy()
+    dv = np.float32(0.01) * vs[kz, j + 1, i + 1]
+    vs[kz, j + 1, i + 1] += dv
+    moved = dsurf_input.Project(c, project.measurements, project.depths, vs)
+    k1 = dsurf_kernels.depth_kernels(moved.depths, moved.vs, c.periods_all, c.minthk, nrc=len(c.periods_rc))
+    after = forward.forward(moved, real=np.float64, kernels=k1, derivatives=False)
+    predicted = G[group, col] * float(dv)
+    actual = (after.times - base.times)[group]
+    assert np.abs(predicted).max() > 0
+    assert np.allclose(actual, predicted, rtol=0.05, atol=0.02 * np.abs(predicted).max())
 
 
 def test_partials_only_where_rays_go_give_the_same_matrix(tmp_path, monkeypatch):

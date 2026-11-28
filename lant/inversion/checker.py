@@ -33,12 +33,13 @@ def folder(size, flip):
 
 
 def noise_file(cfg, src, dst):
-    """noise_seconds.txt: period and standard deviation (s) of the noise added to each period's travel times."""
+    """noise_seconds.txt: period, kind (0 phase, 1 group) and standard deviation (s) of the noise added to the
+    travel times of each period block."""
     rows, _, _ = residual_table(src)
     v = cfg["checker"]["noise"]
-    sd = rows[:, 5] if v == "auto" else np.full(len(rows), float(v))
-    np.savetxt(os.path.join(dst, "noise_seconds.txt"), np.c_[rows[:, 0], np.nan_to_num(sd)], fmt="%.6f %.6g",
-               header="period_s noise_sd_s")  # fmt: skip
+    sd = rows[:, 6] if v == "auto" else np.full(len(rows), float(v))
+    np.savetxt(os.path.join(dst, "noise_seconds.txt"), np.c_[rows[:, 0], rows[:, 1], np.nan_to_num(sd)],
+               fmt="%.6f %d %.6g", header="period_s kind noise_sd_s")  # fmt: skip
     return sd
 
 
@@ -65,7 +66,8 @@ def run(cfg, size, flip=None):
         P.write_model(os.path.join(pdir, "MOD.true"), z, vs1d, g, header=False, pattern=pattern, depth_sign=sign)
         inv = dict(cfg["inv"], vs_min=float(c.minvel), vs_max=float(c.maxvel), weight=float(c.weight),
                    damping=float(c.damp), iterations=c.maxiter, outlier_mad=float(c.threshold))  # fmt: skip
-        P.write_control(os.path.join(pdir, "DSurfTomo.in"), g, c.nz, c.nsrc, inv, c.periods_rc, synthetic=1)
+        P.write_control(os.path.join(pdir, "DSurfTomo.in"), g, c.nz, c.nsrc, inv,
+                        dict(phase=list(c.periods_rc), group=list(c.periods_rg)), synthetic=1)  # fmt: skip
         sd = noise_file(cfg, src, pdir)
         step.say("checkerboard: cells %g km, +-%g %%%s; noise per period %.3g-%.3g ms (checker.noise = %s)"
                  % (size, 100 * amp, "" if flip is None else ", sign reversed below %g km" % flip,

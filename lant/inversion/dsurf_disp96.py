@@ -8,7 +8,8 @@ root search and the stored phase velocity are REAL (float32, with Fortran's impl
 dispersion function and the root search are double precision.  REAL constants used in double expressions keep their
 single-precision value (e.g. dc = dble(0.005) = 0.004999999888...).  Integer powers are multiplied as gfortran expands
 them (x**3 = x**2 * x, x**4 = x**2 * x**2, x**5 = x**3 * x**2).  Only what DSurfTomo calls is ported: iwave = 2
-(Rayleigh), igr = 0 (phase), mode = 1, iflsph = 1; dltar1 (Love) and the group-velocity branch are not.
+(Rayleigh), igr = 0 (phase) and igr = 1 (group: phase velocities at t / (1 + h) and t / (1 - h), h = 0.005, and
+U = (1/t1a - 1/t1b) / (1/(t1a c0) - 1/(t1b c1)) in REAL), mode = 1, iflsph = 1; dltar1 (Love) is not.
 
 Differences, both outside normal use: where the root search fails ("improper initial value in disper"), native
 DSurfTomo writes a message and phase velocity 0 for the remaining periods; here the period is returned as 0 as well
@@ -38,6 +39,7 @@ _ONEA = F8(F4(1.5))  # onea = dble(sone0)
 _ONE_D = 1.0e-2  # one = 1.0d-2
 _S_D = F8(F4(0.01))  # nevill: s1 = 0.01*ss1, a REAL constant in a double expression
 _TWOPI = 2.0 * 3.141592653589793
+_H = F4(0.005)  # h0, REAL: the relative period step of the group velocity
 _AR = 6370.0
 # CalSurfG: Brocher (2005) Vp(Vs) and density(Vp), REAL
 _B = tuple(F4(x) for x in (0.9409, 2.0947, 0.8206, 0.2683, 0.0251))
@@ -407,9 +409,10 @@ def _gtsolh(a, b):
 
 
 @njit(cache=True, nogil=True)
-def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg):
-    """Rayleigh phase velocities cg (double, REAL-rounded) of the layer model at the periods t; 0 after a failure.
-    surfdisp96(thkm, vpm, vsm, rhom, nlayer, iflsph=1, iwave=2, mode=1, igr=0, kmax, t, cg)."""
+def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg, igr=0):
+    """Rayleigh phase (igr = 0) or group (igr = 1) velocities cg (double, REAL-rounded) of the layer model at the
+    periods t; 0 after a failure.  surfdisp96(thkm, vpm, vsm, rhom, nlayer, iflsph=1, iwave=2, mode=1, igr, kmax, t,
+    cg)."""
     mmax = nlayer
     d = np.empty(NL, F4)
     a = np.empty(NL, F4)
@@ -475,6 +478,7 @@ def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg):
     cm = cc
     kmax = t.size
     c = np.zeros(kmax, F8)
+    cb = np.zeros(kmax, F8)
     e = np.empty(5, F8)
     ee = np.empty(5, F8)
     ca = np.empty((5, 5), F8)
@@ -484,6 +488,12 @@ def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg):
     c1 = cc
     for k in range(kmax):
         t1 = t[k]
+        t1a = F4(t1)
+        t1b = F4(0.0)
+        if igr > 0:
+            t1a = F4(t1 / F8(_ONE + _H))  # REAL t1a = t1 / (1. + h)
+            t1b = F4(t1 / F8(_ONE - _H))
+            t1 = F8(t1a)
         if k == 0:
             c1 = cc
             clow = cc
@@ -499,23 +509,39 @@ def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg):
                 cg[i] = 0.0
             return
         c[k] = c1
-        cg[k] = F8(F4(c[k]))
+        if igr > 0:  # the phase velocity just above, at the slightly longer period t1b
+            t1 = F8(t1b)
+            ifirst = 0
+            clow = cb[k] + _ONE_D * dc
+            c1 = c1 - _ONEA * dc
+            iret, c1, del1st = _getsol(t1, c1, clow, dc, cm, betmx, ifirst, del1st, d, a, b, rho, mmax, llw, e, ee,
+                                       ca, x, y)  # fmt: skip
+            if iret == -1:
+                c1 = c[k]
+            cb[k] = c1
+            cc0 = F4(c[k])
+            cc1 = F4(c1)
+            gvel = (_ONE / t1a - _ONE / t1b) / (_ONE / (t1a * cc0) - _ONE / (t1b * cc1))
+            cg[k] = F8(F4(gvel))
+        else:
+            cg[k] = F8(F4(c[k]))
 
 
 @njit(cache=True, nogil=True)
-def column_phase(dep, vs, minthk, t):
-    """caldespersion for one column: phase velocities at t of the REAL node model (dep, vs)."""
+def column_phase(dep, vs, minthk, t, igr=0):
+    """caldespersion for one column: phase (igr = 0) or group (igr = 1) velocities at t of the REAL node model."""
     vp, rho = brocher(vs)
     rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vp, vs, rho)
     cg = np.zeros(t.size, F8)
-    surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg)
+    surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg, igr)
     return cg
 
 
 @njit(cache=True, nogil=True)
-def column_kernel(dep, vsz, minthk, t, nodes, sen_vs, sen_vp, sen_rho):
-    """Phase velocities (returned) of one column and dc/dVs of its first `nodes` nodes, written into sen_vs[period,
-    node] (double); sen_vp and sen_rho are set to 0.
+def column_kernel(dep, vsz, minthk, t, nodes, sen_vs, sen_vp, sen_rho, igr=0):
+    """Phase (igr = 0) or group (igr = 1) velocities (returned) of one column and their derivatives with respect to
+    the Vs of its first `nodes` nodes, written into sen_vs[period, node] (double); sen_vp and sen_rho are set to 0
+    (depthkernel with the same igr).
 
     lant computes the derivative along the Brocher (2005) relation the model is built with: Vs of node i is perturbed
     by +-0.5 % and Vp, density of that node follow it, two dispersion calculations per node (central difference of
@@ -526,7 +552,7 @@ def column_kernel(dep, vsz, minthk, t, nodes, sen_vs, sen_vp, sen_rho):
     vpz, rhoz = brocher(vsz)
     cg = np.zeros(t.size, F8)
     rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpz, vsz, rhoz)
-    surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg)
+    surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg, igr)
     vsm = vsz.copy()
     vpm = vpz.copy()
     rhom = rhoz.copy()
@@ -540,7 +566,7 @@ def column_kernel(dep, vsz, minthk, t, nodes, sen_vs, sen_vp, sen_rho):
             p, r = brocher(one)
             vsm[i], vpm[i], rhom[i] = one[0], p[0], r[0]
             rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
-            surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg1 if sign == 0 else cg2)
+            surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg1 if sign == 0 else cg2, igr)
         vsm[i], vpm[i], rhom[i] = vsz[i], vpz[i], rhoz[i]
         den = F8(_0P01 * vsz[i])
         for nn in range(t.size):

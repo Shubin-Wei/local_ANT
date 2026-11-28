@@ -12,7 +12,7 @@ core starts from identical numbers.
 import ctypes
 import ctypes.util
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -68,10 +68,16 @@ class Control:
     ifsyn: int = 0
     noiselevel: np.float32 = F32(0)
     threshold: np.float32 = F32(0)
+    periods_rg: np.ndarray = field(default_factory=lambda: np.zeros(0))  # real*8 periods of Rayleigh group velocity
 
     @property
     def kmax(self):
         return len(self.periods_rc) + self.kmax_rg + self.kmax_lc + self.kmax_lg
+
+    @property
+    def periods_all(self):
+        """The periods of the period blocks knum = 1..kmax (Rayleigh phase, then Rayleigh group), as CalSurfG."""
+        return np.concatenate([self.periods_rc, self.periods_rg])
 
 
 def read_control(path):
@@ -97,11 +103,11 @@ def read_control(path):
     noiselevel, threshold = F32(r.read(1)[0]), F32(r.read(1)[0])
     if min(nx, ny) < 4 or nz < 2 or nsrc < 1:
         raise ValueError("DSurfTomo grid needs nx, ny >= 4, nz >= 2 and at least one source")
-    if counts[0] < 1:
-        raise ValueError("no Rayleigh phase periods in %s" % path)
+    if counts[0] + counts[1] < 1:
+        raise ValueError("no Rayleigh phase or group periods in %s" % path)
     return Control(
         datafile, nx, ny, nz, goxd, gozd, dvxd, dvzd, nsrc, minthk, spfra, periods[0], *counts[1:],
-        weight, damp, minvel, maxvel, maxiter, ifsyn, noiselevel, threshold,
+        weight, damp, minvel, maxvel, maxiter, ifsyn, noiselevel, threshold, periods[1],
     )  # fmt: skip
 
 
@@ -190,18 +196,19 @@ def read_measurements(path, control):
     nsrc1 = np.zeros(kmax, np.int64)
     file_row = np.full((kmax, ns, nrc), -1, np.int64)
     observed, distance = [], []
-    krc = len(control.periods_rc)
+    krc, krg = len(control.periods_rc), len(control.periods_rg)
     knum, knumo, istep, istep1 = 0, 12345, 0, 0
     source = None
     for number, line in enumerate(Path(path).read_text().splitlines(), 1):
         if line.startswith("#"):
             fields = line.split()
             lat, lon, p, wave, kind = F32(fields[1]), F32(fields[2]), int(fields[3]), int(fields[4]), int(fields[5])
-            if (wave, kind) != (2, 0):
-                raise NotImplementedError("line %d: only Rayleigh phase velocity (2 0) is supported" % number)
-            if not 1 <= p <= krc:
-                raise ValueError("line %d: period index %d outside 1..%d" % (number, p, krc))
-            knum = p
+            if (wave, kind) not in ((2, 0), (2, 1)):
+                raise NotImplementedError("line %d: only Rayleigh phase (2 0) and group (2 1) velocities" % number)
+            n_of = krc if kind == 0 else krg
+            if not 1 <= p <= n_of:
+                raise ValueError("line %d: period index %d outside 1..%d" % (number, p, n_of))
+            knum = p if kind == 0 else krc + p  # main.f90: Rayleigh group blocks follow the phase blocks
             if knum != knumo:
                 istep = 0
             istep += 1

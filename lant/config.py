@@ -155,6 +155,12 @@ def check_disp(cfg):
         raise ConfigError("disp.per_octave must be >= 1 and disp.min_points >= 2")
 
 
+def check_inv(cfg):
+    require(cfg, "output_dir")
+    if cfg["inv"]["data"] not in ("phase", "group", "both"):
+        raise ConfigError("inv.data must be phase, group or both")
+
+
 def snapshot(cfg, sections):
     """The parts of the configuration a step used (for its params.yaml)."""
     out = {}

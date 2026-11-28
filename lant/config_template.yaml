@@ -53,6 +53,7 @@ disp:                         # step 3: phase velocities (lant disp)
   min_points: 6               # a curve needs at least this many consecutive frequencies
 
 inv:                          # step 4: 3-D inversion (lant inv)
+  data: phase                 # travel times inverted: phase | group | both (Rayleigh phase and/or group velocity)
   grid_km: null               # horizontal node spacing (null: median measured wavelength / 3)
   depths_km: null             # depth nodes, from 0 (null: rule from the average curve, see the log)
   start_model_file: null      # two columns depth_km Vs_km/s (null: 1-D inversion of the median curve)

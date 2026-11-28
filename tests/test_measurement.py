@@ -51,6 +51,38 @@ def measure(dist, ccf, freqs, c_ref, p, subsets=None):
     return out
 
 
+def true_group_velocity(f):
+    """U = c / (1 - (f / c) dc/df) of C_TRUE."""
+    ff = np.exp(np.linspace(np.log(0.3), np.log(30.0), 20000))
+    c = C_TRUE(ff)
+    return np.interp(f, ff, c / (1 - ff / c * np.gradient(c, ff)))
+
+
+def test_group_velocity_of_exact_correlations():
+    """Envelope maximum at the instantaneous frequency (FTAN): within 1 % (95 %) of the exact group velocity; the
+    median bias of the wide Gaussian filter (alpha = 5) is below 0.7 %."""
+    dist = np.linspace(1.5, 11.0, 40)
+    freqs = log_freqs(1.0, 10.0, 12)
+    res = measure(dist, j0_correlations(dist), freqs, C_TRUE(freqs), settings())
+    u = np.array([r["u"] for r in res])
+    ok = np.array([D.accepted(r["reason_u"], r["u"]) for r in res])
+    err = u / true_group_velocity(freqs)[None, :] - 1
+    assert ok.sum() > 0.5 * ok.size
+    assert abs(np.median(err[ok])) < 0.007
+    assert np.percentile(np.abs(err[ok]), 95) < 0.01
+
+
+def test_group_times_follow_the_instantaneous_frequency():
+    """Values at the instantaneous frequencies are moved back onto the grid, never across a gap."""
+    freqs = np.array([1.0, 1.1, 1.2, 1.3, 1.4, 1.5])
+    f_inst = np.array([1.02, 1.12, 1.22, np.nan, 1.42, 1.52])
+    tg = np.array([2.0, 2.1, 2.2, np.nan, 2.4, 2.5])
+    out = D.group_times(freqs, f_inst, tg)
+    assert np.isnan(out[0]) and np.isnan(out[3]) and np.isnan(out[4])  # below the first run, in the gap
+    assert np.allclose(out[1:3], np.interp(np.log(freqs[1:3]), np.log(f_inst[:3]), tg[:3]))
+    assert np.isclose(out[5], np.interp(np.log(1.5), np.log(f_inst[4:]), tg[4:]))
+
+
 def test_phase_velocity_of_exact_correlations():
     """Far field (>= 5 wavelengths): a few tenths of a percent; 3-5 wavelengths: within 1.5 % (the far-field phase
     pi/4 is an approximation of J0 there)."""

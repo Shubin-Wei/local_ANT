@@ -1,5 +1,8 @@
 """Depth kernels of the grid columns for the DSurfTomo-compatible forward.
 
+The period axis is CalSurfG's period blocks: the first nrc periods are Rayleigh phase velocities (depthkernel with
+igr = 0), the others Rayleigh group velocities (igr = 1); ``phase`` then holds the velocity of each block.
+
 DSurfTomo a651faf (MIT), CalSurfG.f90 ``depthkernel`` and ``caldespersion``: for each (longitude, latitude) column
 the phase velocity of the Brocher (2005) model and, for each node, the derivative of the phase velocity with respect
 to its Vs.  The phase velocities are DSurfTomo's own numbers (``dsurf_disp96``, its surfdisp96.f and
@@ -57,10 +60,30 @@ def _checked(cg, periods):
     if not np.all(cg > 0) or not np.all(np.isfinite(cg)):
         bad = np.asarray(periods)[~(cg > 0)]
         raise RuntimeError(
-            "surfdisp96 found no phase velocity at %s s (DSurfTomo: 'improper initial value in disper - no zero "
-            "found'; it would continue with 0)" % bad
+            "surfdisp96 found no (or no positive) velocity at %s s (DSurfTomo: 'improper initial value in disper - "
+            "no zero found'; it would continue with 0)" % bad
         )
     return cg
+
+
+def _velocity(z, col, mt, t, nrc):
+    """Phase velocities of the first nrc periods, group velocities of the others (caldespersion, igr 0 / 1)."""
+    out = np.empty(t.size)
+    if nrc:
+        out[:nrc] = D.column_phase(z, col, mt, t[:nrc], 0)
+    if nrc < t.size:
+        out[nrc:] = D.column_phase(z, col, mt, t[nrc:], 1)
+    return out
+
+
+def _kernel(z, col, mt, t, nrc, nodes, s):
+    """Velocities and node partials (into s [3, periods, nz]) of one column: depthkernel with igr 0, then 1."""
+    out = np.empty(t.size)
+    if nrc:
+        out[:nrc] = D.column_kernel(z, col, mt, t[:nrc], nodes, s[0][:nrc], s[1][:nrc], s[2][:nrc], 0)
+    if nrc < t.size:
+        out[nrc:] = D.column_kernel(z, col, mt, t[nrc:], nodes, s[0][nrc:], s[1][nrc:], s[2][nrc:], 1)
+    return out
 
 
 def _map(job, n, workers):
@@ -71,12 +94,14 @@ def _map(job, n, workers):
         return [first] + list(pool.map(job, range(1, n)))
 
 
-def depth_kernels(depths, vs, periods, minthk, workers=1, interior_only=True):
-    """Phase velocities and node partials of every column of a (nz, ny, nx) REAL model, as CalSurfG reads them.
+def depth_kernels(depths, vs, periods, minthk, workers=1, interior_only=True, nrc=None):
+    """Velocities and node partials of every column of a (nz, ny, nx) REAL model, as CalSurfG reads them.
 
+    nrc: the first nrc periods are phase velocities, the others group velocities (default: all phase).
     interior_only=False computes partials for every column and node (depthkernel's full loop, for comparisons).
     """
     z, vs, t, mt = _inputs(depths, vs, periods, minthk, workers)
+    nrc = t.size if nrc is None else int(nrc)
     nz, ny, nx = vs.shape
     columns = vs.reshape(nz, -1).T
     interior = np.zeros((ny, nx), bool)
@@ -92,9 +117,8 @@ def depth_kernels(depths, vs, periods, minthk, workers=1, interior_only=True):
         col = np.ascontiguousarray(columns[first_of[i]])
         if unique[i, -1]:
             s = np.zeros((3, len(t), nz))
-            cg = D.column_kernel(z, col, mt, t, nodes, s[0], s[1], s[2])
-            return _checked(cg, t), s
-        return _checked(D.column_phase(z, col, mt, t), t), None
+            return _checked(_kernel(z, col, mt, t, nrc, nodes, s), t), s
+        return _checked(_velocity(z, col, mt, t, nrc), t), None
 
     results = _map(job, len(unique), workers)
     phase = np.empty((len(unique), len(t)))
@@ -117,11 +141,12 @@ class LazyKernels(Kernels):
     data) cost no dispersion calculations, and G is the same as with every column's partials.  Equal columns are
     solved once, across the blocks as well.  seconds: the time spent on partials."""
 
-    def __init__(self, depths, vs, periods, minthk, workers=1):
+    def __init__(self, depths, vs, periods, minthk, workers=1, nrc=None):
         self._z, self._vs, self._t, self._mt = _inputs(depths, vs, periods, minthk, workers)
         self._workers = workers
+        self._nrc = self._t.size if nrc is None else int(nrc)
         nz, ny, nx = self._vs.shape
-        phase = phase_velocities(depths, vs, periods, minthk, workers)
+        phase = phase_velocities(depths, vs, periods, minthk, workers, self._nrc)
         shape = (len(self._t), ny, nx, nz)
         super().__init__(phase, np.zeros(shape), np.zeros(shape), np.zeros(shape))
         self.done = np.zeros((ny, nx), bool)
@@ -145,7 +170,7 @@ class LazyKernels(Kernels):
         def job(n):
             col = np.frombuffer(todo[n], np.float32).copy()
             s = np.zeros((3, len(self._t), nz))
-            _checked(D.column_kernel(self._z, col, self._mt, self._t, nz - 1, s[0], s[1], s[2]), self._t)
+            _checked(_kernel(self._z, col, self._mt, self._t, self._nrc, nz - 1, s), self._t)
             return s
 
         if todo:
@@ -158,16 +183,18 @@ class LazyKernels(Kernels):
         self.seconds += time.perf_counter() - start
 
 
-def phase_velocities(depths, vs, periods, minthk, workers=1):
-    """Phase velocity (periods, ny, nx) only, as CalSurfG's caldespersion (synthetic data)."""
+def phase_velocities(depths, vs, periods, minthk, workers=1, nrc=None):
+    """Velocity (periods, ny, nx) only, as CalSurfG's caldespersion (synthetic data); the first nrc periods phase,
+    the others group velocities (default: all phase)."""
     z, vs, t, mt = _inputs(depths, vs, periods, minthk, workers)
+    nrc = t.size if nrc is None else int(nrc)
     nz, ny, nx = vs.shape
     columns = vs.reshape(nz, -1).T
     unique, first_of, inverse = np.unique(columns.view(np.int32), axis=0, return_index=True, return_inverse=True)
     inverse = np.asarray(inverse).ravel()
 
     def job(i):
-        return _checked(D.column_phase(z, np.ascontiguousarray(columns[first_of[i]]), mt, t), t)
+        return _checked(_velocity(z, np.ascontiguousarray(columns[first_of[i]]), mt, t, nrc), t)
 
     phase = np.array(_map(job, len(unique), workers))
     return phase[inverse].T.reshape(len(t), ny, nx)

@@ -79,13 +79,18 @@ def start_model(step, dpi):
     fit = step.path("start_fit.csv")
     fig, (ax, bx) = plt.subplots(1, 2, figsize=(9.0, 4.2))
     if os.path.exists(fit):
-        t, c, p = np.loadtxt(fit, delimiter=",", skiprows=1, unpack=True)
-        ax.plot(t, c, "ko", ms=4, label="Median of the pairs")
-        ax.plot(t, p, color=style.RED, lw=1.5, label="Starting model")
-        ax.legend(fontsize=9)
+        a = np.genfromtxt(fit, delimiter=",", names=True, dtype=None, encoding="utf-8")
+        for kind, mk in (("phase", "o"), ("group", "s")):
+            m = a["velocity"] == kind
+            if m.any():
+                ax.plot(a["period_s"][m], a["v_average_kms"][m], "k" + mk, ms=4, mfc="none" if kind == "group" else
+                        "k", label="Median of the pairs, %s" % kind)  # fmt: skip
+                ax.plot(a["period_s"][m], a["v_start_model_kms"][m], color=style.RED, lw=1.5,
+                        ls="-" if kind == "phase" else "--", label="Starting model, %s" % kind)  # fmt: skip
+        ax.legend(fontsize=8)
     style.log_axis(ax.xaxis)
     ax.set_xlabel("Period (s)")
-    ax.set_ylabel("Phase velocity (km/s)")
+    ax.set_ylabel("Velocity (km/s)")
     bx.plot(vs, z, "k.-")
     bx.invert_yaxis()
     bx.set_xlabel("Vs (km/s)")
@@ -111,26 +116,29 @@ def residuals(pdir, out, dpi):
 
 
 def paths(pdir, out, dpi):
+    from ..inversion import dsurf_input
+
+    c = dsurf_input.read_control(os.path.join(pdir, "DSurfTomo.in"))
+    nrc = len(c.periods_rc)
     rows, per = [], None
     with open(os.path.join(pdir, "surfdata.dat")) as fh:
         for ln in fh:
             f = ln.split()
-            if ln.startswith("#"):
-                src, per = (float(f[1]), float(f[2])), int(f[3])
+            if ln.startswith("#"):  # period block knum: phase blocks first, then group blocks
+                src, per = (float(f[1]), float(f[2])), int(f[3]) + (nrc if int(f[5]) == 1 else 0)
             elif f:
                 rows.append((per, src[1], src[0], float(f[1]), float(f[0])))
     a = np.array(rows)
     ks = np.unique(a[:, 0]).astype(int)
     pick = sorted({int(ks[int(q * (len(ks) - 1))]) for q in (0.0, 0.5, 1.0)})
-    with open(os.path.join(pdir, "DSurfTomo.in")) as fh:
-        lines = fh.read().splitlines()
-    periods = [float(v) for v in lines[[i for i, ln in enumerate(lines) if "kmaxRc" in ln][0] + 1].split()]
+    periods = c.periods_all
     fig, axs = plt.subplots(1, len(pick), figsize=(4.2 * len(pick), 4.2), squeeze=False)
     for ax, k in zip(axs[0], pick):
         m = a[:, 0] == k
         for r in a[m][:: max(1, m.sum() // 3000)]:
             ax.plot([r[1], r[3]], [r[2], r[4]], color="k", lw=0.2, alpha=0.3)
-        ax.set_title("%.3g s: %d paths" % (periods[k - 1], m.sum()), fontsize=10)
+        ax.set_title("%.3g s %s: %d paths" % (periods[k - 1], "phase" if k <= nrc else "group", m.sum()),
+                     fontsize=10)  # fmt: skip
         ax.set_aspect(1 / np.cos(np.radians(np.mean(a[:, 2]))))
         ax.set_xlabel("Longitude")
     axs[0][0].set_ylabel("Latitude")

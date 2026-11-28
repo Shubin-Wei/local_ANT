@@ -1,12 +1,13 @@
-"""Step 3 (lant disp): reference curve and phase velocities of every pair.
+"""Step 3 (lant disp): reference curve, phase and group velocities of every pair.
 
 Results in OUTPUT/3_disp:
   reference.csv            the reference curve used, its group velocity and the F-J picks
   fj.h5                    the F-J spectrum (frequencies, velocities, |I|)
-  measurements.h5          every pair and frequency: c, group velocity u, snr, sigma (jackknife) and the reasons of
-                           every rejection (bit mask, lant.dispersion.REASONS)
-  dispersion.csv           the accepted values, one row per pair and frequency: the input of `lant inv`
-  median_vs_reference.csv  per frequency: accepted pairs, their median c and the reference
+  measurements.h5          every pair and frequency: phase velocity c, sigma (jackknife), reason; group velocity u,
+                           u_sigma, reason_u; snr (reasons: bit masks, lant.dispersion.REASONS)
+  dispersion.csv           the accepted values, one row per pair and frequency where c or U was accepted (the other
+                           left empty when rejected): the input of `lant inv`
+  median_vs_reference.csv  per frequency: accepted pairs, their median c and U, and the reference
 """
 
 import glob
@@ -103,19 +104,25 @@ def run(cfg):
             h.attrs["reasons"] = str(D.REASONS)
         os.replace(step.path("measurements.h5.tmp"), step.path("measurements.h5"))
         ok = D.accepted(m["reason"], m["c"])
-        write_table(step.path("dispersion.csv"), ok, m, freqs, sta1, sta2, coords, dist_all)
-        med = write_medians(step.path("median_vs_reference.csv"), ok, m["c"], freqs, ref["c"])
+        ok_u = D.accepted(m["reason_u"], m["u"])
+        write_table(step.path("dispersion.csv"), ok, ok_u, m, freqs, sta1, sta2, coords, dist_all)
+        med = write_medians(step.path("median_vs_reference.csv"), ok, ok_u, m, freqs, ref)
         counts = D.reason_counts(m["reason"][cnt > 0])
-        step.say("rejections (values with each reason; a value can have several): %s" % counts)
+        counts_u = D.reason_counts(m["reason_u"][cnt > 0])
+        step.say("rejections of c (values with each reason; a value can have several): %s" % counts)
+        step.say("rejections of U: %s" % counts_u)
         step.number("pairs measured", int(len(use)))
-        step.number("pairs with a curve", int(ok.any(axis=1).sum()))
-        step.number("accepted values", int(ok.sum()))
-        step.number("rejections by reason", counts)
+        step.number("pairs with a phase-velocity curve", int(ok.any(axis=1).sum()))
+        step.number("accepted phase velocities", int(ok.sum()))
+        step.number("pairs with a group-velocity curve", int(ok_u.any(axis=1).sum()))
+        step.number("accepted group velocities", int(ok_u.sum()))
+        step.number("rejections of c by reason", counts)
+        step.number("rejections of U by reason", counts_u)
         if med is not None:
             step.number("median of (median c / reference - 1), %", round(med, 2))
         from .plotting import disp_figures
 
-        disp_figures.make(cfg, step, ref, m, ok, freqs, dist_all, sta1, sta2)
+        disp_figures.make(cfg, step, ref, m, ok, ok_u, freqs, dist_all, sta1, sta2)
 
 
 def _n_substacks(path):
@@ -123,29 +130,38 @@ def _n_substacks(path):
         return h["count"].shape[0]
 
 
-def write_table(path, ok, m, freqs, sta1, sta2, coords, dist):
+def _f(x, fmt="%.5f"):
+    return fmt % x if np.isfinite(x) else ""
+
+
+def write_table(path, ok, ok_u, m, freqs, sta1, sta2, coords, dist):
+    """One row per pair and frequency with an accepted c or U; a rejected one is left empty."""
     with open(path, "w") as fh:
-        fh.write("sta1,sta2,lon1,lat1,lon2,lat2,dist_km,frequency_hz,period_s,c_kms,sigma_kms,u_kms,snr\n")
-        for q, k in zip(*np.where(ok)):
-            sg = m["sigma"][q, k]
-            fh.write("%s,%s,%.6f,%.6f,%.6f,%.6f,%.4f,%.6f,%.6f,%.5f,%s,%.5f,%.2f\n" % (
+        fh.write("sta1,sta2,lon1,lat1,lon2,lat2,dist_km,frequency_hz,period_s,c_kms,sigma_kms,u_kms,u_sigma_kms,snr\n")
+        for q, k in zip(*np.where(ok | ok_u)):
+            c, sg = (m["c"][q, k], m["sigma"][q, k]) if ok[q, k] else (np.nan, np.nan)
+            u, us = (m["u"][q, k], m["u_sigma"][q, k]) if ok_u[q, k] else (np.nan, np.nan)
+            fh.write("%s,%s,%.6f,%.6f,%.6f,%.6f,%.4f,%.6f,%.6f,%s,%s,%s,%s,%.2f\n" % (
                 sta1[q], sta2[q], coords["lon1"][q], coords["lat1"][q], coords["lon2"][q], coords["lat2"][q], dist[q],
-                freqs[k], 1 / freqs[k], m["c"][q, k], "" if not np.isfinite(sg) else "%.5f" % sg, m["u"][q, k],
-                m["snr"][q, k]))  # fmt: skip
+                freqs[k], 1 / freqs[k], _f(c), _f(sg), _f(u), _f(us), m["snr"][q, k]))  # fmt: skip
 
 
-def write_medians(path, ok, c, freqs, c_ref):
-    """Per frequency the median of the accepted c against the reference; -> median of the deviations (%) over the
-    frequencies with at least 10 pairs (a systematic offset: the reference, and so the cycle count, may be off)."""
+def write_medians(path, ok, ok_u, m, freqs, ref):
+    """Per frequency the medians of the accepted c and U against the reference; -> median of the deviations of c (%)
+    over the frequencies with at least 10 pairs (a systematic offset: the reference, and so the cycle count, may be
+    off)."""
     devs = []
     with open(path, "w") as fh:
-        fh.write("frequency_hz,pairs,median_c_kms,c_ref_kms,deviation_percent\n")
+        fh.write("frequency_hz,pairs_c,median_c_kms,c_ref_kms,deviation_c_percent,pairs_u,median_u_kms,u_ref_kms,"
+                 "deviation_u_percent\n")  # fmt: skip
         for k, f in enumerate(freqs):
-            v = c[ok[:, k], k]
-            med = float(np.median(v)) if v.size else np.nan
-            dev = 100 * (med / c_ref[k] - 1) if v.size and np.isfinite(c_ref[k]) else np.nan
-            if v.size >= 10 and np.isfinite(dev):
-                devs.append(dev)
-            fh.write("%.6f,%d,%s,%s,%s\n" % (f, v.size, reference._v(med), reference._v(c_ref[k]),
-                                              "" if not np.isfinite(dev) else "%.2f" % dev))  # fmt: skip
+            row = ["%.6f" % f]
+            for key, good, r in (("c", ok, ref["c"]), ("u", ok_u, ref["u"])):
+                v = m[key][good[:, k], k]
+                med = float(np.median(v)) if v.size else np.nan
+                dev = 100 * (med / r[k] - 1) if v.size and np.isfinite(r[k]) else np.nan
+                if key == "c" and v.size >= 10 and np.isfinite(dev):
+                    devs.append(dev)
+                row += ["%d" % v.size, reference._v(med), reference._v(r[k]), _f(dev, "%.2f")]
+            fh.write(",".join(row) + "\n")
     return float(np.median(devs)) if devs else None

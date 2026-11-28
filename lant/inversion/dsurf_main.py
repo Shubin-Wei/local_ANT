@@ -141,9 +141,11 @@ def _header(out, c):
         "",
         *grid,
     )
-    title = " Rayleigh wave phase velocity used,periods:(s)"
-    out.say(title, *_periods(c.periods_rc))
-    out.write(title, *_periods(c.periods_rc))
+    for title, periods in ((" Rayleigh wave phase velocity used,periods:(s)", c.periods_rc),
+                           (" Rayleigh wave group velocity used,periods:(s)", c.periods_rg)):  # fmt: skip
+        if len(periods):
+            out.say(title, *_periods(periods))
+            out.write(title, *_periods(periods))
 
 
 def model_lines(c, depths, vs):
@@ -192,7 +194,7 @@ def _gaussian(rng):
 def _velmap(path, c, phase):
     nz_periods, ny, nx = phase.shape
     lines = []
-    for k in range(nz_periods):
+    for k in range(len(c.periods_rc)):  # the phase velocities only, as CalSurfG's velmap2dRc.dat
         for j in range(1, ny - 1):
             lon = F(c.gozd) + F(j - 1) * F(c.dvzd)
             for i in range(1, nx - 1):
@@ -202,15 +204,21 @@ def _velmap(path, c, phase):
     _write_lines(path, lines)
 
 
-def read_noise(path, periods):
-    """NOISE_FILE -> standard deviation (s) for each period of DSurfTomo.in (the nearest listed period within 0.1 %)."""
+def read_noise(path, c):
+    """NOISE_FILE (lines "period_s kind sd_s", kind 0 phase, 1 group; or "period_s sd_s" for phase) -> standard
+    deviation (s) for each period block of DSurfTomo.in (the nearest listed period of that kind within 0.1 %)."""
     a = np.atleast_2d(np.loadtxt(path, comments="#"))
-    out = np.zeros(len(periods))
-    for k, t in enumerate(periods):
-        i = int(np.argmin(np.abs(a[:, 0] - t)))
-        if abs(a[i, 0] - t) > 1e-3 * t:
-            raise ValueError("%s has no noise for the period %g s" % (path, t))
-        out[k] = a[i, 1]
+    if a.shape[1] == 2:
+        a = np.c_[a[:, 0], np.zeros(len(a)), a[:, 1]]
+    nrc = len(c.periods_rc)
+    out = np.zeros(c.kmax)
+    for k, t in enumerate(c.periods_all):
+        kind = int(k >= nrc)
+        rows = np.where(a[:, 1] == kind)[0]
+        i = rows[int(np.argmin(np.abs(a[rows, 0] - t)))] if rows.size else -1
+        if i < 0 or abs(a[i, 0] - t) > 1e-3 * t:
+            raise ValueError("%s has no noise for the %s period %g s" % (path, ("phase", "group")[kind], t))
+        out[k] = a[i, 2]
     return out
 
 
@@ -226,7 +234,8 @@ def synthetic_data(project, true_vs, workers, directory, kernels=None, noise_fil
     """
     c = project.control
     if kernels is None:
-        phase = dsurf_kernels.phase_velocities(project.depths, true_vs, c.periods_rc, c.minthk, workers)
+        phase = dsurf_kernels.phase_velocities(project.depths, true_vs, c.periods_all, c.minthk, workers,
+                                               len(c.periods_rc))  # fmt: skip
     else:
         phase = kernels(project.depths, true_vs).phase
     if directory is not None:
@@ -237,7 +246,7 @@ def synthetic_data(project, true_vs, workers, directory, kernels=None, noise_fil
     obst = project.measurements.observed.copy()
     rng = np.random.default_rng(NOISE_SEED)
     if noise_file is not None:
-        sigma = read_noise(noise_file, c.periods_rc).astype(F)[project.measurements.row_periods() - 1]
+        sigma = read_noise(noise_file, c).astype(F)[project.measurements.row_periods() - 1]
         for i, t in enumerate(times):
             obst[i] = t + _gaussian(rng) * sigma[i]
         return obst
@@ -272,8 +281,8 @@ def run(directory=".", inputfile="DSurfTomo.in", workers=1, kernels=None, screen
     out = Output(directory / (inputfile + ".log"), screen)
     try:
         _header(out, c)
-        if c.kmax_rg or c.kmax_lc or c.kmax_lg:
-            raise NotImplementedError("only Rayleigh phase velocities (kmaxRg = kmaxLc = kmaxLg = 0) are supported")
+        if c.kmax_lc or c.kmax_lg:
+            raise NotImplementedError("only Rayleigh waves (kmaxLc = kmaxLg = 0) are supported")
         m = dsurf_input.read_measurements(directory / c.datafile, c)
         dall = len(m.observed)
         maxvp = (c.nx - 2) * (c.ny - 2) * (c.nz - 1)
@@ -305,7 +314,8 @@ def _iteration(out, directory, inputfile, project, obst, maxvp, it, workers, ker
     out.say(" computing sensitivity matrix...", " Rayleigh wave phase velocity depth kernel")
     start = time.perf_counter()
     if kernels is None:  # partials only of the columns the rays touch (the same G)
-        k = dsurf_kernels.LazyKernels(project.depths, project.vs, c.periods_rc, c.minthk, workers)
+        k = dsurf_kernels.LazyKernels(project.depths, project.vs, c.periods_all, c.minthk, workers,
+                                      len(c.periods_rc))  # fmt: skip
     else:
         k = kernels(project.depths, project.vs)
     seconds["senk"] = time.perf_counter() - start

@@ -3,11 +3,13 @@
 fj_reference.png   the array's F-J spectrum (normalised at each frequency), its picks, the reference curve used
                    and the median of the accepted phase velocities: the check that the reference follows the
                    fundamental mode
-curves.png         every accepted curve, the reference, and the number of pairs per frequency
-rejections.png     per frequency: accepted values and the values rejected for each reason
+curves.png         every accepted phase-velocity curve, the reference, and the number of pairs per frequency
+group_curves.png   the same for the group velocities
+rejections.png     per frequency: accepted phase velocities and the values rejected for each reason
+group_rejections.png  the same for the group velocities
 pair_<pair>.png    three pairs (short, middle, long path): the envelope of the filtered symmetric correlation
-                   against group velocity with the picked arrival, and the measured phase velocity with its
-                   jackknife error and the reference
+                   against group velocity with the measured group velocities, and the measured phase velocities,
+                   both with their jackknife errors and the reference
 """
 
 import h5py
@@ -25,14 +27,16 @@ def _faxis(ax, f):
     ax.set_xlabel("Frequency (Hz)")
 
 
-def make(cfg, step, ref, m, ok, freqs, dist, sta1, sta2):
+def make(cfg, step, ref, m, ok, ok_u, freqs, dist, sta1, sta2):
     style.apply()
     dpi = int(cfg["plots"]["dpi"])
     with np.errstate(all="ignore"):
         med = np.array([np.median(m["c"][ok[:, k], k]) if ok[:, k].sum() else np.nan for k in range(len(freqs))])
     fj_reference(ref, med, cfg["data"]["velocity_range_kms"], step.fig("fj_reference"), dpi)
     curves(m["c"], ok, freqs, ref["c"], step.fig("curves"), dpi)
+    curves(m["u"], ok_u, freqs, ref["u"], step.fig("group_curves"), dpi, "Group velocity (km/s)")
     rejections(m["reason"], ok, freqs, step.fig("rejections"), dpi)
+    rejections(m["reason_u"], ok_u, freqs, step.fig("group_rejections"), dpi)
     n_ok = ok.sum(axis=1)
     have = np.where(n_ok >= 3)[0]
     if have.size:
@@ -40,7 +44,7 @@ def make(cfg, step, ref, m, ok, freqs, dist, sta1, sta2):
         for f in (0.2, 0.5, 0.85):
             part = by[int(f * (by.size - 1)) : int(f * (by.size - 1)) + max(1, by.size // 10)]
             q = int(part[np.argmax(n_ok[part])])
-            pair(cfg, step, q, "%s_%s" % (sta1[q], sta2[q]), dist[q], freqs, ref, m, ok, dpi)
+            pair(cfg, step, q, "%s_%s" % (sta1[q], sta2[q]), dist[q], freqs, ref, m, ok, ok_u, dpi)
 
 
 def fj_reference(ref, med, vrange, out, dpi):
@@ -61,7 +65,7 @@ def fj_reference(ref, med, vrange, out, dpi):
     style.save(fig, out, dpi)
 
 
-def curves(c, ok, freqs, c_ref, out, dpi):
+def curves(c, ok, freqs, c_ref, out, dpi, label="Phase velocity (km/s)"):
     fig, (ax, bx) = plt.subplots(2, 1, figsize=(7.0, 6.5), sharex=True, gridspec_kw=dict(height_ratios=[3, 1]))
     rows = np.where(ok.any(axis=1))[0]
     step = max(1, rows.size // 3000)
@@ -69,7 +73,7 @@ def curves(c, ok, freqs, c_ref, out, dpi):
         y = np.where(ok[q], c[q], np.nan)
         ax.plot(freqs, y, color="0.35", lw=0.3, alpha=0.35)
     ax.plot(freqs, c_ref, color=style.RED, lw=1.8, label="Reference")
-    ax.set_ylabel("Phase velocity (km/s)")
+    ax.set_ylabel(label)
     ax.legend(fontsize=9)
     ax.set_title("%d pairs with a curve%s" % (rows.size, "" if step == 1 else " (every %d-th drawn)" % step),
                  fontsize=11)  # fmt: skip
@@ -93,7 +97,7 @@ def rejections(reason, ok, freqs, out, dpi):
     style.save(fig, out, dpi)
 
 
-def pair(cfg, step, q, name, dist, freqs, ref, m, ok, dpi):
+def pair(cfg, step, q, name, dist, freqs, ref, m, ok, ok_u, dpi):
     import os
 
     with h5py.File(os.path.join(cfg["output_dir"], "2_cc", "stack.h5"), "r") as h:
@@ -109,7 +113,10 @@ def pair(cfg, step, q, name, dist, freqs, ref, m, ok, dpi):
     fig, (ax, bx) = plt.subplots(1, 2, figsize=(10.5, 4.3))
     ax.pcolormesh(freqs, v, img.T, cmap=style.ENERGY, vmin=0, vmax=1, shading="nearest", rasterized=True)
     ax.plot(freqs, ref["u"], "w--", lw=1.2, label="Reference group velocity")
-    ax.plot(freqs, m["u"][q], "k.", ms=4, label="Group arrival")
+    gu = ok_u[q]
+    ax.plot(freqs[~gu], m["u"][q][~gu], "x", color="0.75", ms=4, label="Rejected")
+    ax.errorbar(freqs[gu], m["u"][q][gu], yerr=np.nan_to_num(m["u_sigma"][q][gu]), fmt="o", color="k", ms=3,
+                capsize=2, label="Accepted (jackknife 1 sd)")  # fmt: skip
     _faxis(ax, freqs)
     ax.set_ylabel("Group velocity (km/s)")
     ax.legend(fontsize=8, loc="upper right")
