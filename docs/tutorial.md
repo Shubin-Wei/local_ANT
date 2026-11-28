@@ -68,7 +68,7 @@ Check, in this order:
    - limit the picking to the frequencies where the fundamental mode is clear: `disp.fj_band_hz: [lo, hi]`, or
    - give a 1-D model (`disp.reference: model`, `disp.reference_file: model.txt` with columns `depth_km Vs_km/s`) or a curve picked by hand (`disp.reference: file`, columns `frequency_Hz c_km/s`),
 
-   then run `lant disp` again. The purple diamonds are the median of the measured phase velocities: they should lie on or near the reference.
+   then run `lant disp` again. The purple diamonds are the median of the measured phase velocities: they should lie on or near the reference. The [synthetic example](../examples/synthetic/README.md) shows a first higher mode that is stronger than the fundamental over a band of frequencies, and a curve picked along the fundamental.
 
    On a line array the F-J spectrum is often unclear (few pairs, unevenly spread distances). Then use a 1-D model or a curve from a nearby areal array or from the literature (`disp.reference: model` or `file`).
 2. **`median_vs_reference.csv`**: a deviation of 20 % or more, or one that jumps between frequencies, means wrong cycle counts (the reference is wrong); a steady offset of a few percent is a real difference from the reference.

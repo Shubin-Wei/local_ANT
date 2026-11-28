@@ -67,6 +67,14 @@ OUT/5_checker_*/   recovery.csv
 
 大数组用 HDF5，其余是 CSV；`lant export-sac` 把叠加后的互相关写成 SAC 文件。`4_inv/dsurftomo/` 是 DSurfTomo 格式的工程。
 
+## 合成数据示例
+
+[examples/synthetic](examples/synthetic/README.zh.md)：在已知一维模型上合成噪声记录、在已知三维模型中计算走时，经 lant 处理后与真实模型对比。1–12 Hz 实测相速度与理论值相差在 1.7 % 以内；盆地、倾斜断裂带和隐伏体都恢复在原来的位置。
+
+![实测与理论频散](examples/synthetic/figures/dispersion.png)
+
+![真实与恢复的模型](examples/synthetic/figures/structures_slices.png)
+
 ## 文档
 
 - [教程](docs/tutorial.zh.md)：每一步怎样运行、检查什么

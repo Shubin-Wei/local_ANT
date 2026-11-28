@@ -13,6 +13,8 @@ The F-J spectrum is always computed and drawn, so that any reference can be chec
 spectrum.  The group velocity of the reference is U = c / (1 - d ln c / d ln f) (Bensen et al. 2007 eq. 7).
 """
 
+import os
+
 import numpy as np
 
 from . import fj
@@ -75,10 +77,10 @@ def build(cfg, ccf, dist, fs, freqs, log=print):
         source = "F-J picks %s" % ("in %g-%g Hz" % tuple(band) if band else "at every frequency")
     elif d["reference"] == "model":
         c = from_model(d["reference_file"], freqs)
-        source = "1-D model %s" % d["reference_file"]
+        source = "1-D model %s" % os.path.basename(d["reference_file"])
     else:
         c = from_file(d["reference_file"], freqs)
-        source = "curve %s" % d["reference_file"]
+        source = "curve %s" % os.path.basename(d["reference_file"])
     if np.isfinite(c).sum() < 2:
         raise RuntimeError("the reference curve (%s) covers fewer than 2 measurement frequencies" % source)
     return dict(freqs=freqs, c=c, u=group_velocity(freqs, c), fj_image=img, fj_c=c_scan, fj_picks=picks,

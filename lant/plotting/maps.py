@@ -158,7 +158,8 @@ def section_lines(stations):
     return out
 
 
-def sections(cfg, model, stations, lines, vr, out, zmax=None, log=print):
+def sections(cfg, model, stations, lines, vr, out, zmax=None, cpt="seis", label="Vs (km/s)", contours=True,
+             log=print):  # fmt: skip
     """Vertical sections of model (lon, lat, depth, V [nlon, nlat, nz]) along lines (section_lines), Vs in colour with
     contours, the relief along the line above each when available, the stations within half a station spacing of the
     line as triangles; no vertical exaggeration unless the section would be flatter than 1:6."""
@@ -180,7 +181,7 @@ def sections(cfg, model, stations, lines, vr, out, zmax=None, log=print):
     zstep = nice_number(zmax / 4, "nearest")
 
     def make(tmp, relief):
-        pre = ["gmt makecpt -Cseis -T%g/%g -Z -D > %s/vs.cpt" % (vr[0], vr[1], tmp)]
+        pre = ["gmt makecpt -C%s -T%g/%g -Z -D > %s/vs.cpt" % (cpt, vr[0], vr[1], tmp)]
         if relief:
             W, E, S, N = G.region(slon, slat)
             pre += G.relief_cmds(relief, tmp, (W, E, S, N), "geo")[:1]
@@ -200,9 +201,10 @@ def sections(cfg, model, stations, lines, vr, out, zmax=None, log=print):
             P = "-JX%.3fc/-%.3fc -R0/%.4f/0/%g -Xa%.3fc -Ya%.3fc" % (w, hgt, L, zmax, 2.0, y)
             pre.append("gmt xyz2grd %s.bin -bi3f -R0/%.4f/0/%g -I%d+n/%d+n -G%s.nc" % (tag, s[-1], zmax, s.size, z.size,
                                                                                        tag))  # fmt: skip
-            cmd += ["gmt grdimage %s.nc %s -C%s/vs.cpt -Q" % (tag, P, tmp),
-                    "gmt grdcontour %s.nc %s -C%g -A%g+f9p,Helvetica,gray10 -Gd6c -W0.4p,gray25 --FORMAT_FLOAT_MAP=%%.1f"
-                    % (tag, P, cstep, 2 * cstep)]  # fmt: skip
+            cmd.append("gmt grdimage %s.nc %s -C%s/vs.cpt -Q" % (tag, P, tmp))
+            if contours:
+                cmd.append("gmt grdcontour %s.nc %s -C%g -A%g+f9p,Helvetica,gray10 -Gd6c -W0.4p,gray25 "
+                           "--FORMAT_FLOAT_MAP=%%.4g" % (tag, P, cstep, 2 * cstep))  # fmt: skip
             # stations near the line
             x, yy = (slon - a[0]) * kx, (slat - a[1]) * ky
             ux, uy = (b[0] - a[0]) * kx / L, (b[1] - a[1]) * ky / L
@@ -232,10 +234,10 @@ def sections(cfg, model, stations, lines, vr, out, zmax=None, log=print):
             heights.append((y, hgt, w))
             y = top + gap
         yb, hb, wb = heights[-1]
-        cmd.append("gmt colorbar -C%s/vs.cpt -Dx%.3fc/%.3fc+w%.2fc/0.35c+jBL+e -Bxa%gf%g -By+l'Vs (km/s)' "
+        cmd.append("gmt colorbar -C%s/vs.cpt -Dx%.3fc/%.3fc+w%.2fc/0.35c+jBL+e -Bxa%gf%g -By+l'%s' "
                    "--FONT_ANNOT_PRIMARY=10p --FONT_LABEL=11p"
                    % (tmp, 2.0 + max(w for _, _, w in heights) + 0.5, heights[0][0], min(6.0, sum(h for _, h, _ in
-                      heights) + 1.0), 2 * cstep, cstep))  # fmt: skip
+                      heights) + 1.0), 2 * cstep, cstep, label))  # fmt: skip
         if ve > 1:
             _write(tmp + "/ve.txt", "V.E. %g:1\n" % ve)
             cmd.append("gmt text %s/ve.txt -JX%gc/1c -R0/1/0/1 -Xa%.3fc -Ya%.3fc -F+cBR+f10p,Helvetica+jBR -N"

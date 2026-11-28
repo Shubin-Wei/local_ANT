@@ -1,0 +1,21 @@
+# 1-D models of the synthetic example: thickness (km, 0 = half-space), Vp, Vs (km/s), density (g/cm3)
+# layered: weathered rock and fractured basement whose velocity increases with depth (0.9 to 3.4 km/s)
+# lvl:     the same with a low-velocity layer (Vs 1.7 km/s) at 0.30-0.50 km below a faster layer
+# Both keep the fundamental mode the strongest on the vertical component at every frequency (sregn96 excitation);
+# a much stronger contrast near the surface lets the first higher mode dominate around the H/V peak frequency.
+[layered]
+0.05 2.00 0.90 2.00
+0.10 2.80 1.40 2.20
+0.15 3.60 2.00 2.40
+0.25 4.40 2.50 2.50
+0.40 5.00 2.85 2.60
+0.60 5.50 3.15 2.65
+0.00 5.90 3.40 2.70
+[lvl]
+0.05 2.00 0.90 2.00
+0.10 2.80 1.40 2.20
+0.15 3.90 2.20 2.45
+0.20 3.30 1.70 2.30
+0.40 5.00 2.85 2.60
+0.60 5.50 3.15 2.65
+0.00 5.90 3.40 2.70

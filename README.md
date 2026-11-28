@@ -67,6 +67,14 @@ every step also:   params.yaml, log.txt, summary.txt, figures/
 
 Large arrays are HDF5, everything else CSV; `lant export-sac` writes the stacked correlations as SAC files. `4_inv/dsurftomo/` is a project in DSurfTomo's format.
 
+## Synthetic example
+
+[examples/synthetic](examples/synthetic/README.md): noise records over known 1-D models and travel times through a known 3-D model, run through lant and compared with the truth. Measured phase velocities are within 1.7 % of the theory from 1 to 12 Hz; a basin, a dipping fault zone and a buried body are recovered where they are.
+
+![Measured and theoretical dispersion](examples/synthetic/figures/dispersion.png)
+
+![True and recovered model](examples/synthetic/figures/structures_slices.png)
+
 ## Documentation
 
 - [Tutorial](docs/tutorial.md): how to run each step and what to check

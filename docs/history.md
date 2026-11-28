@@ -10,6 +10,8 @@ Earlier versions: see the git tags (`v1.5.0`, `v2.0.0` – `v2.0.2`) and their d
 
 **Group velocities.** `lant disp` measures the Rayleigh group velocity of every pair (envelope maximum at the instantaneous frequency) with its own jackknife error and quality control; `dispersion.csv` has the columns `c_kms`, `sigma_kms`, `u_kms`, `u_sigma_kms`. `lant inv` inverts the phase travel times, the group travel times or both (`inv.data`, default `phase`).
 
+**Synthetic example** (`examples/synthetic`): noise records over two 1-D models (measured against theoretical dispersion) and travel times through a 3-D model with a basin, a fault zone and a buried body (true against recovered model), with a spike test and a checkerboard.
+
 - `cc.fs_hz` is now `clean.fs_hz`; `record_index.csv`, `stations_used.csv` and the station map are in `1_clean`.
 - Result folders: `1_clean`, `2_cc`, `3_disp`, `4_inv`, `5_checker_*`.
 - Suggested sampling rate and upper frequency (`lant init`): `clean.fs_hz` is the highest whole-number rate reachable from every raw rate, `cc.fmax_hz` = 0.4 × `clean.fs_hz` (Nyquist theorem). The rule of 3.0.0 (mean interval of the pair distances) gave hundreds of hertz for arrays with many pairs.

@@ -10,6 +10,8 @@
 
 **群速度**：`lant disp` 测每个台对的 Rayleigh 波群速度（瞬时频率处的包络极大），有各自的刀切误差和质量控制；`dispersion.csv` 有 `c_kms`、`sigma_kms`、`u_kms`、`u_sigma_kms` 四列。`lant inv` 可反演相速度走时、群速度走时或两者（`inv.data`，默认 `phase`）。
 
+**合成数据示例**（`examples/synthetic`）：两个一维模型上的噪声记录（实测与理论频散对比），以及含盆地、断裂带和隐伏体的三维模型中的走时（真实与恢复模型对比），另有尖峰检验和棋盘检验。
+
 - `cc.fs_hz` 改为 `clean.fs_hz`；`record_index.csv`、`stations_used.csv` 和台站图在 `1_clean`。
 - 结果文件夹：`1_clean`、`2_cc`、`3_disp`、`4_inv`、`5_checker_*`。
 - 建议的采样率和频带上限（`lant init`）：`clean.fs_hz` 取每个原始采样率都能整数倍抽取到的最高整数采样率，`cc.fmax_hz` = 0.4 × `clean.fs_hz`（奈奎斯特采样定理）。3.0.0 的规则（台对距离的平均间隔）在台对很多时会给出几百赫兹。
