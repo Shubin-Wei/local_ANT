@@ -59,9 +59,23 @@ def log_axis(axis):
     from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
 
     axis.axes.set_xscale("log") if axis is axis.axes.xaxis else axis.axes.set_yscale("log")
-    axis.set_major_locator(LogLocator(subs=(1.0, 2.0, 5.0)))
+    axis.set_major_locator(_PlainLogLocator())
     axis.set_major_formatter(FuncFormatter(lambda v, _: "%g" % v))
     axis.set_minor_formatter(NullFormatter())
+
+
+def _PlainLogLocator():
+    """Ticks at 1, 2, 5 x 10^n; over less than a decade (where that leaves one or two ticks) at 1-9 x 10^n."""
+    import numpy as np
+    from matplotlib.ticker import LogLocator
+
+    class Locator(LogLocator):
+        def tick_values(self, vmin, vmax):
+            lo, hi = sorted((vmin, vmax))
+            self._subs = np.array([1.0, 2.0, 5.0]) if hi / max(lo, 1e-30) > 4 else np.arange(1.0, 10.0)
+            return super().tick_values(vmin, vmax)
+
+    return Locator(subs=(1.0, 2.0, 5.0))
 
 
 def save(fig, out, dpi=300):
