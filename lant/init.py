@@ -15,7 +15,7 @@ gives; each one is written into the file with the rule that gave it, and every o
         slowest phase velocity (0.6: an empirical margin), and four periods after the arrival give the noise window;
   segment  max(2.5 maxlag, 10 / fmin): longer than twice the lag window (circular correlation) and ten periods;
   substack_hours  24 (one sub-stack per day) when the records span at least 3 days, else the longest of 12, 8, 6,
-        4, 3, 2, 1 h that gives 3 sub-stacks: the jackknife error of step 2 needs at least 3.
+        4, 3, 2, 1 h that gives 3 sub-stacks: the jackknife error of lant disp needs at least 3.
 """
 
 import math
@@ -63,7 +63,7 @@ def suggest(table, rates, vrange, min_wavelengths=2.0):
             and all(abs(r / (lo / q) - round(r / (lo / q))) < 1e-6 for r in rates)]  # fmt: skip
     ok = [f for f in cand if 0.4 * f >= fmax - 1e-9]
     fs = float(round(min(ok))) if ok else float(lo)
-    out["cc.fs_hz"] = (fs, "lowest whole-number rate reachable from the raw rates %s with fmax <= 0.4 fs"
+    out["clean.fs_hz"] = (fs, "lowest whole-number rate reachable from the raw rates %s with fmax <= 0.4 fs"
                        % sorted(set(rates)))  # fmt: skip
     lag = _up(rmax / (0.6 * v0) + 4 / fmin, 1.0 if rmax / v0 < 100 else 10.0)
     out["cc.maxlag_s"] = (lag, "longest pair %.3f km / (0.6 x %g km/s) + 4 / fmin" % (rmax, v0))
@@ -111,7 +111,7 @@ def run(path, raw_dir, station_file, out_dir, vrange, channel="*Z", n_cores=1):
 
     table = stations.read_table(station_file)
     print("station table: %d stations" % len(table))
-    rows, bad = R.build_index(raw_dir, os.path.join(out_dir, "1_cc", "record_index.csv"), n_cores)
+    rows, bad = R.build_index(raw_dir, os.path.join(out_dir, "1_clean", "record_index.csv"), n_cores)
     recs, notes = R.match(rows, table, channel)
     for n in notes:
         print("  " + n)
@@ -132,4 +132,4 @@ def run(path, raw_dir, station_file, out_dir, vrange, channel="*Z", n_cores=1):
           % (geom["stations"], geom["longest_pair_km"], geom["median_spacing_km"]))  # fmt: skip
     for k, (v, rule) in sug.items():
         print("  %s = %s   (%s)" % (k, v, rule))
-    print("written: %s\nnext: check it, then `lant cc -c %s`" % (path, path))
+    print("written: %s\nnext: check it, then `lant clean -c %s`" % (path, path))

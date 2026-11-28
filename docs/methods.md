@@ -4,7 +4,7 @@
 
 This page says what every step computes, why, and on what it rests. Each number in the configuration is listed with its basis in [parameters.md](parameters.md); how to run the steps is in [tutorial.md](tutorial.md).
 
-lant does the basic processing chain of ambient-noise surface-wave tomography and nothing that was added for one particular data set. Where a choice is a convention rather than a result of theory, it is said so.
+lant does the basic processing chain of ambient-noise surface-wave tomography. Where a choice is a convention rather than a result of theory, it is said so.
 
 ## 1. Why correlations of noise give surface waves
 
@@ -22,16 +22,17 @@ lant uses this relation twice: for the array F-J spectrum (section 4) and for th
 
 **Limits.** Uneven noise sources bias the travel times (Tsai 2009); lant does not correct this, and the result holds where the noise is close to isotropic. Higher modes can be stronger than the fundamental mode where soft layers lie on hard rock; the reference curve has to be checked for that (section 4).
 
-## 2. Records (`lant cc`, part 1)
+## 2. Cleaning the records (`lant clean`)
 
-- **Index.** Every file under `data.raw_dir` is read once with ObsPy (headers only); `1_cc/record_index.csv` lists every record.
+- **Index.** Every file under `data.raw_dir` is read once with ObsPy (headers only); `1_clean/record_index.csv` lists every record.
 - **Stations.** A record belongs to a station of the table when its network and station codes match the table (or its station code alone, for a table without networks). Names are never guessed; what does not match is listed in the log.
 - **Channel.** `data.channel` (default `*Z`): the vertical component.
 - **Day.** Each UTC day of each station is put on its exact sample grid (Lanczos resampling only if a record is off the grid by more than 5 % of a sample). Gaps stay gaps (no interpolation, no zero filling). The median is removed.
-- **Instrument response** (only when `data.response` is given): removed to ground velocity with ObsPy, with a pre-filter that is flat inside the correlation band (Bensen et al. 2007, sect. 2.1). Without response files the records are used as they are. This is exact only when every station has the same instrument: the cross-coherence (below) removes the amplitude response, and the phase responses of identical instruments cancel in every pair.
-- **Decimation** to `cc.fs_hz`: zero-phase 8th-order Butterworth low-pass at 0.8 × the new Nyquist frequency, then every q-th sample (q a whole number). A decimated sample counts as valid only if the raw data within ±max(1 s, 50 samples) were all present.
+- **Instrument response** (only when `data.response` is given): removed to ground velocity with ObsPy, with a pre-filter that is flat inside the correlation band `cc.fmin_hz`–`cc.fmax_hz` (Bensen et al. 2007, sect. 2.1). Without response files the records are used as they are. This is exact only when every station has the same instrument: the cross-coherence (below) removes the amplitude response, and the phase responses of identical instruments cancel in every pair.
+- **Decimation** to `clean.fs_hz`: zero-phase 8th-order Butterworth low-pass at 0.8 × the new Nyquist frequency, then every q-th sample (q a whole number). A decimated sample counts as valid only if the raw data within ±max(1 s, 50 samples) were all present.
+- **Output**: one HDF5 file per day, `1_clean/days/YYYY-MM-DD.h5`, an array station × sample with NaN where no sample is valid, and the hours of valid data per station (`availability.csv`). Nothing is removed for its amplitude in this step: whether a stretch of record is used depends on the segment length, so it is decided in `lant cc` (section 3).
 
-## 3. Cross-correlation and stack (`lant cc`, part 2)
+## 3. Cross-correlation and stack (`lant cc`)
 
 1. **Segments** of `cc.segment_s`, overlapping by `cc.overlap` (Welch averaging; Seats et al. 2012). A segment is not used if it contains a gap, or if its largest |amplitude| exceeds `cc.max_over_std` × the standard deviation of the station-day (earthquakes and glitches; `max_over_std` of NoisePy, Jiang & Denolle 2020). This replaces the temporal normalisation (one-bit or running-mean) of Bensen et al. (2007): a disturbed segment is left out instead of being flattened. Each segment: linear trend removed, 5 % cosine taper.
 2. **Cross-coherence** (Xu et al. 2021 compared normalisations for high-frequency dense arrays and recommend it):
@@ -60,7 +61,7 @@ The reference curve does three things: it sets where the group arrival is looked
 
 largest where c is the phase velocity of a mode. As in the open-source CC-FJpy (Li et al. 2021) for noise data, C is the real part of the spectrum of the stack, and the integral is the trapezoidal rule over the sorted pair distances (double precision; every pair with data). The spectrum is free of spatial aliasing for k ≤ π/Δr, where Δr is the sampling interval of the pair distances (Wang et al. 2019, eq. 14); `lant init` uses this rule for the suggested upper frequency.
 
-**Picking** (`fj`): at each frequency of `disp.fj_band_hz` (default: all), the largest value inside `data.velocity_range_kms`; a cubic polynomial of ln c in ln f through these picks; defined over the band of the picks only (no extrapolation). The F-J spectrum is always computed and drawn, together with whichever reference is used, so that it can be checked: **the reference must follow the fundamental mode** (the slowest ridge). If a higher mode is picked, every cycle count and so every phase velocity is wrong. lant does not decide this by itself: look at `2_disp/figures/fj_reference.png`.
+**Picking** (`fj`): at each frequency of `disp.fj_band_hz` (default: all), the largest value inside `data.velocity_range_kms`; a cubic polynomial of ln c in ln f through these picks; defined over the band of the picks only (no extrapolation). The F-J spectrum is always computed and drawn, together with whichever reference is used, so that it can be checked: **the reference must follow the fundamental mode** (the slowest ridge). If a higher mode is picked, every cycle count and so every phase velocity is wrong. lant does not decide this by itself: look at `3_disp/figures/fj_reference.png`.
 
 Reference group velocity: U = c / (1 − d ln c / d ln f) (Bensen et al. 2007, eq. 7).
 
@@ -82,7 +83,7 @@ For each pair and each measurement frequency f (`disp.per_octave` per octave):
    ω_k t_k = ω_(k−1) t_(k−1) + ½ (t_g,k + t_g,k−1)(ω_k − ω_(k−1)),
 
    on a grid four times denser than the measurement grid; a jump of more than `disp.slip_cycles` of a cycle ends the run.
-7. **Error**: delete-one-group jackknife over the sub-stacks of step 1 (each sub-stack left out in turn; Efron & Stein 1981): σ² = (g−1)/g Σ (c_i − c̄)². It measures the repeatability over time only: not the errors of the reference, of the cycle count or of uneven noise.
+7. **Error**: delete-one-group jackknife over the sub-stacks of `lant cc` (each sub-stack left out in turn; Efron & Stein 1981): σ² = (g−1)/g Σ (c_i − c̄)². It measures the repeatability over time only: not the errors of the reference, of the cycle count or of uneven noise.
 8. **Quality control** (all thresholds are in `disp`):
 
 | Criterion | Default | Basis |
@@ -114,7 +115,7 @@ r: travel-time residuals; G: travel-time derivatives; W: 0/1 weights of the reje
 
 **Rejection**: a travel time further than `inv.outlier_mad` × 1.4826 MAD from the median residual of its period gets weight 0 (Rousseeuw & Croux 1993; k = 3 is "very conservative", Leys et al. 2013). Per period, because a phase error becomes a travel-time error proportional to the period.
 
-The project in `3_inv/dsurftomo/` is in DSurfTomo's file format and runs unchanged with the original program.
+The project in `4_inv/dsurftomo/` is in DSurfTomo's file format and runs unchanged with the original program.
 
 ## 7. Resolution test (`lant checker`)
 

@@ -15,7 +15,7 @@ def run(cfg, out_dir, min_count=1):
     import obspy
     from obspy.io.sac import SACTrace
 
-    stack = os.path.join(cfg["output_dir"], "1_cc", "stack.h5")
+    stack = os.path.join(cfg["output_dir"], "2_cc", "stack.h5")
     if not os.path.exists(stack):
         raise FileNotFoundError("%s not found: run `lant cc` first" % stack)
     os.makedirs(out_dir, exist_ok=True)

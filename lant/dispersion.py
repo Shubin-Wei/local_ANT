@@ -1,4 +1,4 @@
-"""Two-station Rayleigh phase velocity of every pair (step 2, with lant.reference).
+"""Two-station Rayleigh phase velocity of every pair (lant disp, with lant.reference).
 
 For each pair of the stack, at the measurement frequencies f (disp.per_octave per octave):
   1. symmetric component: the average of the positive and the time-reversed negative lags (Bensen et al. 2007);

@@ -1,4 +1,4 @@
-"""Figures of step 2 (2_disp/figures):
+"""Figures of step 3 (3_disp/figures):
 
 fj_reference.png   the array's F-J spectrum (normalised at each frequency), its picks, the reference curve used
                    and the median of the accepted phase velocities: the check that the reference follows the
@@ -96,7 +96,7 @@ def rejections(reason, ok, freqs, out, dpi):
 def pair(cfg, step, q, name, dist, freqs, ref, m, ok, dpi):
     import os
 
-    with h5py.File(os.path.join(cfg["output_dir"], "1_cc", "stack.h5"), "r") as h:
+    with h5py.File(os.path.join(cfg["output_dir"], "2_cc", "stack.h5"), "r") as h:
         x = h["ccf"][q].astype(np.float64)
         fs, maxlag = float(h.attrs["fs"]), float(h.attrs["maxlag"])
     pos, neg = branches(x[None, :], fs, maxlag)

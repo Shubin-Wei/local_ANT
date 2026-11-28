@@ -32,22 +32,33 @@ You need:
 lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --velocity 0.3 3.0
 ```
 
-`lant init` reads the record headers and writes `my.yaml` with suggested numbers for the correlation band, the sampling rate, the lag window and the segment length. Above each suggestion it writes the rule and the numbers of your array that gave it (for example `2 x v_fast 3 km/s / longest pair 9.8 km = ...`). Open the file and read it: every setting has a comment. Change what you know better (e.g. `data.response` if your stations do not all have the same instrument).
+`lant init` reads the record headers and writes `my.yaml` with suggested numbers for the sampling rate, the correlation band, the lag window and the segment length. Above each suggestion it writes the rule and the numbers of your array that gave it (for example `2 x v_fast 3 km/s / longest pair 9.8 km = ...`). Open the file and read it: every setting has a comment. Change what you know better (e.g. `data.response` if your stations do not all have the same instrument).
 
-## 1. Cross-correlation: `lant cc -c my.yaml`
+## 1. Cleaning the records: `lant clean -c my.yaml`
 
-What it does: indexes the records, matches them to the stations, reads every station-day, cuts it into segments, correlates every pair (cross-coherence), and stacks (methods, sections 2–3).
+What it does: indexes the records, matches them to the stations, and writes every UTC day of every station cleaned: gaps kept as gaps, median removed, instrument response removed (if `data.response` is given), low-passed and decimated to `clean.fs_hz` (methods, section 2). Nothing is thrown away for its amplitude here; that is done segment by segment in `lant cc`.
 
 Check:
 
 - **`log.txt`**: the station matching (stations without records, records of stations not in the table, stations with several sensors), files that are not seismic records, days that were reused.
 - **`figures/stations.png`**: are all stations there, in the right place?
+- **`figures/availability.png`** and `availability.csv`: hours of data per station and day. Stations that started late, stopped early or have many gaps show up here.
+
+Results: `days/YYYY-MM-DD.h5` (one array per day: station × sample, NaN where there is no valid sample), `stations_used.csv`, `availability.csv`, `record_index.csv`. A day is cleaned again only when its raw files or the settings change.
+
+## 2. Cross-correlation: `lant cc -c my.yaml`
+
+What it does: reads the cleaned days, cuts them into segments, leaves out segments with gaps or large amplitudes, correlates every pair (cross-coherence), and stacks (methods, section 3). The stations in `data.exclude_stations` and the days outside `data.start_date` / `end_date` are left out without cleaning again.
+
+Check:
+
+- **`log.txt`**: stations, pairs and days used, days that were reused.
 - **`figures/ccf_section.png`**: correlations against distance. Surface waves are a moveout between the two dashed lines (the velocity range). Seen on both sides of zero lag when the noise comes from all directions; mostly on one side when it comes from one direction.
 - **`figures/ccf_time_*.png`**: the sub-stacks of three pairs, in time order. The arrival should be stable. A sub-stack that differs points at a station problem on that day (clock, instrument) or a strong local source. Leave such a station out with `data.exclude_stations`, or such days with `data.start_date` / `end_date`, and run the step again.
 
-Results: `stack.h5` (the stack), `days/*.h5` (sub-stacks of each day), `stations_used.csv`, `record_index.csv`. `lant export-sac -c my.yaml -o DIR` writes the stack as SAC files for other programs.
+Results: `stack.h5` (the stack), `days/*.h5` (sub-stacks of each day). `lant export-sac -c my.yaml -o DIR` writes the stack as SAC files for other programs.
 
-## 2. Phase velocities: `lant disp -c my.yaml`
+## 3. Phase velocities: `lant disp -c my.yaml`
 
 What it does: the reference curve, then the phase velocity of every pair with its jackknife error, and quality control (methods, sections 4–5).
 
@@ -64,9 +75,9 @@ Check, in this order:
 
 Do not loosen the quality control to get more points: the numbers in `disp` have the bases listed in [parameters.md](parameters.md).
 
-Results: `dispersion.csv` (the accepted values, one row per pair and frequency; the input of step 3), `measurements.h5` (all values and the reasons of every rejection), `reference.csv`, `fj.h5`.
+Results: `dispersion.csv` (the accepted values, one row per pair and frequency; the input of `lant inv`), `measurements.h5` (all values and the reasons of every rejection), `reference.csv`, `fj.h5`.
 
-## 3. 3-D inversion: `lant inv -c my.yaml`
+## 4. 3-D inversion: `lant inv -c my.yaml`
 
 What it does: the average curve, the depth nodes and the 1-D starting model, the grid, and the direct 3-D inversion (methods, section 6). The derived numbers (depth nodes, grid spacing, Vs bounds) are printed and kept in `params.yaml`; to change one, write it into `inv` and run again.
 
@@ -79,7 +90,7 @@ Check:
 
 Results: `vs_model.csv` (lon, lat, depth, Vs, dVs in % of the starting model, DWS: 0 means no data at that node), `start_model.csv`, `average_curve.csv`, `residuals.csv`, and `dsurftomo/` (the project in DSurfTomo's format, which the original DSurfTomo also runs).
 
-## 4. Resolution test: `lant checker -c my.yaml --size KM`
+## 5. Resolution test: `lant checker -c my.yaml --size KM`
 
 Checkerboard of cells `--size` km, ±10 % (`checker.amplitude`), with noise as in the data; `--flip-depth KM` reverses the pattern below that depth. Run several sizes, e.g. 1, 2 and 3 times the grid spacing:
 

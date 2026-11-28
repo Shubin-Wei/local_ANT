@@ -12,22 +12,28 @@ Every setting of the configuration file, its default and its basis. The template
 | `data.raw_dir` | folder of continuous records (any format ObsPy reads, any layout) |
 | `data.station_file` | station table with a header line (`network station longitude latitude [elevation]`), or StationXML |
 | `data.velocity_range_kms` | slowest and fastest Rayleigh phase velocity expected (km/s) |
-| `cc.fs_hz`, `cc.fmin_hz`, `cc.fmax_hz`, `cc.maxlag_s`, `cc.segment_s` | correlation settings; `lant init` suggests them (rules below) |
+| `clean.fs_hz` | sampling rate after decimation; `lant init` suggests it (rule below) |
+| `cc.fmin_hz`, `cc.fmax_hz`, `cc.maxlag_s`, `cc.segment_s` | correlation settings; `lant init` suggests them (rules below) |
 
 ## data
 
 | Key | Default | Meaning and basis |
 |---|---|---|
 | `channel` | `"*Z"` | channel codes of the vertical component (shell pattern) |
-| `response` | `null` | response files (StationXML, RESP, dataless SEED; file or folder): responses are removed to velocity. Needed when the instruments differ; with one instrument model the cross-coherence makes it unnecessary (methods §2) |
-| `start_date`, `end_date` | `null` | first and last UTC day used |
-| `exclude_stations` | `[]` | stations left out (names as in the table) |
+| `response` | `null` | response files (StationXML, RESP, dataless SEED; file or folder): responses are removed to velocity, pre-filter flat over `cc.fmin_hz`–`cc.fmax_hz` (so `lant clean` needs the band then). Needed when the instruments differ; with one instrument model the cross-coherence makes it unnecessary (methods §2) |
+| `start_date`, `end_date` | `null` | first and last UTC day used (by `lant clean` and `lant cc`: days can be left out of the correlation without cleaning again) |
+| `exclude_stations` | `[]` | stations left out (names as in the table; also by both steps) |
 
-## cc (step 1)
+## clean (step 1)
 
 | Key | Default | Meaning and basis |
 |---|---|---|
-| `fs_hz` | init | sampling rate after decimation; a whole fraction of every raw rate. Suggested: the lowest whole-number rate with `fmax_hz` ≤ 0.4 fs (the anti-alias low-pass is at 0.8 × Nyquist) |
+| `fs_hz` | init | sampling rate after decimation; a whole fraction of every raw rate. Suggested: the lowest whole-number rate with `cc.fmax_hz` ≤ 0.4 fs (the anti-alias low-pass is at 0.8 × Nyquist) |
+
+## cc (step 2)
+
+| Key | Default | Meaning and basis |
+|---|---|---|
 | `fmin_hz` | init | lower band edge. Suggested: the longest pair r_max is 2 wavelengths at the fastest velocity, f = 2 v_fast / r_max (two-station far field, Bensen et al. 2007; Luo et al. 2015), lowered by the half-gain width of the Gaussian filter, × (1 − √(ln 2/α)) |
 | `fmax_hz` | init | upper band edge. Suggested: the F-J spectrum is free of spatial aliasing for k ≤ π/Δr, Δr the mean interval of the pair distances (Wang et al. 2019 eq. 14): f = v_slow / (2Δr), × (1 + √(ln 2/α)); at most 0.4 × the lowest raw rate |
 | `maxlag_s` | init | lag window. Suggested: r_max / (0.6 v_slow) + 4 / fmin. 0.6: convention, group velocities in dispersive layers lie well below the phase velocity; 4 periods give the noise window after the arrival |
@@ -37,7 +43,7 @@ Every setting of the configuration file, its default and its basis. The template
 | `substack_hours` | 24 | length of the sub-stacks, the groups of the jackknife error (at least 3 needed). `lant init` suggests shorter ones for records shorter than 3 days |
 | `max_distance_km` | `null` | correlate only pairs up to this distance (saves memory and disk for very large arrays) |
 
-## disp (step 2)
+## disp (step 3)
 
 | Key | Default | Meaning and basis |
 |---|---|---|
@@ -55,7 +61,7 @@ Every setting of the configuration file, its default and its basis. The template
 | `slip_cycles` | 0.3 | a phase jump larger than this fraction of a cycle ends the curve (AFTAN) |
 | `min_points` | 6 | shortest accepted curve (consecutive frequencies; convention) |
 
-## inv (step 3)
+## inv (step 4)
 
 | Key | Default | Meaning and basis |
 |---|---|---|

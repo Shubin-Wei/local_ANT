@@ -1,6 +1,7 @@
-"""Step 1 (lant cc): cross-correlation of every station pair, day by day, and the stack.
+"""Step 2 (lant cc): cross-correlation of every station pair, day by day, and the stack.
 
-For every UTC day and station (lant.records.read_day): the day at cc.fs_hz.  Then
+Input: the cleaned days of lant clean (1_clean/days), without the stations of data.exclude_stations and the days
+outside data.start_date / end_date.  For every day:
   1. segments of cc.segment_s, overlapping by cc.overlap (Welch averaging, Seats et al. 2012); a segment is not used
      when it has a gap or when its largest |amplitude| exceeds cc.max_over_std x the standard deviation of the
      station-day (earthquakes, glitches; NoisePy's max_over_std, Jiang & Denolle 2020); each segment: linear trend
@@ -12,14 +13,14 @@ For every UTC day and station (lant.records.read_day): the day at cc.fs_hz.  The
      -maxlag..+maxlag.  Positive lag: energy travelling from station 1 to station 2 of the pair (names sorted).
 The stack is the average of all segments (linear stack, Bensen et al. 2007).
 
-Results in OUTPUT/1_cc:
-  record_index.csv     every raw record found (headers)
-  stations_used.csv    stations with records, their coordinates and hours of data
+Results in OUTPUT/2_cc:
   days/YYYY-MM-DD.h5   sub-stacks of one day: ccf [sub-stack, pair, lag], count [sub-stack, pair] (segments),
-                       sta1, sta2 (pair names); a day computed with the same settings and stations is reused
+                       pair (index into stack.h5), stations; a day computed with the same settings from the same
+                       cleaned day is reused
   stack.h5             ccf [pair, lag], count [pair], sta1, sta2, lon1 lat1 lon2 lat2, dist_km (WGS84), az_deg
 """
 
+import glob
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -29,12 +30,11 @@ import h5py
 import numpy as np
 
 from . import cc_kernel as K
+from . import clean, geo, resources, stations
 from . import config as C
-from . import geo, resources, stations
 from . import records as R
-from .step import Step
+from .step import Step, need
 
-READ_THREADS = 4
 PAIR_CHUNK = 2000  # pairs transformed back to lags at a time
 SEGMENT_BLOCK = 64  # segment spectra held in memory at a time
 
@@ -133,22 +133,22 @@ def day_ccf(X, OK, iu, ju, opt, nsub, threads=1):
     return ccf, count, used, gapfree
 
 
-SETTINGS = ("fs", "fmin", "fmax", "maxlag", "segment", "overlap", "max_over_std", "substack_hours", "response")
+SETTINGS = ("fs", "fmin", "fmax", "maxlag", "segment", "overlap", "max_over_std", "substack_hours")
 
 
-def _settings(c, cfg):
-    return dict(fs=float(c["fs_hz"]), fmin=float(c["fmin_hz"]), fmax=float(c["fmax_hz"]), maxlag=float(c["maxlag_s"]),
+def _settings(c, fs):
+    return dict(fs=fs, fmin=float(c["fmin_hz"]), fmax=float(c["fmax_hz"]), maxlag=float(c["maxlag_s"]),
                 segment=float(c["segment_s"]), overlap=float(c["overlap"]), max_over_std=float(c["max_over_std"]),
-                substack_hours=int(c["substack_hours"]), response=cfg["data"]["response"] or "none")  # fmt: skip
+                substack_hours=int(c["substack_hours"]))  # fmt: skip
 
 
-def _reusable(path, opt, names):
+def _reusable(path, opt, names, made):
     if not os.path.exists(path):
         return False
     try:
         with h5py.File(path, "r") as h:
             same = all(h.attrs.get(k) == opt[k] for k in SETTINGS)
-            return same and list(h.attrs.get("requested", [])) == names
+            return same and list(h.attrs.get("requested", [])) == names and h.attrs.get("cleaned") == made
     except OSError:
         return False
 
@@ -165,40 +165,23 @@ def _init(shared, threads):
     resources.limit_threads(1)
 
 
-def _one_day(t0):
-    opt, recs, out_dir = G["opt"], G["records"], G["out_dir"]
-    name = R.day_name(t0)
-    path = os.path.join(out_dir, name + ".h5")
-    want = sorted(s for s, rows in recs.items() if any(r["end"] > t0 and r["start"] < t0 + R.DAY for r in rows))
+def _one_day(src):
+    opt = G["opt"]
+    name = os.path.basename(src)[:-3]
+    path = os.path.join(G["out_dir"], name + ".h5")
+    with h5py.File(src, "r") as h:
+        want = sorted(set(s.decode() for s in h["stations"][:]) & G["names"])
+        made = h.attrs["made"]
     if len(want) < 2:
         return name, "fewer than two stations: skipped", 0
-    if _reusable(path, opt, want):
-        return name, "reused (same settings and stations)", 0
+    if _reusable(path, opt, want, made):
+        return name, "reused (same settings and cleaned day)", 0
     start = time.time()
-    inv = G.get("inv")
-    nout = int(round(R.DAY * opt["fs"]))
-    X = np.zeros((len(want), nout), np.float32)
-    OK = np.zeros((len(want), nout), bool)
-    have, failed = [], []
-
-    def read(s):
-        try:
-            return s, R.read_day(recs[s], t0, opt["fs"], inv, (opt["fmin"], opt["fmax"]))
-        except Exception as exc:
-            return s, exc
-
-    with ThreadPoolExecutor(min(READ_THREADS, G["threads"])) as ex:
-        for s, got in ex.map(read, want):
-            if isinstance(got, Exception):
-                failed.append("%s: %s" % (s, got))
-            elif got[0] is not None and got[1].any():
-                X[len(have)], OK[len(have)] = got
-                have.append(s)
-    if failed:  # a station that cannot be read stops the step: the user decides (exclude it or fix the file)
-        raise R.DataError("%s: could not read %s" % (name, "; ".join(failed)))
+    have, X, OK, _ = clean.load_day(src, want)
+    keep = OK.any(axis=1)
+    have, X, OK = [s for s, k in zip(have, keep) if k], X[keep], OK[keep]
     if len(have) < 2:
         return name, "fewer than two stations with data: skipped", 0
-    X, OK = X[: len(have)], OK[: len(have)]
     pi = G["pair_index"]
     idx = np.array([G["station_pos"][s] for s in have])
     iu, ju = np.triu_indices(len(have), 1)
@@ -216,7 +199,7 @@ def _one_day(t0):
         h["segments_gapfree"] = gapfree
         h.attrs.update(opt)
         h.attrs["requested"] = want
-        h.attrs["t0"] = t0
+        h.attrs["cleaned"] = made
     os.replace(path + ".tmp", path)
     return name, "%d stations, %d pairs, %.0f s" % (len(have), gp.size, time.time() - start), int(used.sum())
 
@@ -247,64 +230,75 @@ def pairs_of(names, coords, max_dist=None):
     return iu[keep], ju[keep], d[keep], az[keep]
 
 
+def _cleaned(cfg):
+    """The cleaned days and stations of lant clean within the selection of data.* -> (files, names, coords, fs)."""
+    folder = os.path.join(cfg["output_dir"], "1_clean")
+    table = need(os.path.join(folder, "stations_used.csv"), "clean")
+    coords = stations.read_csv(table)
+    names = sorted(set(coords) - set(cfg["data"]["exclude_stations"]))
+    lo, hi = cfg["data"]["start_date"], cfg["data"]["end_date"]
+    files = []
+    for f in sorted(glob.glob(os.path.join(folder, "days", "*.h5"))):
+        day = os.path.basename(f)[:-3]
+        if (lo is None or day >= str(lo)) and (hi is None or day <= str(hi)):
+            files.append(f)
+    if not files:
+        raise R.DataError("no cleaned day in %s within data.start_date / end_date: run `lant clean`" % folder)
+    rates = set()
+    for f in files:
+        with h5py.File(f, "r") as h:
+            rates.add(float(h.attrs["fs"]))
+    if len(rates) > 1:
+        raise R.DataError("the cleaned days have different sampling rates %s: run `lant clean` again" % sorted(rates))
+    fs = rates.pop()
+    if cfg["clean"]["fs_hz"] is not None and float(cfg["clean"]["fs_hz"]) != fs:
+        raise R.DataError("the cleaned days are at %g Hz but clean.fs_hz is %g: run `lant clean` again"
+                          % (fs, float(cfg["clean"]["fs_hz"])))  # fmt: skip
+    return files, names, {n: coords[n] for n in names}, fs
+
+
 def run(cfg):
     C.check_cc(cfg)
-    with Step(cfg, "1_cc", ["data", "cc", "cores"]) as step:
+    with Step(cfg, "2_cc", ["data", "cc", "cores"]) as step:
         n_cores, how = resources.cores(cfg["cores"])
         step.say("cores: %d (%s)" % (n_cores, how))
-        table = stations.read_table(cfg["data"]["station_file"])
-        step.say("station table: %d stations" % len(table))
-        rows, bad = R.build_index(cfg["data"]["raw_dir"], step.path("record_index.csv"), n_cores, step.say)
-        for f, why in bad:
-            step.say("  not a seismic record (skipped): %s (%s)" % (f, why))
-        recs, notes = R.match(rows, table, cfg["data"]["channel"], set(cfg["data"]["exclude_stations"]))
-        for n in notes:
-            step.say("  " + n)
-        if len(recs) < 2:
-            raise R.DataError("fewer than two stations of the table have %s records" % cfg["data"]["channel"])
-        names = sorted(recs)
-        coords = {n: table[n] for n in names}
-        hours = {n: dict(hours=round(sum(r["end"] - r["start"] for r in recs[n]) / 3600, 1),
-                         channel="%s.%s %g Hz" % (recs[n][0]["location"], recs[n][0]["channel"], recs[n][0]["fs"]))
-                 for n in names}  # fmt: skip
-        stations.write_csv(step.path("stations_used.csv"), coords, hours)
-        days = R.days(recs, cfg["data"]["start_date"], cfg["data"]["end_date"])
-        if not days:
-            raise R.DataError("no UTC day with records within data.start_date / end_date")
+        sources, names, coords, fs = _cleaned(cfg)
+        step.derive("fs_hz", fs, "sampling rate of the cleaned days (1_clean/days)")
+        C.check_fs(fs, float(cfg["cc"]["fmax_hz"]), "the sampling rate of the cleaned days")
+        if cfg["data"]["response"]:
+            with h5py.File(sources[0], "r") as h:
+                pre = list(h.attrs["prefilter_hz"])
+            if not pre or pre[0] > cfg["cc"]["fmin_hz"] + 1e-9 or pre[1] < cfg["cc"]["fmax_hz"] - 1e-9:
+                raise R.DataError("the responses were removed with a pre-filter flat over %s Hz, not the whole "
+                                  "correlation band: run `lant clean` again" % pre)  # fmt: skip
+        if len(names) < 2:
+            raise R.DataError("fewer than two cleaned stations (after data.exclude_stations)")
         iu, ju, dist, az = pairs_of(names, coords, cfg["cc"]["max_distance_km"])
-        step.say("%d stations, %d pairs, %d days (%s to %s)" % (len(names), iu.size, len(days), R.day_name(days[0]),
-                                                                R.day_name(days[-1])))  # fmt: skip
-        opt = _settings(cfg["cc"], cfg)
-        inv = R.load_responses(cfg["data"]["response"]) if cfg["data"]["response"] else None
-        step.say(
-            "instrument responses: %s"
-            % (
-                "removed (%s)" % cfg["data"]["response"]
-                if inv
-                else "not removed (data.response is empty: same instrument everywhere)"
-            )
-        )
+        step.say("%d stations, %d pairs, %d cleaned days (%s to %s) at %g Hz"
+                 % (len(names), iu.size, len(sources), os.path.basename(sources[0])[:-3],
+                    os.path.basename(sources[-1])[:-3], fs))  # fmt: skip
+        opt = _settings(cfg["cc"], fs)
         nlag = 2 * int(round(opt["maxlag"] * opt["fs"])) + 1
         day_bytes = len(names) * R.DAY * opt["fs"] * 5 + iu.size * nlag * 4 * (24 // opt["substack_hours"] + 2)
-        nproc = resources.parallel(len(days), n_cores, day_bytes * 1.5)
+        nproc = resources.parallel(len(sources), n_cores, day_bytes * 1.5)
         threads = max(1, n_cores // nproc)
         step.say("days in parallel: %d, threads each: %d (about %.1f GB per day)" % (nproc, threads, day_bytes / 1e9))
         out_dir = step.path("days")
         os.makedirs(out_dir, exist_ok=True)
-        shared = dict(opt=opt, records=recs, out_dir=out_dir, inv=inv,
+        shared = dict(opt=opt, out_dir=out_dir, names=set(names),
                       station_pos={n: k for k, n in enumerate(names)},
                       pair_index={(int(a), int(b)): k for k, (a, b) in enumerate(zip(iu, ju))})  # fmt: skip
-        segs = 0
         with Pool(nproc, initializer=_init, initargs=(shared, threads)) as pool:
-            for k, (day, msg, n) in enumerate(pool.imap_unordered(_one_day, days)):
-                step.say("  day %s: %s   [%d/%d]" % (day, msg, k + 1, len(days)))
-                segs += n
-        files = [os.path.join(out_dir, R.day_name(t) + ".h5") for t in days]
+            for k, (day, msg, _) in enumerate(pool.imap_unordered(_one_day, sources)):
+                step.say("  day %s: %s   [%d/%d]" % (day, msg, k + 1, len(sources)))
+        files = [os.path.join(out_dir, os.path.basename(f)) for f in sources]
         files = [f for f in files if os.path.exists(f)]
         stale = set(os.listdir(out_dir)) - {os.path.basename(f) for f in files}
         for f in sorted(stale):  # days outside the present selection would otherwise enter the stack
             os.remove(os.path.join(out_dir, f))
             step.say("  removed %s (not a day of this run)" % f)
+        if not files:
+            raise R.DataError("no day has two stations with data")
         step.say("stacking %d days" % len(files))
         ccf, cnt = stack_days(files, iu.size, nlag)
         with h5py.File(step.path("stack.h5.tmp"), "w") as h:

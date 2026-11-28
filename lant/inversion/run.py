@@ -1,4 +1,4 @@
-"""Step 3 (lant inv): 1-D starting model and 3-D direct inversion of the phase travel times.
+"""Step 4 (lant inv): 1-D starting model and 3-D direct inversion of the phase travel times.
 
   1. average curve: the median phase velocity of each inversion period over the pairs (periods on the
      1/inv.per_octave-octave grid through 1 Hz; a period needs max(5, min(50, a quarter of the pairs)) pairs);
@@ -11,7 +11,7 @@
      than inv.outlier_mad x 1.4826 MAD from the median residual of their period, and solves for the update with
      smoothing (inv.weight) and damping (inv.damping) of the model itself (lant.inversion.model_regularization).
 
-Results in OUTPUT/3_inv:
+Results in OUTPUT/4_inv:
   dsurftomo/          the DSurfTomo project (surfdata.dat, DSurfTomo.in, MOD) and its outputs (log, residuals,
                       the model of every iteration); the same files run with the original DSurfTomo
   average_curve.csv   period, median c, pairs
@@ -30,7 +30,7 @@ from ..step import Step, need
 from . import project as P
 from . import start_model as S
 
-DIR = "3_inv"
+DIR = "4_inv"
 PROJECT = "dsurftomo"
 
 
@@ -43,7 +43,7 @@ def min_pairs(n_pairs):
 
 
 def run(cfg):
-    disp = need(os.path.join(cfg["output_dir"], "2_disp", "dispersion.csv"), "disp")
+    disp = need(os.path.join(cfg["output_dir"], "3_disp", "dispersion.csv"), "disp")
     with Step(cfg, DIR, ["inv", "cores"]) as step:
         inv = dict(cfg["inv"])
         n_cores, how = resources.cores(cfg["cores"])

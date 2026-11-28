@@ -8,22 +8,17 @@
 
 [中文](README.zh.md) | English
 
-lant (`local_ANT`) is a command-line tool for high-frequency ambient-noise imaging with dense (nodal) arrays, areal or linear. It does the basic processing chain of the literature, nothing more:
-
-- **General**: any record format ObsPy reads, any folder layout, any array; no function made for one data set.
-- **Easy**: one configuration file with a comment on every setting; `lant init` suggests the numbers for your array.
-- **Transparent**: every step writes the settings it used, every value it derived with the rule that gave it, its log and its figures. Intermediate results are plain HDF5 and CSV files; the inversion project is in DSurfTomo's format.
-- **Simple**: three steps, run and checked one at a time.
-- **Correct**: every method has a source ([methods](docs/methods.md)); unit tests check the formulas against exact answers.
+lant (`local_ANT`) is a command-line tool for high-frequency ambient-noise imaging with dense (nodal) arrays, areal or linear. It takes continuous vertical-component records and a station table, and gives Rayleigh-wave phase velocities between station pairs and a 3-D Vs model. The steps are run one at a time; each writes the settings it used, the values it derived (with their rules), a log and figures to check before the next step.
 
 ## Steps
 
-| Command | What it does | Basis |
-|---|---|---|
-| `lant cc` | reads the records, correlates every station pair (cross-coherence of overlapping segments), stacks | Bensen et al. (2007); Seats et al. (2012); Xu et al. (2021) |
-| `lant disp` | reference curve (array F-J spectrum, a 1-D model, or a curve); two-station phase velocities with phase-matched filtering, jackknife errors and quality control | Wang et al. (2019); Levshin & Ritzwoller (2001); Lin et al. (2008); Luo et al. (2015) |
-| `lant inv` | 1-D starting model; direct 3-D inversion of the travel times with ray tracing | Fang et al. (2015) (DSurfTomo's method, in Python) |
-| `lant checker` | checkerboard resolution test | Lévêque et al. (1993); Rawlinson & Spakman (2016) |
+| Command | What it does | Main references | Results |
+|---|---|---|---|
+| `lant clean` | cuts the records into UTC days per station; removes the median and, if given, the instrument response; low-pass and decimation | Bensen et al. (2007) | `1_clean` |
+| `lant cc` | segments (those with gaps or large amplitudes left out), cross-coherence of every station pair, linear stack | Bensen et al. (2007); Seats et al. (2012); Xu et al. (2021) | `2_cc` |
+| `lant disp` | reference curve (array F-J spectrum, a 1-D model or a curve file); two-station phase velocities with jackknife errors and quality control | Wang et al. (2019); Levshin & Ritzwoller (2001); Lin et al. (2008) | `3_disp` |
+| `lant inv` | 1-D starting model; direct 3-D inversion of the travel times with ray tracing | Fang et al. (2015) (DSurfTomo, in Python) | `4_inv` |
+| `lant checker` | checkerboard resolution test | Rawlinson & Spakman (2016) | `5_checker_*` |
 
 ## Install
 
@@ -41,28 +36,36 @@ GMT 6 (installed by the environment) draws the maps; without it everything else 
 
 ## Quick start
 
+You need:
+
+- continuous records in any format ObsPy reads (miniSEED, SAC, ...), in any folder layout;
+- a station table with a header line, `network station longitude latitude elevation` (the network column may be left out), or StationXML; the names must be those in the record headers;
+- the slowest and fastest Rayleigh phase velocity you expect in the area (km/s).
+
 ```bash
 lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --velocity 0.3 3.0
-# read my.yaml, then:
-lant cc   -c my.yaml      # check 1_cc/figures, then
-lant disp -c my.yaml      # check 2_disp/figures/fj_reference.png above all, then
-lant inv  -c my.yaml
+# read my.yaml (lant init wrote suggested values and their rules into it), then:
+lant clean -c my.yaml     # check 1_clean/figures
+lant cc    -c my.yaml     # check 2_cc/figures
+lant disp  -c my.yaml     # check 3_disp/figures/fj_reference.png above all
+lant inv   -c my.yaml
 lant checker -c my.yaml --size 2
 ```
 
-The station table needs a header line: `network station longitude latitude elevation` (the network column may be left out). `--velocity` is the slowest and fastest Rayleigh phase velocity you expect in the area.
-
 What to look at after each step: [tutorial](docs/tutorial.md).
 
-## Output
+## Results
 
 ```
-OUT/1_cc/       stack.h5, days/*.h5, stations_used.csv, record_index.csv
-OUT/2_disp/     dispersion.csv, measurements.h5, reference.csv, median_vs_reference.csv, fj.h5
-OUT/3_inv/      vs_model.csv, start_model.csv, residuals.csv, dsurftomo/
-OUT/4_checker_*/recovery.csv
-each step also: params.yaml, log.txt, summary.txt, figures/
+OUT/1_clean/       days/*.h5 (cleaned station-days), availability.csv, stations_used.csv, record_index.csv
+OUT/2_cc/          stack.h5, days/*.h5 (sub-stacks)
+OUT/3_disp/        dispersion.csv, measurements.h5, reference.csv, median_vs_reference.csv, fj.h5
+OUT/4_inv/         vs_model.csv, start_model.csv, residuals.csv, dsurftomo/
+OUT/5_checker_*/   recovery.csv
+every step also:   params.yaml, log.txt, summary.txt, figures/
 ```
+
+Large arrays are HDF5, everything else CSV; `lant export-sac` writes the stacked correlations as SAC files. `4_inv/dsurftomo/` is a project in DSurfTomo's format.
 
 ## Documentation
 

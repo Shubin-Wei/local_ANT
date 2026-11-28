@@ -2,25 +2,28 @@
 # error.  `lant init` writes a copy with the numbers it suggests for your array (and how it got them).
 # Paths may be absolute or relative to this file.  The basis of every default: docs/parameters.md.
 
-output_dir: null              # REQUIRED: every result goes here, one folder per step (1_cc, 2_disp, 3_inv, ...)
+output_dir: null              # REQUIRED: every result goes here, one folder per step (1_clean, 2_cc, ...)
 
 data:
   raw_dir: null               # REQUIRED: continuous records, any format ObsPy reads, any folder layout
   station_file: null          # REQUIRED: table with a header line: network station longitude latitude [elevation]
                               #   (CSV or whitespace separated; the network column may be left out), or StationXML
   channel: "*Z"               # channel codes of the vertical component (shell pattern, e.g. "*Z", "DPZ", "*3")
-  response: null              # StationXML / RESP / dataless SEED file or folder: the responses are removed.
-                              #   Leave null only when every station has the same instrument model.
+  response: null              # StationXML / RESP / dataless SEED file or folder: the responses are removed
+                              #   (pre-filter flat over cc.fmin_hz-cc.fmax_hz).  Leave null only when every
+                              #   station has the same instrument model.
   start_date: null            # YYYY-MM-DD: first UTC day used (null: from the first record)
   end_date: null              # YYYY-MM-DD: last UTC day used (null: to the last record)
   exclude_stations: []        # NET.STA names left out
   velocity_range_kms: null    # REQUIRED: [slowest, fastest] Rayleigh phase velocity expected in the area (km/s).
                               #   Used for the suggested lag window and as the velocity axis of the measurement.
 
-cc:                           # step 1: cross-correlation (lant cc)
+clean:                        # step 1: station-days cut, cleaned and decimated (lant clean)
   fs_hz: null                 # REQUIRED: sampling rate after decimation (Hz); a whole fraction of every raw rate
+
+cc:                           # step 2: cross-correlation (lant cc)
   fmin_hz: null               # REQUIRED: lower edge of the correlation band (Hz)
-  fmax_hz: null               # REQUIRED: upper edge (Hz); at most 0.4 x fs_hz (anti-alias filter)
+  fmax_hz: null               # REQUIRED: upper edge (Hz); at most 0.4 x clean.fs_hz (anti-alias filter)
   maxlag_s: null              # REQUIRED: lags kept, -maxlag..+maxlag (s)
   segment_s: null             # REQUIRED: length of the segments that are correlated (s); at least 2 x maxlag_s
   overlap: 0.5                # overlap of consecutive segments (Welch averaging, Seats et al. 2012)
@@ -29,7 +32,7 @@ cc:                           # step 1: cross-correlation (lant cc)
   substack_hours: 24          # length of the sub-stacks kept for the error estimate (24: one per day)
   max_distance_km: null       # correlate only pairs up to this distance (null: all pairs)
 
-disp:                         # step 2: phase velocities (lant disp)
+disp:                         # step 3: phase velocities (lant disp)
   fmin_hz: null               # measurement band (null: the correlation band)
   fmax_hz: null
   per_octave: 12              # measurement frequencies per octave
@@ -49,7 +52,7 @@ disp:                         # step 2: phase velocities (lant disp)
                               #   fraction of a cycle ends the curve
   min_points: 6               # a curve needs at least this many consecutive frequencies
 
-inv:                          # step 3: 3-D inversion (lant inv)
+inv:                          # step 4: 3-D inversion (lant inv)
   grid_km: null               # horizontal node spacing (null: median measured wavelength / 3)
   depths_km: null             # depth nodes, from 0 (null: rule from the average curve, see the log)
   start_model_file: null      # two columns depth_km Vs_km/s (null: 1-D inversion of the median curve)

@@ -9,7 +9,7 @@ same settings as the real data.  Noise: checker.noise auto takes, per period, th
 (1.4826 MAD) of the residuals the 3-D model leaves (so the synthetic data are about as noisy as the real data,
 Rawlinson & Spakman 2016); a number is used as the standard deviation in seconds for every period.
 
-Results in OUTPUT/4_checker_<size>km[_flip<depth>km]:
+Results in OUTPUT/5_checker_<size>km[_flip<depth>km]:
   dsurftomo/     the project (MOD.true is the true model)
   recovery.csv   per depth: nodes with data (DWS > 0), correlation and regression slope of recovered on true
                  perturbation; the slope is the fraction of the anomaly the inversion recovers at that size
@@ -29,7 +29,7 @@ from .run import PROJECT, residual_table
 
 
 def folder(size, flip):
-    return "4_checker_%gkm%s" % (size, "" if flip is None else "_flip%gkm" % flip)
+    return "5_checker_%gkm%s" % (size, "" if flip is None else "_flip%gkm" % flip)
 
 
 def noise_file(cfg, src, dst):

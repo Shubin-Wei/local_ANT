@@ -54,7 +54,7 @@ def _merge(base, over, where=""):
 
 
 def get(cfg, key):
-    """cfg value of a dotted key such as 'cc.fs_hz'."""
+    """cfg value of a dotted key such as 'clean.fs_hz'."""
     v = cfg
     for part in key.split("."):
         v = v[part]
@@ -92,19 +92,38 @@ def require(cfg, *keys):
         )
 
 
-def check_cc(cfg):
-    """Consistency of the correlation settings, with the reason of each rule."""
-    require(cfg, "output_dir", "data.raw_dir", "data.station_file", "cc.fs_hz", "cc.fmin_hz", "cc.fmax_hz",
-            "cc.maxlag_s", "cc.segment_s")  # fmt: skip
-    c = cfg["cc"]
-    fs, f0, f1, lag, seg = (float(c[k]) for k in ("fs_hz", "fmin_hz", "fmax_hz", "maxlag_s", "segment_s"))
+def _check_band(cfg):
+    f0, f1 = float(cfg["cc"]["fmin_hz"]), float(cfg["cc"]["fmax_hz"])
     if not 0 < f0 < f1:
         raise ConfigError("cc.fmin_hz must be positive and below cc.fmax_hz")
-    if f1 > 0.4 * fs:
+    return f0, f1
+
+
+def check_fs(fs, fmax, where="clean.fs_hz"):
+    if fmax > 0.4 * fs:
         raise ConfigError(
-            "cc.fmax_hz %g Hz is above 0.4 x cc.fs_hz = %g Hz: the anti-alias low-pass (0.8 x Nyquist) cuts it"
-            % (f1, 0.4 * fs)
+            "cc.fmax_hz %g Hz is above 0.4 x %s = %g Hz: the anti-alias low-pass (0.8 x Nyquist) cuts it"
+            % (fmax, where, 0.4 * fs)
         )
+
+
+def check_clean(cfg):
+    """Settings of lant clean; the correlation band is needed only to remove responses (the pre-filter)."""
+    require(cfg, "output_dir", "data.raw_dir", "data.station_file", "clean.fs_hz")
+    if float(cfg["clean"]["fs_hz"]) <= 0:
+        raise ConfigError("clean.fs_hz must be positive")
+    if cfg["data"]["response"]:
+        require(cfg, "cc.fmin_hz", "cc.fmax_hz")
+        check_fs(float(cfg["clean"]["fs_hz"]), _check_band(cfg)[1])
+
+
+def check_cc(cfg):
+    """Consistency of the correlation settings, with the reason of each rule (the sampling rate is that of the
+    cleaned days, checked by lant cc)."""
+    require(cfg, "output_dir", "cc.fmin_hz", "cc.fmax_hz", "cc.maxlag_s", "cc.segment_s")
+    c = cfg["cc"]
+    f0, _ = _check_band(cfg)
+    lag, seg = float(c["maxlag_s"]), float(c["segment_s"])
     if seg < 2 * lag:
         raise ConfigError(
             "cc.segment_s %g s is shorter than 2 x cc.maxlag_s: the correlation of a segment computed with the FFT "

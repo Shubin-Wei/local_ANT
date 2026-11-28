@@ -4,9 +4,17 @@
 
 更早的版本：见 git 标签（`v1.5.0`、`v2.0.0`–`v2.0.2`）及其文档。
 
+## 3.1.0（2026-11-27）
+
+**数据清洗单独成为一步** `lant clean`，在 `lant cc` 之前。它把每个台站每个 UTC 日清洗后（保留缺数、去中位数、给了响应时去响应、低通降采样）写到 `1_clean/days/YYYY-MM-DD.h5`，并写出 `availability.csv` 和 `figures/availability.png`（每台每天的数据小时数）。互相关之前可以先检查清洗结果；改互相关设置、台站或天数后重跑 `lant cc` 不必再读原始记录。处理方法本身没有变。
+
+- `cc.fs_hz` 改为 `clean.fs_hz`；`record_index.csv`、`stations_used.csv` 和台站图移到 `1_clean`。
+- 结果文件夹重新编号：`1_clean`、`2_cc`、`3_disp`、`4_inv`、`5_checker_*`。
+- `lant cc` 对清洗后的数据使用 `data.exclude_stations` 和 `data.start_date` / `end_date`；清洗时的采样率不同，或去响应的预滤波窄于互相关频带时，会停下并说明。
+
 ## 3.0.0（2026-11-27）
 
-lant 围绕文献的基本处理流程重建，使每一步都看得懂、查得到。原则：通用（不为某批数据加功能）、易用、透明、简洁、正确。
+lant 围绕文献的基本处理流程重建，使每一步都看得懂、查得到。
 
 **怎样运行**：三步依次运行，每步检查后再做下一步：`lant cc`、`lant disp`、`lant inv`，另有分辨率检验 `lant checker`。`lant init` 写出带建议值和规则的配置。没有 `run all`、没有确认关卡、没有隐藏状态：每一步写 `params.yaml`（所用设置和推出的值及规则）、`log.txt`、`summary.txt` 和图。不读旧版工程目录。
 

@@ -4,9 +4,17 @@
 
 Earlier versions: see the git tags (`v1.5.0`, `v2.0.0` – `v2.0.2`) and their documents.
 
+## 3.1.0 (2026-11-27)
+
+**Data cleaning is a step of its own**, `lant clean`, before `lant cc`. It writes every UTC day of every station cleaned (gaps kept, median removed, response removed if given, low-passed and decimated) to `1_clean/days/YYYY-MM-DD.h5`, with `availability.csv` and `figures/availability.png` (hours of data per station and day). The cleaned data can be checked before correlating, and `lant cc` can be run again with other settings, stations or days without reading the raw records again. The processing itself is unchanged.
+
+- `cc.fs_hz` is now `clean.fs_hz`; `record_index.csv`, `stations_used.csv` and the station map moved to `1_clean`.
+- Result folders renumbered: `1_clean`, `2_cc`, `3_disp`, `4_inv`, `5_checker_*`.
+- `lant cc` uses `data.exclude_stations` and `data.start_date` / `end_date` on the cleaned days; it stops if they were cleaned at another rate or with a response pre-filter narrower than the correlation band.
+
 ## 3.0.0 (2026-11-27)
 
-lant was rebuilt around the basic processing chain of the literature, so that every step can be followed and checked. Rules: general (nothing added for one data set), easy to use, transparent, simple, correct.
+lant was rebuilt around the basic processing chain of the literature, so that every step can be followed and checked.
 
 **How to run.** Three steps run one after the other, each checked before the next: `lant cc`, `lant disp`, `lant inv`, plus `lant checker` for the resolution test. `lant init` writes the configuration with suggested values and their rules. There is no `run all`, no confirmation gates, no hidden state: every step writes `params.yaml` (settings used and values derived, with rules), `log.txt`, `summary.txt` and its figures. Old project folders are not read.
 

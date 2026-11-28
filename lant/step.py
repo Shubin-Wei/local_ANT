@@ -32,7 +32,7 @@ class _Tee:
 
 
 class Step:
-    """with Step(cfg, "1_cc", ["data", "cc"]) as s: ...  s.dir, s.fig(name), s.derive(key, value, rule), s.say()"""
+    """with Step(cfg, "1_clean", ["data", "clean"]) as s: ...  s.dir, s.fig(name), s.derive(key, value, rule), s.say()"""
 
     def __init__(self, cfg, folder, sections):
         self.cfg = cfg

@@ -1,6 +1,5 @@
-"""Figures of step 1 (1_cc/figures):
+"""Figures of step 2 (2_cc/figures):
 
-stations.png        the stations with records
 ccf_section.png     the stacked correlations against distance, band-passed in the correlation band, each
                     normalised; lines of the slowest and fastest velocity of data.velocity_range_kms.  Surface waves
                     appear as a moveout between them, on both sides when the noise comes from all directions.
@@ -15,8 +14,7 @@ import h5py
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
-from .. import stations as ST
-from . import maps, style
+from . import style
 from .style import plt
 
 MAX_TRACES = 400
@@ -29,11 +27,6 @@ def _filter(x, fs, band):
 
 def make(cfg, step):
     style.apply()
-    sta = ST.read_csv(step.path("stations_used.csv"))
-    try:
-        maps.station_map(cfg, sta, step.fig("stations"), step.say)
-    except Exception as exc:  # a missing map must not stop the step: the numbers are written
-        step.say("  stations map not drawn: %s" % exc)
     with h5py.File(step.path("stack.h5"), "r") as h:
         fs, maxlag = float(h.attrs["fs"]), float(h.attrs["maxlag"])
         band = (float(h.attrs["fmin"]), min(float(h.attrs["fmax"]), 0.45 * fs))

@@ -12,22 +12,28 @@
 | `data.raw_dir` | 连续记录的文件夹（ObsPy 能读的任何格式、任何目录结构） |
 | `data.station_file` | 带表头的台站表（`network station longitude latitude [elevation]`），或 StationXML |
 | `data.velocity_range_kms` | 本区 Rayleigh 波相速度的最慢和最快值（km/s） |
-| `cc.fs_hz`、`cc.fmin_hz`、`cc.fmax_hz`、`cc.maxlag_s`、`cc.segment_s` | 互相关设置；`lant init` 给建议值（规则见下） |
+| `clean.fs_hz` | 降采样后的采样率；`lant init` 给建议值（规则见下） |
+| `cc.fmin_hz`、`cc.fmax_hz`、`cc.maxlag_s`、`cc.segment_s` | 互相关设置；`lant init` 给建议值（规则见下） |
 
 ## data
 
 | 键 | 默认 | 含义与依据 |
 |---|---|---|
 | `channel` | `"*Z"` | 垂直分量的通道代码（通配符） |
-| `response` | `null` | 响应文件（StationXML、RESP、dataless SEED；文件或文件夹）：去响应到速度。仪器不全相同时需要；同一型号时互相干已使其不必要（方法第 2 节） |
-| `start_date`、`end_date` | `null` | 使用的第一天和最后一天（UTC） |
-| `exclude_stations` | `[]` | 不用的台站（台站表里的名字） |
+| `response` | `null` | 响应文件（StationXML、RESP、dataless SEED；文件或文件夹）：去响应到速度，预滤波在 `cc.fmin_hz`–`cc.fmax_hz` 内平坦（因此这时 `lant clean` 也要用到频带）。仪器不全相同时需要；同一型号时互相干已使其不必要（方法第 2 节） |
+| `start_date`、`end_date` | `null` | 使用的第一天和最后一天（UTC）（`lant clean` 和 `lant cc` 都用：去掉某些天不必重新清洗） |
+| `exclude_stations` | `[]` | 不用的台站（台站表里的名字；两步都用） |
 
-## cc（第 1 步）
+## clean（第 1 步）
 
 | 键 | 默认 | 含义与依据 |
 |---|---|---|
-| `fs_hz` | init | 降采样后的采样率，须能由每个原始采样率整数倍抽取。建议值：满足 `fmax_hz` ≤ 0.4 fs 的最低整数采样率（抗混叠低通在 0.8 倍奈奎斯特频率） |
+| `fs_hz` | init | 降采样后的采样率，须能由每个原始采样率整数倍抽取。建议值：满足 `cc.fmax_hz` ≤ 0.4 fs 的最低整数采样率（抗混叠低通在 0.8 倍奈奎斯特频率） |
+
+## cc（第 2 步）
+
+| 键 | 默认 | 含义与依据 |
+|---|---|---|
 | `fmin_hz` | init | 频带下限。建议值：最长台对 r_max 为最快速度下的 2 个波长，f = 2 v_fast / r_max（两台法远场，Bensen et al. 2007；Luo et al. 2015），再按高斯滤波器半增益宽度下调，× (1 − √(ln 2/α)) |
 | `fmax_hz` | init | 频带上限。建议值：k ≤ π/Δr 时 F-J 谱没有空间假频，Δr 为台对距离的平均间隔（Wang et al. 2019 式 14）：f = v_slow / (2Δr)，× (1 + √(ln 2/α))；不超过最低原始采样率的 0.4 倍 |
 | `maxlag_s` | init | 时延窗。建议值：r_max / (0.6 v_slow) + 4 / fmin。0.6 为约定：频散层中群速度可远低于相速度；4 个周期留作到时之后的噪声窗 |
@@ -37,7 +43,7 @@
 | `substack_hours` | 24 | 子叠加长度，即刀切误差的组（至少需要 3 组）。记录不足 3 天时 `lant init` 建议更短的 |
 | `max_distance_km` | `null` | 只计算这一距离以内的台对（超大台阵省内存和磁盘） |
 
-## disp（第 2 步）
+## disp（第 3 步）
 
 | 键 | 默认 | 含义与依据 |
 |---|---|---|
@@ -55,7 +61,7 @@
 | `slip_cycles` | 0.3 | 相位跳动超过这么多周时曲线结束（AFTAN） |
 | `min_points` | 6 | 接受曲线的最少连续频点数（约定） |
 
-## inv（第 3 步）
+## inv（第 4 步）
 
 | 键 | 默认 | 含义与依据 |
 |---|---|---|

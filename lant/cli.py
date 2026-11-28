@@ -1,4 +1,4 @@
-"""Command line: lant init | cc | disp | inv | checker | export-sac | check.
+"""Command line: lant init | clean | cc | disp | inv | checker | export-sac | check.
 
 Run the steps one at a time and look at each step's log and figures before the next one (docs/tutorial.md).
 """
@@ -10,10 +10,11 @@ from . import __version__
 
 STEPS = """steps (run them in this order, checking each one's figures before the next):
   lant init -o CONFIG --raw DIR --stations FILE --out DIR --velocity SLOW FAST
-  lant cc -c CONFIG          cross-correlation and stack            -> OUT/1_cc
-  lant disp -c CONFIG        reference curve and phase velocities   -> OUT/2_disp
-  lant inv -c CONFIG         starting model and 3-D inversion       -> OUT/3_inv
-  lant checker -c CONFIG --size KM [--flip-depth KM]   resolution test -> OUT/4_checker_*
+  lant clean -c CONFIG       station-days cleaned and decimated     -> OUT/1_clean
+  lant cc -c CONFIG          cross-correlation and stack            -> OUT/2_cc
+  lant disp -c CONFIG        reference curve and phase velocities   -> OUT/3_disp
+  lant inv -c CONFIG         starting model and 3-D inversion       -> OUT/4_inv
+  lant checker -c CONFIG --size KM [--flip-depth KM]   resolution test -> OUT/5_checker_*
 """
 
 
@@ -30,8 +31,8 @@ def main(argv=None):
     i.add_argument("--velocity", nargs=2, type=float, required=True, metavar=("SLOW", "FAST"),
                    help="slowest and fastest Rayleigh phase velocity expected (km/s)")  # fmt: skip
     i.add_argument("--channel", default="*Z", help="channel codes of the vertical component (default *Z)")
-    for name, text in (("cc", "step 1: cross-correlation"), ("disp", "step 2: phase velocities"),
-                       ("inv", "step 3: 3-D inversion")):  # fmt: skip
+    for name, text in (("clean", "step 1: clean the records"), ("cc", "step 2: cross-correlation"),
+                       ("disp", "step 3: phase velocities"), ("inv", "step 4: 3-D inversion")):  # fmt: skip
         s = sub.add_parser(name, help=text)
         s.add_argument("-c", "--config", required=True)
     k = sub.add_parser("checker", help="checkerboard resolution test of the inversion")
@@ -67,7 +68,11 @@ def _run(a):
     from . import config
 
     cfg = config.load(a.config)
-    if a.cmd == "cc":
+    if a.cmd == "clean":
+        from . import clean
+
+        clean.run(cfg)
+    elif a.cmd == "cc":
         from . import correlate
 
         correlate.run(cfg)

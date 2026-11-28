@@ -1,6 +1,6 @@
-"""Step 2 (lant disp): reference curve and phase velocities of every pair.
+"""Step 3 (lant disp): reference curve and phase velocities of every pair.
 
-Results in OUTPUT/2_disp:
+Results in OUTPUT/3_disp:
   reference.csv            the reference curve used, its group velocity and the F-J picks
   fj.h5                    the F-J spectrum (frequencies, velocities, |I|)
   measurements.h5          every pair and frequency: c, group velocity u, snr, sigma (jackknife) and the reasons of
@@ -61,9 +61,9 @@ def settings(cfg):
 
 def run(cfg):
     C.check_disp(cfg)
-    stack = need(os.path.join(cfg["output_dir"], "1_cc", "stack.h5"), "cc")
-    day_files = sorted(glob.glob(os.path.join(cfg["output_dir"], "1_cc", "days", "*.h5")))
-    with Step(cfg, "2_disp", ["data", "disp", "cores"]) as step:
+    stack = need(os.path.join(cfg["output_dir"], "2_cc", "stack.h5"), "cc")
+    day_files = sorted(glob.glob(os.path.join(cfg["output_dir"], "2_cc", "days", "*.h5")))
+    with Step(cfg, "3_disp", ["data", "disp", "cores"]) as step:
         n_cores, how = resources.cores(cfg["cores"])
         step.say("cores: %d (%s)" % (n_cores, how))
         freqs = measurement_band(cfg, step)

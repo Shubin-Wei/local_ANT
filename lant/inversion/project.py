@@ -28,7 +28,7 @@ def on_grid(periods, per_octave):
 
 
 def records(table, per_octave):
-    """Rows of 2_disp/dispersion.csv -> (records [dict(sta1=(lat, lon), sta2, values {period: c})], periods)."""
+    """Rows of 3_disp/dispersion.csv -> (records [dict(sta1=(lat, lon), sta2, values {period: c})], periods)."""
     by = defaultdict(dict)
     keep = on_grid(table["period_s"], per_octave)
     for i in np.where(keep)[0]:

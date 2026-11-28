@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from lant import config, init, records, stations
+from lant import clean, config, init, records, stations
 
 
 def test_station_table_forms(tmp_path):
@@ -73,22 +73,40 @@ def test_index_and_station_day(tmp_path):
 
 def test_configuration_rules(tmp_path):
     p = tmp_path / "c.yaml"
-    p.write_text("output_dir: out\ncc:\n  fs_hz: 50\n  fmax_hz: 30\n")
+    p.write_text("output_dir: out\nclean:\n  fs_hz: 50\ncc:\n  fmax_hz: 30\n")
     cfg = config.load(str(p))
     assert cfg["output_dir"] == str(tmp_path / "out") and cfg["cc"]["overlap"] == 0.5
     with pytest.raises(config.ConfigError, match="fill in"):
-        config.check_cc(cfg)
+        config.check_clean(cfg)
     cfg["data"].update(raw_dir="r", station_file="s")
+    config.check_clean(cfg)  # the band is needed only to remove responses
+    cfg["data"]["response"] = "resp.xml"
     cfg["cc"].update(fmin_hz=0.5, maxlag_s=20, segment_s=60)
-    with pytest.raises(config.ConfigError, match="0.4 x cc.fs_hz"):
-        config.check_cc(cfg)
+    with pytest.raises(config.ConfigError, match="0.4 x clean.fs_hz"):
+        config.check_clean(cfg)
     cfg["cc"]["fmax_hz"] = 15
+    config.check_clean(cfg)
     cfg["cc"]["segment_s"] = 30
     with pytest.raises(config.ConfigError, match="circular"):
         config.check_cc(cfg)
-    p.write_text("cc:\n  fs_hzz: 50\n")
+    p.write_text("clean:\n  fs_hzz: 50\n")
     with pytest.raises(config.ConfigError, match="did you mean 'fs_hz'"):
         config.load(str(p))
+
+
+def test_cleaned_day_file(tmp_path):
+    rng = np.random.default_rng(1)
+    x = rng.standard_normal((3, 1000)).astype(np.float32)
+    ok = np.ones_like(x, bool)
+    ok[1, 200:300] = False
+    path = str(tmp_path / "d.h5")
+    opt = dict(fs=10.0, response="none", prefilter_hz=[])
+    clean.save_day(path, ["A", "B", "C"], x, ok, dict(opt, sources="abc"))
+    names, y, ok2, attrs = clean.load_day(path, ["C", "B"])
+    assert names == ["B", "C"] and (ok2 == ok[1:]).all() and (y[ok2] == x[1:][ok[1:]]).all() and (y[~ok2] == 0).all()
+    assert attrs["fs"] == 10.0 and clean._reusable(path, opt, "abc")  # same settings and raw files: reused
+    assert not clean._reusable(path, opt, "abd") and not clean._reusable(path, dict(opt, fs=20.0), "abc")
+    assert not clean._reusable(path, dict(opt, prefilter_hz=[0.5, 10.0]), "abc")
 
 
 def test_init_suggestions_and_written_file(tmp_path):
@@ -96,12 +114,12 @@ def test_init_suggestions_and_written_file(tmp_path):
     table = {"S%d" % k: dict(lon=100 + 0.05 * a, lat=30 + 0.05 * b) for k, (a, b) in enumerate(rng.random((30, 2)))}
     sug, geom = init.suggest(table, [100.0, 250.0], (0.3, 3.0))
     v = {k: x for k, (x, _) in sug.items()}
-    assert v["cc.fs_hz"] in (10.0, 25.0, 50.0) and v["cc.fmax_hz"] <= 0.4 * v["cc.fs_hz"] + 1e-9
+    assert v["clean.fs_hz"] in (10.0, 25.0, 50.0) and v["cc.fmax_hz"] <= 0.4 * v["clean.fs_hz"] + 1e-9
     assert v["cc.segment_s"] >= 2 * v["cc.maxlag_s"] and 0 < v["cc.fmin_hz"] < v["cc.fmax_hz"]
     path = tmp_path / "c.yaml"
     values = {"output_dir": str(tmp_path), "data.velocity_range_kms": [0.3, 3.0]}
     values.update(v)
     init.write(str(path), values, {k: r for k, (_, r) in sug.items()})
     cfg = config.load(str(path))
-    assert cfg["cc"]["fs_hz"] == v["cc.fs_hz"] and cfg["data"]["velocity_range_kms"] == [0.3, 3.0]
+    assert cfg["clean"]["fs_hz"] == v["clean.fs_hz"] and cfg["data"]["velocity_range_kms"] == [0.3, 3.0]
     assert "lant init:" in path.read_text() and set(cfg) - {"_file"} == set(config.defaults())

@@ -1,7 +1,7 @@
 """Raw records: the index of the files, which records belong to which station, and reading one station-day.
 
 Index: every file under data.raw_dir is read once with ObsPy (headers only; any format ObsPy recognises, any folder
-layout).  The index is the table 1_cc/record_index.csv (file, network, station, location, channel, sampling rate,
+layout).  The index is the table 1_clean/record_index.csv (file, network, station, location, channel, sampling rate,
 start, end); a file whose size and modification time did not change is not read again.  Files ObsPy cannot read are
 listed in the log and skipped.
 
@@ -274,7 +274,7 @@ def read_day(rows, t0, fs, inv=None, band=None):
     raw_fs = rows[0]["fs"]
     q = int(round(raw_fs / fs))
     if q < 1 or abs(raw_fs / fs - q) > 1e-6:
-        raise DataError("raw sampling rate %g Hz is not a whole multiple of cc.fs_hz = %g Hz" % (raw_fs, fs))
+        raise DataError("raw sampling rate %g Hz is not a whole multiple of clean.fs_hz = %g Hz" % (raw_fs, fs))
     nout = int(round(DAY * fs))
     pad = 200 * q
     guard = int(np.ceil(max(1.0, 50.0 / fs) * raw_fs))

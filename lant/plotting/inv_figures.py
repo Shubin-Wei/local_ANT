@@ -1,4 +1,4 @@
-"""Figures of step 3 (3_inv/figures) and of the resolution test (4_checker_*/figures):
+"""Figures of step 4 (4_inv/figures) and of the resolution test (5_checker_*/figures):
 
 start_model.png  the average curve with the fit of the starting model, and the starting model
 residuals.png    travel-time residuals of the starting and the final model (kept travel times)
@@ -20,7 +20,7 @@ from .style import plt
 
 
 def _stations(cfg):
-    return ST.read_csv(os.path.join(cfg["output_dir"], "1_cc", "stations_used.csv"))
+    return ST.read_csv(os.path.join(cfg["output_dir"], "1_clean", "stations_used.csv"))
 
 
 def grid_model(rows):

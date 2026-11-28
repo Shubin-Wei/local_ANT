@@ -32,22 +32,33 @@
 lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --velocity 0.3 3.0
 ```
 
-`lant init` 读记录头，写出 `my.yaml`，给出互相关频带、采样率、时延窗和段长的建议值，每个建议值上方写明规则和代入的本台阵数字（例如 `2 x v_fast 3 km/s / longest pair 9.8 km = ...`）。打开文件读一遍，每个设置都有注释；你更清楚的就改（例如台站仪器不全相同时填 `data.response`）。
+`lant init` 读记录头，写出 `my.yaml`，给出采样率、互相关频带、时延窗和段长的建议值，每个建议值上方写明规则和代入的本台阵数字（例如 `2 x v_fast 3 km/s / longest pair 9.8 km = ...`）。打开文件读一遍，每个设置都有注释；你更清楚的就改（例如台站仪器不全相同时填 `data.response`）。
 
-## 1. 互相关：`lant cc -c my.yaml`
+## 1. 数据清洗：`lant clean -c my.yaml`
 
-做什么：建立记录索引，与台站对应，读每个台站日，分段，计算每个台对的互相干，叠加（方法第 2–3 节）。
+做什么：建立记录索引，与台站对应，把每个台站的每个 UTC 日清洗后写出：缺数保持为缺数，去中位数，去仪器响应（给了 `data.response` 时），低通后降采样到 `clean.fs_hz`（方法第 2 节）。这一步不按振幅丢数据，按段剔除在 `lant cc` 里做。
 
 检查：
 
 - **`log.txt`**：台站对应情况（没有记录的台站、表外台站的记录、有多个传感器的台站）、不是地震记录的文件、复用的天。
 - **`figures/stations.png`**：台站是否齐全、位置是否正确。
+- **`figures/availability.png`** 和 `availability.csv`：每个台站每天有多少小时数据。开始晚、结束早、缺数多的台站在这里能看出来。
+
+结果：`days/YYYY-MM-DD.h5`（每天一个数组：台站 × 样点，没有有效样点处为 NaN）、`stations_used.csv`、`availability.csv`、`record_index.csv`。只有原始文件或设置变了的天才会重新清洗。
+
+## 2. 互相关：`lant cc -c my.yaml`
+
+做什么：读清洗后的数据，分段，去掉含缺数或振幅过大的段，计算每个台对的互相干，叠加（方法第 3 节）。`data.exclude_stations` 里的台站和 `data.start_date` / `end_date` 以外的天直接不用，不必重新清洗。
+
+检查：
+
+- **`log.txt`**：用到的台站、台对和天数，复用的天。
 - **`figures/ccf_section.png`**：互相关随台距排列。面波表现为两条虚线（速度范围）之间的时距同相轴。噪声来自各个方向时零时延两侧都有；来自一个方向时主要在一侧。
 - **`figures/ccf_time_*.png`**：三个台对按时间排列的子叠加，到时应稳定。某个子叠加明显不同，说明当天某台有问题（钟差、仪器）或有强的局部源。可用 `data.exclude_stations` 去掉该台，或用 `data.start_date` / `end_date` 去掉这些天，再重跑这一步。
 
-结果：`stack.h5`（叠加）、`days/*.h5`（每天的子叠加）、`stations_used.csv`、`record_index.csv`。`lant export-sac -c my.yaml -o 目录` 把叠加写成 SAC 文件，供其他软件使用。
+结果：`stack.h5`（叠加）、`days/*.h5`（每天的子叠加）。`lant export-sac -c my.yaml -o 目录` 把叠加写成 SAC 文件，供其他软件使用。
 
-## 2. 相速度：`lant disp -c my.yaml`
+## 3. 相速度：`lant disp -c my.yaml`
 
 做什么：参考曲线，然后每个台对的相速度及其刀切误差，质量控制（方法第 4–5 节）。
 
@@ -64,9 +75,9 @@ lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --v
 
 不要为了多出点而放宽质控：`disp` 里的数字及其依据见 [parameters.zh.md](parameters.zh.md)。
 
-结果：`dispersion.csv`（接受的值，每行一个台对和频率，是第 3 步的输入）、`measurements.h5`（全部值及每个被拒值的原因）、`reference.csv`、`fj.h5`。
+结果：`dispersion.csv`（接受的值，每行一个台对和频率，是 `lant inv` 的输入）、`measurements.h5`（全部值及每个被拒值的原因）、`reference.csv`、`fj.h5`。
 
-## 3. 三维反演：`lant inv -c my.yaml`
+## 4. 三维反演：`lant inv -c my.yaml`
 
 做什么：平均曲线、深度节点和一维起始模型、网格，以及三维直接反演（方法第 6 节）。推出的数字（深度节点、网格间距、Vs 上下限）会打印出来并记在 `params.yaml` 里；要改哪个，就写进 `inv` 再重跑。
 
@@ -79,7 +90,7 @@ lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --v
 
 结果：`vs_model.csv`（经度、纬度、深度、Vs、相对起始模型的 dVs（%）、DWS：0 表示该节点没有数据）、`start_model.csv`、`average_curve.csv`、`residuals.csv`，以及 `dsurftomo/`（DSurfTomo 格式的工程，原版 DSurfTomo 也能直接运行）。
 
-## 4. 分辨率检验：`lant checker -c my.yaml --size 公里数`
+## 5. 分辨率检验：`lant checker -c my.yaml --size 公里数`
 
 格子边长 `--size` 公里、幅度 ±10 %（`checker.amplitude`）的棋盘，噪声与数据相当；`--flip-depth 公里数` 使图样在该深度以下反号。做几个尺寸，例如网格间距的 1、2、3 倍：
 
