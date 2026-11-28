@@ -12,7 +12,7 @@ Earlier versions: see the git tags (`v1.5.0`, `v2.0.0` – `v2.0.2`) and their d
 
 - `cc.fs_hz` is now `clean.fs_hz`; `record_index.csv`, `stations_used.csv` and the station map are in `1_clean`.
 - Result folders: `1_clean`, `2_cc`, `3_disp`, `4_inv`, `5_checker_*`.
-- Suggested upper frequency (`lant init`): the spatial sampling theorem, f = v_slow / (2 × median station spacing). The rule of 3.0.0 (mean interval of the pair distances) gave hundreds of hertz for arrays with many pairs.
+- Suggested sampling rate and upper frequency (`lant init`): `clean.fs_hz` is the highest whole-number rate reachable from every raw rate, `cc.fmax_hz` = 0.4 × `clean.fs_hz` (Nyquist theorem). The rule of 3.0.0 (mean interval of the pair distances) gave hundreds of hertz for arrays with many pairs.
 - `lant cc` applies `data.exclude_stations` and `data.start_date` / `end_date` to the cleaned days; it stops if the days were cleaned at another rate or with a response pre-filter narrower than the correlation band.
 - New figures of `lant disp`: `group_curves.png`, `group_rejections.png`. `average_curve.csv`, `start_fit.csv` and `residuals.csv` of `lant inv` have a column `velocity` (phase or group).
 - `example.yaml`: a complete configuration written by `lant init`.

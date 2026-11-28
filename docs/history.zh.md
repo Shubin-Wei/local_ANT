@@ -12,7 +12,7 @@
 
 - `cc.fs_hz` 改为 `clean.fs_hz`；`record_index.csv`、`stations_used.csv` 和台站图在 `1_clean`。
 - 结果文件夹：`1_clean`、`2_cc`、`3_disp`、`4_inv`、`5_checker_*`。
-- 建议的频带上限（`lant init`）按空间采样定理：f = v_slow / (2 × 台站间距中位数)。3.0.0 的规则（台对距离的平均间隔）在台对很多时会给出几百赫兹。
+- 建议的采样率和频带上限（`lant init`）：`clean.fs_hz` 取每个原始采样率都能整数倍抽取到的最高整数采样率，`cc.fmax_hz` = 0.4 × `clean.fs_hz`（奈奎斯特采样定理）。3.0.0 的规则（台对距离的平均间隔）在台对很多时会给出几百赫兹。
 - `lant cc` 对清洗后的数据使用 `data.exclude_stations` 和 `data.start_date` / `end_date`；清洗时的采样率不同，或去响应的预滤波窄于互相关频带时，会停下并说明。
 - `lant disp` 新增图 `group_curves.png`、`group_rejections.png`。`lant inv` 的 `average_curve.csv`、`start_fit.csv`、`residuals.csv` 增加 `velocity` 列（phase 或 group）。
 - `example.yaml`：`lant init` 写出的一份完整配置。

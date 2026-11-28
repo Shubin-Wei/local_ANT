@@ -114,12 +114,10 @@ def test_init_suggestions_and_written_file(tmp_path):
     table = {"S%d" % k: dict(lon=100 + 0.05 * a, lat=30 + 0.05 * b) for k, (a, b) in enumerate(rng.random((30, 2)))}
     sug, geom = init.suggest(table, [100.0, 250.0], (1.0, 3.0))
     v = {k: x for k, (x, _) in sug.items()}
-    dx = geom["median_spacing_km"]  # spatial sampling: the station spacing is half the shortest wavelength
-    assert abs(v["cc.fmax_hz"] / (1.0 / (2 * dx) * (1 + init.HALF)) - 1) < 0.01
-    fs = v["clean.fs_hz"]  # the lowest whole rate reachable from both raw rates with fmax <= 0.4 fs
-    assert 100 % fs == 0 and 250 % fs == 0 and v["cc.fmax_hz"] <= 0.4 * fs + 1e-9 < 0.4 * 25
-    with pytest.raises(ValueError, match="too narrow"):  # a velocity range too wide for this small array
-        init.suggest(table, [100.0, 250.0], (0.3, 3.0))
+    assert v["clean.fs_hz"] == 50  # the highest whole rate reachable from 100 and 250 Hz by integer factors
+    assert v["cc.fmax_hz"] == 0.4 * 50  # Nyquist, with the anti-alias low-pass at 0.8 x Nyquist
+    with pytest.raises(ValueError, match="too narrow"):  # records too coarse for the longest pair
+        init.suggest(table, [1.0], (1.0, 3.0))
     assert v["cc.segment_s"] >= 2 * v["cc.maxlag_s"] and 0 < v["cc.fmin_hz"] < v["cc.fmax_hz"]
     path = tmp_path / "c.yaml"
     values = {"output_dir": str(tmp_path), "data.velocity_range_kms": [1.0, 3.0]}

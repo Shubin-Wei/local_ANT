@@ -24,14 +24,14 @@ data:
                               #   Used for the suggested lag window and as the velocity axis of the measurement.
 
 clean:                        # step 1: station-days cut, cleaned and decimated (lant clean)
-  # lant init: lowest whole-number rate reachable from the raw rates [250.0] with fmax <= 0.4 fs
-  fs_hz: 10.0                 # REQUIRED: sampling rate after decimation (Hz); a whole fraction of every raw rate
+  # lant init: highest whole-number rate reachable from the raw rates [250.0] by an integer factor; the cleaned days take stations x days x 86400 x fs x 4 bytes
+  fs_hz: 250.0                # REQUIRED: sampling rate after decimation (Hz); a whole fraction of every raw rate
 
 cc:                           # step 2: cross-correlation (lant cc)
   # lant init: 2 x v_fast 3 km/s / longest pair 8.553 km = 0.7015 Hz, x (1 - 0.372)
   fmin_hz: 0.44               # REQUIRED: lower edge of the correlation band (Hz)
-  # lant init: v_slow 0.5 km/s / (2 x median station spacing 0.1584 km) = 1.578 Hz, x (1 + 0.372); at most 0.4 x the lowest raw rate (100 Hz)
-  fmax_hz: 2.17               # REQUIRED: upper edge (Hz); at most 0.4 x clean.fs_hz (anti-alias filter)
+  # lant init: Nyquist: 0.4 x clean.fs_hz 250 Hz (anti-alias low-pass at 0.8 x Nyquist); a lower value with a lower clean.fs_hz saves disk and time
+  fmax_hz: 100.0              # REQUIRED: upper edge (Hz); at most 0.4 x clean.fs_hz (anti-alias filter)
   # lant init: longest pair 8.553 km / (0.6 x 0.5 km/s) + 4 / fmin
   maxlag_s: 38.0              # REQUIRED: lags kept, -maxlag..+maxlag (s)
   # lant init: max(2.5 x maxlag, 10 / fmin), up to 10 s

@@ -6,12 +6,10 @@ gives; each one is written into the file with the rule that gave it, and every o
   fmin  two-station measurements need the path to be at least disp.min_wavelengths (2) wavelengths long (Bensen
         et al. 2007; Luo et al. 2015): the longest pair r_max measures down to f = 2 v_fast / r_max; the correlation
         band starts lower by the half-gain width of the Gaussian filter, x (1 - sqrt(ln 2 / alpha));
-  fmax  spatial sampling theorem: the stations sample a wave without aliasing when their spacing is at most half
-        its wavelength (e.g. Rost & Thomas 2002), here the median distance to the nearest station dx:
-        f = v_slow / (2 dx), widened by x (1 + sqrt(ln 2 / alpha)); time sampling: at most 0.4 x the lowest raw
-        sampling rate (the anti-alias low-pass is at 0.8 x Nyquist);
-  fs    the lowest whole-number rate reachable from every raw rate by an integer factor with fmax <= 0.4 fs (the
-        anti-alias low-pass is at 0.8 x Nyquist);
+  fs    the highest whole-number rate reachable from every raw rate by an integer factor (the cleaned days take
+        stations x days x 86400 x fs x 4 bytes: a lower cc.fmax_hz and clean.fs_hz save disk and time);
+  fmax  Nyquist sampling theorem: 0.4 fs (the anti-alias low-pass is at 0.8 x Nyquist); where the measurements
+        actually end is set by the data (signal-to-noise ratio, quality control of lant disp);
   maxlag  r_max / (0.6 v_slow) + 4 / fmin: the group velocity of strongly dispersive layers can be well below the
         slowest phase velocity (0.6: an empirical margin), and four periods after the arrival give the noise window;
   segment  max(2.5 maxlag, 10 / fmin): longer than twice the lag window (circular correlation) and ten periods;
@@ -48,23 +46,20 @@ def suggest(table, rates, vrange, min_wavelengths=2.0):
     fmin = float("%.3g" % (f_lo * (1 - HALF)))
     out["cc.fmin_hz"] = (fmin, "%g x v_fast %g km/s / longest pair %.3f km = %.4g Hz, x (1 - %.3f)"
                          % (min_wavelengths, v1, rmax, f_lo, HALF))  # fmt: skip
-    f_hi = v0 / (2 * dnn) if dnn > 0 else np.inf
-    raw_cap = 0.4 * min(rates)
-    fmax = float("%.3g" % min(f_hi * (1 + HALF), raw_cap))
-    out["cc.fmax_hz"] = (fmax, "v_slow %g km/s / (2 x median station spacing %.4g km) = %.4g Hz, x (1 + %.3f); at "
-                         "most 0.4 x the lowest raw rate (%g Hz)" % (v0, dnn, f_hi, HALF, raw_cap))  # fmt: skip
-    if fmax <= fmin * 1.5:
-        raise ValueError(
-            "the suggested band %.3g-%.3g Hz is too narrow: the array is small for velocities up to %g km/s "
-            "(the longest pair is %.3f km); check the velocity range" % (fmin, fmax, v1, rmax)
-        )
     lo = min(rates)
     cand = [lo / q for q in range(1, int(lo) + 1) if abs(lo / q - round(lo / q)) < 1e-6
             and all(abs(r / (lo / q) - round(r / (lo / q))) < 1e-6 for r in rates)]  # fmt: skip
-    ok = [f for f in cand if 0.4 * f >= fmax - 1e-9]
-    fs = float(round(min(ok))) if ok else float(lo)
-    out["clean.fs_hz"] = (fs, "lowest whole-number rate reachable from the raw rates %s with fmax <= 0.4 fs"
-                       % sorted(set(rates)))  # fmt: skip
+    fs = float(round(max(cand))) if cand else float(lo)
+    out["clean.fs_hz"] = (fs, "highest whole-number rate reachable from the raw rates %s by an integer factor; the "
+                          "cleaned days take stations x days x 86400 x fs x 4 bytes" % sorted(set(rates)))  # fmt: skip
+    fmax = float("%.3g" % (0.4 * fs))
+    out["cc.fmax_hz"] = (fmax, "Nyquist: 0.4 x clean.fs_hz %g Hz (anti-alias low-pass at 0.8 x Nyquist); a lower "
+                         "value with a lower clean.fs_hz saves disk and time" % fs)  # fmt: skip
+    if fmax <= fmin * 1.5:
+        raise ValueError(
+            "the suggested band %.3g-%.3g Hz is too narrow: the records (%g Hz) are too coarse for an array whose "
+            "longest pair is %.3f km at velocities up to %g km/s; check the velocity range" % (fmin, fmax, fs, rmax, v1)
+        )
     lag = _up(rmax / (0.6 * v0) + 4 / fmin, 1.0 if rmax / v0 < 100 else 10.0)
     out["cc.maxlag_s"] = (lag, "longest pair %.3f km / (0.6 x %g km/s) + 4 / fmin" % (rmax, v0))
     seg = _up(max(2.5 * lag, 10 / fmin), 10.0)

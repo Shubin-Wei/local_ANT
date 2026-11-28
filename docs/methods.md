@@ -160,7 +160,6 @@ Checkerboard test (Lévêque et al. 1993): the starting model times 1 + a sin(π
 - Luo, Y., Yang, Y., Xu, Y., Xu, H., Zhao, K., & Wang, K. (2015). On the limitations of interstation distances in ambient noise tomography. *GJI*, 201, 652–661. doi:10.1093/gji/ggv043
 - Paige, C. C., & Saunders, M. A. (1982). LSQR: an algorithm for sparse linear equations and sparse least squares. *ACM TOMS*, 8, 43–71. doi:10.1145/355984.355989
 - Rawlinson, N., & Spakman, W. (2016). On the use of sensitivity tests in seismic tomography. *GJI*, 205, 1221–1243. doi:10.1093/gji/ggw084
-- Rost, S., & Thomas, C. (2002). Array seismology: methods and applications. *Reviews of Geophysics*, 40(3), 1008. doi:10.1029/2000RG000100
 - Rousseeuw, P. J., & Croux, C. (1993). Alternatives to the median absolute deviation. *JASA*, 88, 1273–1283. doi:10.1080/01621459.1993.10476408
 - Schimmel, M., Stutzmann, E., & Gallart, J. (2011). Using instantaneous phase coherence for signal extraction from ambient noise data at a local to a global scale. *GJI*, 184, 494–506. doi:10.1111/j.1365-246X.2010.04861.x
 - Seats, K. J., Lawrence, J. F., & Prieto, G. A. (2012). Improved ambient noise correlation functions using Welch's method. *GJI*, 188, 513–523. doi:10.1111/j.1365-246X.2011.05263.x

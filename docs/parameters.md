@@ -28,14 +28,14 @@ Every setting of the configuration file, its default and its basis. The template
 
 | Key | Default | Meaning and basis |
 |---|---|---|
-| `fs_hz` | init | sampling rate after decimation; a whole fraction of every raw rate. Suggested: the lowest whole-number rate with `cc.fmax_hz` ≤ 0.4 fs (the anti-alias low-pass is at 0.8 × Nyquist) |
+| `fs_hz` | init | sampling rate after decimation; a whole fraction of every raw rate. Suggested: the highest whole-number rate reachable from every raw rate by an integer factor. The cleaned days take stations × days × 86400 × fs × 4 bytes; a lower fs (with `cc.fmax_hz` ≤ 0.4 fs) saves disk and time |
 
 ## cc (step 2)
 
 | Key | Default | Meaning and basis |
 |---|---|---|
 | `fmin_hz` | init | lower band edge. Suggested: the longest pair r_max is 2 wavelengths at the fastest velocity, f = 2 v_fast / r_max (two-station far field, Bensen et al. 2007; Luo et al. 2015), lowered by the half-gain width of the Gaussian filter, × (1 − √(ln 2/α)) |
-| `fmax_hz` | init | upper band edge. Suggested: spatial sampling theorem, the station spacing at most half the wavelength (e.g. Rost & Thomas 2002), with Δx the median distance to the nearest station: f = v_slow / (2Δx), × (1 + √(ln 2/α)); time sampling: at most 0.4 × the lowest raw rate |
+| `fmax_hz` | init | upper band edge; at most 0.4 × `clean.fs_hz` (Nyquist theorem; the anti-alias low-pass is at 0.8 × Nyquist). Suggested: 0.4 × the suggested `clean.fs_hz`. Where the measurements end is set by the data: see the signal-to-noise ratio and the rejections in the figures of `lant disp`, and lower this (with `clean.fs_hz`) to the band that holds data |
 | `maxlag_s` | init | lag window. Suggested: r_max / (0.6 v_slow) + 4 / fmin. 0.6: convention, group velocities in dispersive layers lie well below the phase velocity; 4 periods give the noise window after the arrival |
 | `segment_s` | init | segment length. Must exceed 2 × maxlag (circular correlation). Suggested: max(2.5 maxlag, 10 / fmin) |
 | `overlap` | 0.5 | overlap of segments (Welch averaging; Seats et al. 2012) |
