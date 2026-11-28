@@ -16,6 +16,12 @@ DSurfTomo writes a message and phase velocity 0 for the remaining periods; here 
 and the caller stops.  getsol keeps del1st in a SAVE variable that the OpenMP threads of depthkernel share; here it is
 local to the call (the value of a serial run).
 
+Root-search step (lant): surfdisp96 brackets each root in steps of dc = 0.005 km/s.  Where Vs decreases with depth
+somewhere in the column, two modes can come closer than that (osculation) and the search steps over the fundamental
+mode onto a higher one, or finds no root at the next periods; there the column is solved with dc = 0.0005 km/s
+(ddc0 = 0.0005 in the Fortran: the same numbers).  Columns whose Vs never decreases with depth use DSurfTomo's step
+and give its numbers bit for bit.
+
 One deliberate change (lant 2.0.1): column_kernel takes the derivative along the Brocher relation (two dispersion
 calculations per node) instead of depthkernel's three separate partials (six), a third of the work; the phase
 velocities are unchanged and the kernels agree with depthkernel's combination to the finite-difference error.
@@ -35,6 +41,7 @@ _0P95, _0P90, _0P01 = F4(0.95), F4(0.90), F4(0.01)
 _ONE, _TWO, _FOUR, _HALF = F4(1.0), F4(2.0), F4(4.0), F4(0.5)
 _RHOEXP = F4(-2.275)
 _DC = F8(F4(0.005))  # dc = dble(ddc0), ddc0 = 0.005 REAL
+_DC_FINE = F8(F4(0.0005))  # lant: the step where Vs decreases with depth (see the module text)
 _ONEA = F8(F4(1.5))  # onea = dble(sone0)
 _ONE_D = 1.0e-2  # one = 1.0d-2
 _S_D = F8(F4(0.01))  # nevill: s1 = 0.01*ss1, a REAL constant in a double expression
@@ -409,7 +416,7 @@ def _gtsolh(a, b):
 
 
 @njit(cache=True, nogil=True)
-def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg, igr=0):
+def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg, igr=0, ddc=_DC):
     """Rayleigh phase (igr = 0) or group (igr = 1) velocities cg (double, REAL-rounded) of the layer model at the
     periods t; 0 after a failure.  surfdisp96(thkm, vpm, vsm, rhom, nlayer, iflsph=1, iwave=2, mode=1, igr, kmax, t,
     cg)."""
@@ -474,7 +481,7 @@ def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg, igr=0):
     cc1 = _0P95 * cc1
     cc1 = _0P90 * cc1
     cc = F8(cc1)
-    dc = abs(_DC)
+    dc = abs(ddc)
     cm = cc
     kmax = t.size
     c = np.zeros(kmax, F8)
@@ -528,12 +535,21 @@ def surfdisp96(thkm, vpm, vsm, rhom, nlayer, t, cg, igr=0):
 
 
 @njit(cache=True, nogil=True)
+def root_step(vs):
+    """dc of the root search: DSurfTomo's 0.005 km/s, 0.0005 km/s where Vs decreases with depth."""
+    for i in range(vs.size - 1):
+        if vs[i + 1] < vs[i]:
+            return _DC_FINE
+    return _DC
+
+
+@njit(cache=True, nogil=True)
 def column_phase(dep, vs, minthk, t, igr=0):
     """caldespersion for one column: phase (igr = 0) or group (igr = 1) velocities at t of the REAL node model."""
     vp, rho = brocher(vs)
     rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vp, vs, rho)
     cg = np.zeros(t.size, F8)
-    surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg, igr)
+    surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg, igr, root_step(vs))
     return cg
 
 
@@ -551,8 +567,9 @@ def column_kernel(dep, vsz, minthk, t, nodes, sen_vs, sen_vp, sen_rho, igr=0):
     third of the work (the phase velocities are unchanged)."""
     vpz, rhoz = brocher(vsz)
     cg = np.zeros(t.size, F8)
+    ddc = root_step(vsz)  # one step for the column and its perturbed copies
     rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpz, vsz, rhoz)
-    surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg, igr)
+    surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg, igr, ddc)
     vsm = vsz.copy()
     vpm = vpz.copy()
     rhom = rhoz.copy()
@@ -566,7 +583,7 @@ def column_kernel(dep, vsz, minthk, t, nodes, sen_vs, sen_vp, sen_rho, igr=0):
             p, r = brocher(one)
             vsm[i], vpm[i], rhom[i] = one[0], p[0], r[0]
             rmax, rthk, rvp, rvs, rrho = refine(minthk, dep, vpm, vsm, rhom)
-            surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg1 if sign == 0 else cg2, igr)
+            surfdisp96(rthk, rvp, rvs, rrho, rmax, t, cg1 if sign == 0 else cg2, igr, ddc)
         vsm[i], vpm[i], rhom[i] = vsz[i], vpz[i], rhoz[i]
         den = F8(_0P01 * vsz[i])
         for nn in range(t.size):

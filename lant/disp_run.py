@@ -148,8 +148,8 @@ def write_table(path, ok, ok_u, m, freqs, sta1, sta2, coords, dist):
 
 def write_medians(path, ok, ok_u, m, freqs, ref):
     """Per frequency the medians of the accepted c and U against the reference; -> median of the deviations of c (%)
-    over the frequencies with at least 10 pairs (a systematic offset: the reference, and so the cycle count, may be
-    off)."""
+    over the frequencies with at least 10 pairs (an offset of the order of a branch spacing, 2 x disp.reference_error,
+    points to wrong cycle counts; a steady offset of a few percent is a real difference from the reference)."""
     devs = []
     with open(path, "w") as fh:
         fh.write("frequency_hz,pairs_c,median_c_kms,c_ref_kms,deviation_c_percent,pairs_u,median_u_kms,u_ref_kms,"

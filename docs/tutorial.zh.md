@@ -68,8 +68,10 @@ lant init -o my.yaml --raw /data/raw --stations stations.txt --out /data/out --v
    - 把拾取限制在基阶清楚的频段：`disp.fj_band_hz: [下限, 上限]`；或
    - 给一维模型（`disp.reference: model`，`disp.reference_file: model.txt`，两列 `depth_km Vs_km/s`），或人工拾取的曲线（`disp.reference: file`，两列 `frequency_Hz c_km/s`），
 
-   然后重跑 `lant disp`。紫色菱形是实测相速度的中位数，应落在参考曲线上。
-2. **`median_vs_reference.csv`**：偏离好几个百分点且不随频率变，说明参考曲线（因而整周数）有错。
+   然后重跑 `lant disp`。紫色菱形是实测相速度的中位数，应落在参考曲线上或其附近。
+
+   测线台阵的 F-J 谱常常不清楚（台对少、台距分布不均）。这时用附近面阵或文献给出的一维模型或曲线（`disp.reference: model` 或 `file`）。
+2. **`median_vs_reference.csv`**：偏离达 20 % 以上，或在相邻频率间跳动，说明整周数有错（参考曲线有错）；稳定的几个百分点偏离是与参考的真实差别。
 3. **`figures/curves.png`**、**`figures/rejections.png`**（相速度）和 **`figures/group_curves.png`**、**`figures/group_rejections.png`**（群速度）：每个频率有多少台对测到，其余的被拒原因（原因名称见方法第 5 节）。
 4. **`figures/pair_*.png`**：三个示例台对：群到时是否在包络极大上，相速度是否沿参考曲线。
 

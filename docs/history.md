@@ -16,6 +16,8 @@ Earlier versions: see the git tags (`v1.5.0`, `v2.0.0` – `v2.0.2`) and their d
 - `lant cc` applies `data.exclude_stations` and `data.start_date` / `end_date` to the cleaned days; it stops if the days were cleaned at another rate or with a response pre-filter narrower than the correlation band.
 - New figures of `lant disp`: `group_curves.png`, `group_rejections.png`. `average_curve.csv`, `start_fit.csv` and `residuals.csv` of `lant inv` have a column `velocity` (phase or group).
 - `example.yaml`: a complete configuration written by `lant init`.
+- Dispersion of a model column in which Vs decreases with depth: root search in steps of 0.0005 km/s instead of 0.005 km/s. With the coarser step the search could jump to a higher mode or find no root (the 3-D inversion then stopped).
+- `lant disp` no longer stops on a pair whose data all come from one sub-stack.
 
 ## 3.0.0 (2026-11-27)
 

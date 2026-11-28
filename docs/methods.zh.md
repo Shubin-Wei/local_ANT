@@ -94,7 +94,7 @@ c 等于某个模式的相速度时最大。与开源的 CC-FJpy（Li et al. 202
 | σ ≤ `max_jackknife_rel` × c（或 × U） | 2 % | 约定取值；设为 `null` 即不用 |
 | 只留一段连续、至少 `min_points` 个频点 | 6 | 每个台对一段（EGFAnalysisTimeFreq 手册，Yao 等）；长度为约定取值 |
 
-每个被拒的值都记下原因（`measurements.h5` 中 c 的位掩码 `reason`、U 的位掩码 `reason_u`，名称见 `lant.dispersion.REASONS`）。`median_vs_reference.csv` 逐频率比较接受值的中位数与参考：恒定偏离好几个百分点说明参考曲线（因而整周数）可能有错。
+每个被拒的值都记下原因（`measurements.h5` 中 c 的位掩码 `reason`、U 的位掩码 `reason_u`，名称见 `lant.dispersion.REASONS`）。`median_vs_reference.csv` 逐频率比较接受值的中位数与参考。整周数错一周会使 c 改变一个分支间距，在确定 N 的路径上至少是 2 × `disp.reference_error`（默认 20 %）；中位数偏离参考达到这个量级，或在相邻频率间跳动，说明整周数和参考曲线有错。不随频率变的几个百分点的偏离是本区与参考的真实差别，测量允许这样的差别。
 
 **在精确互相关上的精度**（频散介质的 J₀ 谱，`tests/test_measurement.py`）：c 在 5 个波长以上 95 % 误差在 0.4 % 以内，3–5 个波长在 1.5 % 以内；U 的 95 % 误差在 1 % 以内，α = 5 时中位偏差约 +0.5 %（宽滤波器在频散波上的包络极大位置；α 越大偏差越小）。
 
@@ -104,7 +104,7 @@ c 等于某个模式的相速度时最大。与开源的 CC-FJpy（Li et al. 202
 
 **起始模型**：所用的每类速度，每个周期取各台对的中位数（该周期至少要有 max(5, min(50, 台对数/4)) 个台对）。波长（速度 × 周期）用相速度算，只用群速度时用群速度算。深度节点从 0 开始，步长 max(最短波长/4, 深度/4)，到超过最长波长一半的第一个节点为止（常用的探测深度估计，Foti et al. 2018 第 4.2.3 节），最后一个节点是固定的半空间。一维模型用对 ln Vs 的阻尼、平滑高斯—牛顿反演拟合所用的平均曲线，平滑作用于模型本身的曲率（Shaw & Orcutt 1985；Constable et al. 1987），结果不随迭代次数漂移。也可以给模型文件（`inv.start_model_file`）。
 
-**正演**：Vp 和密度由 Vs 按 Brocher（2005）换算；相速度、群速度及其深度核来自 DSurfTomo 的 surfdisp96（Herrmann 2013；Fang et al. 2015），数值与原版 Fortran 相同（`lant/inversion/dsurf_disp96.py`）。由模型给参考曲线时用的也是这一套。
+**正演**：Vp 和密度由 Vs 按 Brocher（2005）换算；相速度、群速度及其深度核来自 DSurfTomo 的 surfdisp96（Herrmann 2013；Fang et al. 2015），数值与原版 Fortran 相同（`lant/inversion/dsurf_disp96.py`）。求根按 0.005 km/s 的步长扫描；某一列中有 Vs 随深度减小的地方时，两个模式可能靠得比这更近，扫描会跳到高阶模式或找不到根，这样的列改用 0.0005 km/s 的步长。由模型给参考曲线时用的也是这一套。
 
 **三维直接反演**（Fang et al. 2015，DSurfTomo 的方法；`lant/inversion/dsurf_*.py`）：未知量是三维网格上的 Vs（水平间距 `inv.grid_km`，默认为实测波长中位数的三分之一：面波的横向分辨率约为一个波长）。每轮迭代在当前相速度图或群速度图里用快速行进法追踪每个周期的射线，计算深度核，求 Vs 的更新量：
 

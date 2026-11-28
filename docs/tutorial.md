@@ -68,8 +68,10 @@ Check, in this order:
    - limit the picking to the frequencies where the fundamental mode is clear: `disp.fj_band_hz: [lo, hi]`, or
    - give a 1-D model (`disp.reference: model`, `disp.reference_file: model.txt` with columns `depth_km Vs_km/s`) or a curve picked by hand (`disp.reference: file`, columns `frequency_Hz c_km/s`),
 
-   then run `lant disp` again. The purple diamonds are the median of the measured phase velocities: they should lie on the reference.
-2. **`median_vs_reference.csv`**: a deviation of several percent that does not change with frequency means the reference, and so the cycle count, is wrong.
+   then run `lant disp` again. The purple diamonds are the median of the measured phase velocities: they should lie on or near the reference.
+
+   On a line array the F-J spectrum is often unclear (few pairs, unevenly spread distances). Then use a 1-D model or a curve from a nearby areal array or from the literature (`disp.reference: model` or `file`).
+2. **`median_vs_reference.csv`**: a deviation of 20 % or more, or one that jumps between frequencies, means wrong cycle counts (the reference is wrong); a steady offset of a few percent is a real difference from the reference.
 3. **`figures/curves.png`**, **`figures/rejections.png`** (phase) and **`figures/group_curves.png`**, **`figures/group_rejections.png`** (group): how many pairs measure each frequency, and why the others were rejected (reason names in methods, section 5).
 4. **`figures/pair_*.png`**: three example pairs: is the group arrival on the envelope maximum, does the phase velocity follow the reference?
 

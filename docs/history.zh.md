@@ -16,6 +16,8 @@
 - `lant cc` 对清洗后的数据使用 `data.exclude_stations` 和 `data.start_date` / `end_date`；清洗时的采样率不同，或去响应的预滤波窄于互相关频带时，会停下并说明。
 - `lant disp` 新增图 `group_curves.png`、`group_rejections.png`。`lant inv` 的 `average_curve.csv`、`start_fit.csv`、`residuals.csv` 增加 `velocity` 列（phase 或 group）。
 - `example.yaml`：`lant init` 写出的一份完整配置。
+- 某列模型中有 Vs 随深度减小时，频散求根的步长从 0.005 km/s 改为 0.0005 km/s。原步长下可能跳到高阶模式或找不到根（三维反演因此停下）。
+- 台对的数据全部来自一个子叠加时，`lant disp` 不再出错停下。
 
 ## 3.0.0（2026-11-27）
 
